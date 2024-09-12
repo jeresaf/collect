@@ -6,6 +6,6 @@ object OpenRosaConstants {
     const val ACCEPT_CONTENT_LENGTH_HEADER = "X-OpenRosa-Accept-Content-Length"
 
     // Endpoints
-    const val FORM_LIST = "/formList"
-    const val SUBMISSION = "/submission"
+    const val FORM_LIST = "/api/v1/formlist"
+    const val SUBMISSION = "/api/v1/submission"
 }

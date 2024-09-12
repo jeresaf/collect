@@ -41,6 +41,12 @@ import org.odk.collect.permissions.PermissionsProvider
 import org.odk.collect.projects.Project.Saved
 import org.odk.collect.settings.SettingsProvider
 import org.odk.collect.settings.keys.ProjectKeys
+import org.odk.collect.settings.keys.ProjectKeys.KEY_DISTRICT
+import org.odk.collect.settings.keys.ProjectKeys.KEY_METADATA_PHONENUMBER
+import org.odk.collect.settings.keys.ProjectKeys.KEY_METADATA_USERNAME
+import org.odk.collect.settings.keys.ProjectKeys.KEY_PARISH
+import org.odk.collect.settings.keys.ProjectKeys.KEY_SUB_COUNTY
+import org.odk.collect.settings.keys.ProjectKeys.KEY_VILLAGE
 import org.odk.collect.strings.localization.LocalizedActivity
 import timber.log.Timber
 import javax.inject.Inject
@@ -118,6 +124,7 @@ class MainMenuActivity : LocalizedActivity() {
         initMapbox()
         initButtons()
         initAppName()
+        initMetaData()
 
         if (permissionsViewModel.shouldAskForPermissions()) {
             showIfNotShowing(PermissionsDialogFragment::class.java, this.supportFragmentManager)
@@ -272,6 +279,33 @@ class MainMenuActivity : LocalizedActivity() {
         }
         mainMenuViewModel.sentInstancesCount.observe(this) { sent: Int ->
             binding.viewSentForms.setNumberOfForms(sent)
+        }
+    }
+
+    private fun initMetaData() {
+        binding.userName.text = String.format("%s", settingsProvider.getUnprotectedSettings().getString(KEY_METADATA_USERNAME))
+        binding.phone.text = String.format("%s", settingsProvider.getUnprotectedSettings().getString(KEY_METADATA_PHONENUMBER))
+
+        val district = settingsProvider.getUnprotectedSettings().getString(KEY_DISTRICT)
+        val sub_county = settingsProvider.getUnprotectedSettings().getString(KEY_SUB_COUNTY)
+        val parish = settingsProvider.getUnprotectedSettings().getString(KEY_PARISH)
+        val village = settingsProvider.getUnprotectedSettings().getString(KEY_VILLAGE)
+
+        if(district.isNullOrBlank() || sub_county.isNullOrBlank() || parish.isNullOrBlank()) {
+            binding.userUnits.visibility = View.GONE
+        } else {
+            val stringBuilder = StringBuilder()
+            stringBuilder.append(district)
+            stringBuilder.append(" - ")
+            stringBuilder.append(sub_county)
+            stringBuilder.append(" - ")
+            stringBuilder.append(parish)
+            if (!village.isNullOrBlank()) {
+                stringBuilder.append(" - ")
+                stringBuilder.append(village)
+            }
+            binding.userUnits.text = stringBuilder.toString()
+            binding.userUnits.visibility = View.VISIBLE
         }
     }
 

@@ -52,8 +52,7 @@ class FirstLaunchActivity : LocalizedActivity(), LoginTaskListener, LoginDialogF
     @Inject
     lateinit var connectivityProvider: NetworkStateProvider
 
-    lateinit var usernamePrompt: TextInputEditText
-    lateinit var passwordPrompt: TextInputEditText
+    private lateinit var binding: FirstLaunchLayoutBinding
 
     lateinit var alertDialog: AlertDialog
 
@@ -68,11 +67,9 @@ class FirstLaunchActivity : LocalizedActivity(), LoginTaskListener, LoginDialogF
         super.onCreate(savedInstanceState)
         DaggerUtils.getComponent(this).inject(this)
 
-        FirstLaunchLayoutBinding.inflate(layoutInflater).apply {
+        binding = FirstLaunchLayoutBinding.inflate(layoutInflater)
+        binding.apply {
             setContentView(this.root)
-
-            usernamePrompt = username;
-            passwordPrompt = password;
 
             loginButton.setOnClickListener {
                 //Analytics.log(AnalyticsEvents.TRY_DEMO)
@@ -138,18 +135,16 @@ class FirstLaunchActivity : LocalizedActivity(), LoginTaskListener, LoginDialogF
             loginDetailsFetcher.updateLoginPath("/api/v1/login")
             loginTask = LoginTask(loginDetailsFetcher)
             loginTask!!.setDownloaderListener(this)
-            val usernameStr = usernamePrompt.text.toString()
-            val passwordStr = passwordPrompt.text.toString()
 
-            if(usernameStr.isEmpty() || passwordStr.isEmpty()) {
-                usernamePrompt.setError("Field is required")
-                passwordPrompt.setError("Field is required")
+            if(binding.username.text.toString().isEmpty() || binding.username.text.toString().isEmpty()) {
+                binding.username.error = "Field is required"
+                binding.password.error = "Field is required"
             } else {
-                usernamePrompt.setError(null)
-                passwordPrompt.setError(null)
+                binding.username.error = null
+                binding.password.error = null
                 val loginDetailsStr = Map<String, String>()
-                loginDetailsStr.put("username", usernameStr)
-                loginDetailsStr.put("password", passwordStr)
+                loginDetailsStr.put("username", binding.username.text.toString())
+                loginDetailsStr.put("password", binding.username.text.toString())
 
                 loginTask!!.execute(loginDetailsStr)
             }

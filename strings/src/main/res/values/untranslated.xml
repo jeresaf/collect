@@ -7,8 +7,8 @@ OR CONDITIONS OF ANY KIND, either express or implied. See the License for
 the specific language governing permissions and limitations under the License. -->
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- strings that should not be translated -->
-    <string name="collect_app_name" translatable="false">KoboCollect</string>
-    <string name="app_url" translatable="false">http://www.kobotoolbox.org</string>
+    <string name="collect_app_name" translatable="false">UG Insights</string>
+    <string name="app_url" translatable="false">https://deronltd.com/pmt</string>
     <string name="forum_url" translatable="false">"https://community.kobotoolbox.org"</string>
     <string name="never_value" translatable="false">never</string>
     <string name="every_fifteen_minutes_value" translatable="false">every_fifteen_minutes</string>
@@ -37,4 +37,11 @@ the specific language governing permissions and limitations under the License. -
     <string name="hex" translatable="false">Hex</string>
 
     <string name="empty_accuracy" translatable="false">--</string>
+
+    <!-- Deron Strings not for translation at the moment -->
+    <string name="login" translatable="false">Login</string>
+    <string name="submit" translatable="false">Submit</string>
+    <string name="logging_in" translatable="false">Logging in</string>
+    <string name="login_error" translatable="false">Login failed</string>
+    <string name="auth_error" translatable="false">Not authorized to access this service</string>
 </resources>

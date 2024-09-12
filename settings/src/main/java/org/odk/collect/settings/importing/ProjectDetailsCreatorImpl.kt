@@ -33,7 +33,7 @@ class ProjectDetailsCreatorImpl(private val colors: List<String>, private val de
         val defaultServer = defaults[ProjectKeys.KEY_SERVER_URL] as String
 
         return if (connectionIdentifier.isBlank() || connectionIdentifier.startsWith(defaultServer)) {
-            Project.DEMO_PROJECT_NAME
+            Project.PROJECT_NAME
         } else {
             try {
                 val projectName = URL(connectionIdentifier).host
@@ -47,8 +47,8 @@ class ProjectDetailsCreatorImpl(private val colors: List<String>, private val de
     }
 
     private fun getProjectColorFromProjectName(projectName: String): String {
-        if (projectName == Project.DEMO_PROJECT_NAME) {
-            return Project.DEMO_PROJECT_COLOR
+        if (projectName == Project.PROJECT_NAME) {
+            return Project.PROJECT_COLOR
         }
 
         return colors.itemFromHashOf(projectName)

@@ -545,7 +545,7 @@
     <string name="geotrace_title">GeoTrace</string>
     <string name="gps_enable_message">GPS is disabled on your device. Would you like to enable it?</string>
     <string name="geo_clear_warning">Feature already created. Would you like to clear the feature?</string>
-    <string name="geo_exit_warning">Discard changes and return to KoboToolbox?</string>
+    <string name="geo_exit_warning">Discard changes and return to Insights?</string>
     <string name="polygon_validator">Must have at least 3 points to create Polygon</string>
     <string name="polyline_validator">Must have at least 2 points to create Polyline</string>
     <string name="clear">Clear</string>
@@ -643,7 +643,7 @@
 
     <string name="send_in_progress">Background send running, please try again shortly</string>
 
-    <string name="odk_permissions_fail">KoboToolbox auto send permission failure, please make sure your have granted all required permissions</string>
+    <string name="odk_permissions_fail">Insights auto send permission failure, please make sure your have granted all required permissions</string>
 
     <string name="forms_upload_succeeded">Forms upload succeeded</string>
     <string name="forms_upload_failed">Forms upload failed</string>
@@ -788,9 +788,9 @@
     <string name="change_server_url">Server URL</string>
     <string name="url_error">Sorry, invalid URL!</string>
     <string name="username">Username</string>
-    <string name="change_username">KoboToolbox Username</string>
+    <string name="change_username">Username</string>
     <string name="password">Password</string>
-    <string name="change_password">KoboToolbox Password</string>
+    <string name="change_password">Password</string>
     <string name="password_error_whitespace">Leading or trailing whitespace not allowed in passwords</string>
     <string name="username_error_whitespace">Leading or trailing whitespace not allowed in usernames</string>
 
@@ -1128,7 +1128,7 @@
     -->
     <!-- Tag line displayed on the first launch screen. The text should be split into two lines with \n. Please
     select the wording and where to put the \n for maximum impact in your language. -->
-    <string name="tagline">Collect data\nanywhere</string>
+    <string name="tagline">Login</string>
     <!-- Text for the button that allows for configuring a project by scanning a QR code. Should be short -->
     <string name="configure_with_qr_code">Configure with QR code</string>
     <!-- Text for the button that allows for manually entering project details. Should be short -->

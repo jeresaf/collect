@@ -78,4 +78,10 @@ object ProjectKeys {
 
     const val GOOGLE_DRIVE_DEPRECATION_LEARN_MORE_CLICKED = "gd_lear_more_clicked"
     const val GOOGLE_DRIVE_DEPRECATION_BANNER_DISMISSED = "gd_banner_dismissed"
+
+    //Record number
+    const val KEY_DISTRICT = "district";
+    const val KEY_SUB_COUNTY = "sub_county";
+    const val KEY_PARISH = "parish";
+    const val KEY_VILLAGE = "village";
 }

@@ -66,13 +66,17 @@ import org.odk.collect.android.instancemanagement.autosend.AutoSendSettingsProvi
 import org.odk.collect.android.instancemanagement.autosend.InstanceAutoSendFetcher;
 import org.odk.collect.android.instancemanagement.autosend.InstanceAutoSender;
 import org.odk.collect.android.itemsets.FastExternalItemsetsRepository;
+import org.odk.collect.android.login.LoginDetailsFetcher;
+import org.odk.collect.android.login.LoginSourceProvider;
 import org.odk.collect.android.mainmenu.MainMenuViewModelFactory;
 import org.odk.collect.android.notifications.NotificationManagerNotifier;
 import org.odk.collect.android.notifications.Notifier;
 import org.odk.collect.android.openrosa.CollectThenSystemContentTypeMapper;
 import org.odk.collect.android.openrosa.OpenRosaHttpInterface;
+import org.odk.collect.android.openrosa.OpenRosaUserHttpInterface;
 import org.odk.collect.android.openrosa.okhttp.OkHttpConnection;
 import org.odk.collect.android.openrosa.okhttp.OkHttpOpenRosaServerClientProvider;
+import org.odk.collect.android.openrosa.okhttp.OkHttpUserConnection;
 import org.odk.collect.android.preferences.Defaults;
 import org.odk.collect.android.preferences.PreferenceVisibilityHandler;
 import org.odk.collect.android.preferences.ProjectPreferencesViewModel;
@@ -184,6 +188,17 @@ public class AppDependencyModule {
     public OpenRosaHttpInterface provideHttpInterface(MimeTypeMap mimeTypeMap, UserAgentProvider userAgentProvider, Application application, VersionInformation versionInformation) {
         String cacheDir = application.getCacheDir().getAbsolutePath();
         return new OkHttpConnection(
+                new OkHttpOpenRosaServerClientProvider(new OkHttpClient(), cacheDir),
+                new CollectThenSystemContentTypeMapper(mimeTypeMap),
+                userAgentProvider.getUserAgent()
+        );
+    }
+
+    @Provides
+    @Singleton
+    public OpenRosaUserHttpInterface provideUserHttpInterface(MimeTypeMap mimeTypeMap, UserAgentProvider userAgentProvider, Application application, VersionInformation versionInformation) {
+        String cacheDir = application.getCacheDir().getAbsolutePath();
+        return new OkHttpUserConnection(
                 new OkHttpOpenRosaServerClientProvider(new OkHttpClient(), cacheDir),
                 new CollectThenSystemContentTypeMapper(mimeTypeMap),
                 userAgentProvider.getUserAgent()
@@ -653,5 +668,15 @@ public class AppDependencyModule {
     @Provides
     public Supplier<Long> providesClock() {
         return System::currentTimeMillis;
+    }
+
+    @Provides
+    public LoginSourceProvider providesLoginSourceProvider(SettingsProvider settingsProvider, OpenRosaUserHttpInterface openRosaUserHttpInterface) {
+        return new LoginSourceProvider(settingsProvider, openRosaUserHttpInterface);
+    }
+
+    @Provides
+    public LoginDetailsFetcher providesLoginDetailsFetcher(LoginSourceProvider loginSourceProvider) {
+        return new LoginDetailsFetcher(loginSourceProvider.get());
     }
 }

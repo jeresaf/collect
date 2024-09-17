@@ -117,6 +117,9 @@ public class ODKView extends SwipeHandler.View implements OnLongClickListener, W
     private final ArrayList<QuestionWidget> widgets;
     private final AudioHelper audioHelper;
 
+    private final MaterialButton repeatAdd;
+    private final MaterialButton skipRemove;
+
     private WidgetValueChangedListener widgetValueChangedListener;
 
     @Inject
@@ -187,6 +190,9 @@ public class ODKView extends SwipeHandler.View implements OnLongClickListener, W
 
         widgets = new ArrayList<>();
         widgetsList = findViewById(R.id.widgets);
+
+        repeatAdd = findViewById(R.id.repeat_add);
+        skipRemove = findViewById(R.id.skip_remove);
 
         layout = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -670,5 +676,24 @@ public class ODKView extends SwipeHandler.View implements OnLongClickListener, W
         if (widgetValueChangedListener != null) {
             widgetValueChangedListener.widgetValueChanged(changedWidget);
         }
+    }
+
+    public void setRepeatButtonsVisible() {
+        repeatAdd.setTextSize(TypedValue.COMPLEX_UNIT_DIP, QuestionFontSizeUtils.getQuestionFontSize() + 2);
+        repeatAdd.setVisibility(VISIBLE);
+        skipRemove.setTextSize(TypedValue.COMPLEX_UNIT_DIP, QuestionFontSizeUtils.getQuestionFontSize() + 2);
+        skipRemove.setVisibility(VISIBLE);
+    }
+
+    public void setRepeatAddText(String text) {
+        repeatAdd.setText(text);
+    }
+
+    public void setRepeatAddOnCLickListener(OnClickListener listener) {
+        repeatAdd.setOnClickListener(listener);
+    }
+
+    public void setRepeatDeleteOnClickListener(OnClickListener listener){
+        skipRemove.setOnClickListener(listener);
     }
 }

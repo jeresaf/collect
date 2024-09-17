@@ -153,6 +153,7 @@ import org.odk.collect.android.tasks.SavePointTask;
 import org.odk.collect.android.utilities.ApplicationConstants;
 import org.odk.collect.android.utilities.ContentUriHelper;
 import org.odk.collect.android.utilities.ControllableLifecyleOwner;
+import org.odk.collect.android.utilities.DialogUtils;
 import org.odk.collect.android.utilities.ExternalAppIntentProvider;
 import org.odk.collect.android.utilities.FormsRepositoryProvider;
 import org.odk.collect.android.utilities.InstancesRepositoryProvider;
@@ -1173,6 +1174,29 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
                     Timber.i("Created view for group %s %s",
                             groups.length > 0 ? groups[groups.length - 1].getLongText() : "[top]",
                             prompts.length > 0 ? prompts[0].getQuestionText() : "[no question]");
+
+                    String group_header = ODKView.getGroupsPath(groups).toString();
+
+                    odkView.setRepeatAddOnCLickListener(
+                        v -> {
+                            //swipeHandler.setBeenSwiped(true);
+                            //onSwipeForward();
+                            swipeHandler.setBeenSwiped(false);
+                            formEntryViewModel.addRepeat();
+                        }
+                    );
+                    odkView.setRepeatDeleteOnClickListener(
+                        v -> DialogFragmentUtils.showIfNotShowing(DeleteRepeatDialogFragment.class, getSupportFragmentManager())
+                    );
+                    if(formEntryViewModel.canAddRepeat()) odkView.setRepeatButtonsVisible();
+                    StringBuilder repeatPath = new StringBuilder().append("Add ");
+                    if(group_header.contains(">") && group_header.indexOf(">") > 2) {
+                        repeatPath.append(group_header.substring(0, group_header.indexOf(">") - 1));
+                    } else {
+                        repeatPath.append(group_header);
+                    }
+                    odkView.setRepeatAddText(repeatPath.toString());
+
                 } catch (RuntimeException | RepeatsInFieldListException e) {
                     if (e instanceof RuntimeException) {
                         Timber.e(e);

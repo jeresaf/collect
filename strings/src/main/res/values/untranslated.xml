@@ -44,4 +44,5 @@ the specific language governing permissions and limitations under the License. -
     <string name="logging_in" translatable="false">Logging in</string>
     <string name="login_error" translatable="false">Login failed</string>
     <string name="auth_error" translatable="false">Not authorized to access this service</string>
+    <string name="skip_remove" translatable="false">Skip/Remove</string>
 </resources>

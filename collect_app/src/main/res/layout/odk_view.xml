@@ -36,6 +36,16 @@ limitations under the License.
             tools:visibility="visible" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/skip_remove"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/skip_remove"
+            android:visibility="gone"
+            android:gravity="center"
+            android:layout_margin="@dimen/margin_small"
+            android:padding="@dimen/margin_small"/>
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/launchIntentButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -50,6 +60,16 @@ limitations under the License.
             android:layout_height="wrap_content"
             android:gravity="top"
             android:orientation="vertical">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/repeat_add"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/add_repeat"
+            android:visibility="gone"
+            android:gravity="center"
+            android:layout_margin="@dimen/margin_small"
+            android:padding="@dimen/margin_small"/>
 
         </LinearLayout>
 

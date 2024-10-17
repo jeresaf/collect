@@ -21,6 +21,7 @@ import org.odk.collect.android.exception.ExternalDataException;
 import org.odk.collect.android.exception.JavaRosaException;
 import org.odk.collect.android.formentry.audit.AuditEvent;
 import org.odk.collect.android.formentry.questions.SelectChoiceUtils;
+import org.odk.collect.android.formentrytracker.FormEntryTracker;
 import org.odk.collect.android.javarosawrapper.FailedValidationResult;
 import org.odk.collect.android.javarosawrapper.FormController;
 import org.odk.collect.android.javarosawrapper.ValidationResult;
@@ -46,6 +47,8 @@ public class FormEntryViewModel extends ViewModel implements SelectChoiceLoader 
     private final MutableLiveData<FormIndex> currentIndex = new MutableLiveData<>(null);
     private final MutableNonNullLiveData<Boolean> isLoading = new MutableNonNullLiveData<>(false);
     private final MutableLiveData<ValidationResult> validationResult = new MutableLiveData<>(null);
+
+    private final MutableLiveData<Integer> formProgress = new MutableLiveData<>(0);
     @NonNull
     private final FormSessionRepository formSessionRepository;
     private final String sessionId;
@@ -90,6 +93,10 @@ public class FormEntryViewModel extends ViewModel implements SelectChoiceLoader 
 
     public LiveData<FormIndex> getCurrentIndex() {
         return currentIndex;
+    }
+
+    public LiveData<Integer> getFormProgress() {
+        return formProgress;
     }
 
     public LiveData<FormError> getError() {
@@ -285,6 +292,7 @@ public class FormEntryViewModel extends ViewModel implements SelectChoiceLoader 
 
     public void refresh() {
         currentIndex.setValue(formController.getFormIndex());
+        calculateFormProgress();
     }
 
     public void exit() {
@@ -310,6 +318,26 @@ public class FormEntryViewModel extends ViewModel implements SelectChoiceLoader 
                         refresh();
                     }
                     validationResult.setValue(result);
+                }
+        );
+    }
+
+    public void calculateFormProgress() {
+        isLoading.setValue(true);
+        scheduler.immediate(
+                () -> {
+                    int progress = -1;
+                    try {
+                        progress = (new FormEntryTracker(formController.getFormDef())).getCompletionPercentage();
+                    } catch (Exception e) {
+                        error.postValue(new NonFatal(e.getMessage()));
+                    }
+                    return progress;
+                }, progress -> {
+                    isLoading.setValue(false);
+                    if (progress > 0) {
+                        formProgress.setValue(progress);
+                    }
                 }
         );
     }

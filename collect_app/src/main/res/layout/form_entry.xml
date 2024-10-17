@@ -18,6 +18,8 @@ the License.
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <!--
+
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/appBarLayout"
         style="@style/Widget.MaterialComponents.AppBarLayout.Surface"
@@ -39,11 +41,26 @@ the License.
 
     </com.google.android.material.appbar.AppBarLayout>
 
+    <ProgressBar
+        android:id="@+id/progressBar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/appBarLayout"
+        android:indeterminate="false"
+        android:max="100"
+        android:progress="0" />
+
+    -->
+
+    <include layout="@layout/app_bar_with_progress_bar_layout"/>
+
     <FrameLayout
+        android:id="@+id/questionHolderLayout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_above="@+id/buttonholder"
-        android:layout_below="@id/appBarLayout">
+        android:layout_below="@id/appBarLayout"
+        android:layout_above="@+id/buttonholder">
 
         <FrameLayout
             android:id="@+id/questionholder"

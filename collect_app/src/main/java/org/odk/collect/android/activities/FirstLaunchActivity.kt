@@ -173,7 +173,17 @@ class FirstLaunchActivity : LocalizedActivity(), LoginTaskListener, LoginDialogF
         if(exception == null) {
             projectsRepository.save(Project.PROJECT)
             currentProjectProvider.setCurrentProject(Project.PROJECT_ID)
-
+            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_METADATA_USERNAME, "MAMAKE")
+            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_METADATA_PHONENUMBER, "MAMAKE")
+            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_METADATA_EMAIL, "MAMAKE")
+            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_USERNAME, "MAMAKE")
+            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_PASSWORD, "MAMAKE")
+            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_DISTRICT, "MAMAKE")
+            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_SUB_COUNTY, "MAMAKE")
+            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_PARISH, "MAMAKE")
+            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_VILLAGE, "MAMAKE")
+            ActivityUtils.startActivityAndCloseAllOthers(this, MainMenuActivity::class.java)
+            /*
             if (loginDetails != null) {
                 if(loginDetails.message == null || loginDetails.message.isEmpty()) {
                     settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_METADATA_USERNAME, loginDetails.name)
@@ -192,6 +202,8 @@ class FirstLaunchActivity : LocalizedActivity(), LoginTaskListener, LoginDialogF
                     createAlertDialog(dialogTitle, loginDetails.message, DO_NOT_EXIT)
                 }
             }
+
+             */
         } else {
             val dialogMessage = LoginSourceExceptionMapper(this).getMessage(exception)
             val dialogTitle = getString(R.string.login_error)

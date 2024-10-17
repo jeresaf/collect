@@ -54,6 +54,7 @@ import android.view.animation.Animation;
 import android.view.animation.Animation.AnimationListener;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
+import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -392,6 +393,8 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
     private static final String KEY_SESSION_ID = "sessionId";
     private String sessionId;
 
+    private ProgressBar progressBar;
+
     /**
      * Called when the activity is first created.
      */
@@ -451,6 +454,12 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
         formsRepository = formsRepositoryProvider.get();
 
         setContentView(R.layout.form_entry);
+
+        progressBar = this.findViewById(R.id.progressBar);
+        progressBar.setVisibility(View.VISIBLE);
+        progressBar.setIndeterminate(false);
+        progressBar.setMax(100);
+
         setupViewModels(viewModelFactory);
 
         // https://github.com/getodk/collect/issues/5469
@@ -531,6 +540,11 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
 
         formEntryViewModel.getCurrentIndex().observe(this, index -> {
             formIndexAnimationHandler.handle(index);
+        });
+
+        formEntryViewModel.getFormProgress().observe(this, progress -> {
+            Timber.e("Setting progress: %d", progress);
+            progressBar.setProgress(progress);
         });
 
         formEntryViewModel.isLoading().observe(this, isLoading -> {

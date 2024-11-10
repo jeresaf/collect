@@ -47,7 +47,7 @@ class PreviouslyDownloadedOnlyTest {
         testDependencies.scheduler.runDeferredTasks()
 
         notificationDrawerRule.open()
-            .assertNotification("ODK Collect", "Form updates available", Project.DEMO_PROJECT_NAME)
+            .assertNotification("ODK Collect", "Form updates available", Project.PROJECT_NAME)
             .clearAll()
 
         testDependencies.server.addForm(
@@ -59,7 +59,7 @@ class PreviouslyDownloadedOnlyTest {
         testDependencies.scheduler.runDeferredTasks()
 
         notificationDrawerRule.open()
-            .assertNotification("ODK Collect", "Form updates available", Project.DEMO_PROJECT_NAME)
+            .assertNotification("ODK Collect", "Form updates available", Project.PROJECT_NAME)
             .clickNotification(
                 "ODK Collect",
                 "Form updates available",

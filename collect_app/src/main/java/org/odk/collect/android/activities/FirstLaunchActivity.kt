@@ -136,7 +136,7 @@ class FirstLaunchActivity : LocalizedActivity(), LoginTaskListener, LoginDialogF
             loginTask = LoginTask(loginDetailsFetcher)
             loginTask!!.setDownloaderListener(this)
 
-            if(binding.username.text.toString().isEmpty() || binding.username.text.toString().isEmpty()) {
+            if(binding.username.text.toString().isEmpty() || binding.password.text.toString().isEmpty()) {
                 binding.username.error = "Field is required"
                 binding.password.error = "Field is required"
             } else {
@@ -144,7 +144,7 @@ class FirstLaunchActivity : LocalizedActivity(), LoginTaskListener, LoginDialogF
                 binding.password.error = null
                 val loginDetailsStr = Map<String, String>()
                 loginDetailsStr.put("username", binding.username.text.toString())
-                loginDetailsStr.put("password", binding.username.text.toString())
+                loginDetailsStr.put("password", binding.password.text.toString())
 
                 loginTask!!.execute(loginDetailsStr)
             }
@@ -171,21 +171,11 @@ class FirstLaunchActivity : LocalizedActivity(), LoginTaskListener, LoginDialogF
         DialogFragmentUtils.dismissDialog(LoginDialogFragment::class.java, supportFragmentManager)
 
         if(exception == null) {
-            projectsRepository.save(Project.PROJECT)
-            currentProjectProvider.setCurrentProject(Project.PROJECT_ID)
-            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_METADATA_USERNAME, "MAMAKE")
-            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_METADATA_PHONENUMBER, "MAMAKE")
-            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_METADATA_EMAIL, "MAMAKE")
-            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_USERNAME, "MAMAKE")
-            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_PASSWORD, "MAMAKE")
-            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_DISTRICT, "MAMAKE")
-            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_SUB_COUNTY, "MAMAKE")
-            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_PARISH, "MAMAKE")
-            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_VILLAGE, "MAMAKE")
-            ActivityUtils.startActivityAndCloseAllOthers(this, MainMenuActivity::class.java)
-            /*
             if (loginDetails != null) {
                 if(loginDetails.message == null || loginDetails.message.isEmpty()) {
+                    projectsRepository.save(Project.PROJECT)
+                    currentProjectProvider.setCurrentProject(Project.PROJECT_ID)
+
                     settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_METADATA_USERNAME, loginDetails.name)
                     settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_METADATA_PHONENUMBER, loginDetails.phone)
                     settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_METADATA_EMAIL, loginDetails.email)
@@ -202,8 +192,6 @@ class FirstLaunchActivity : LocalizedActivity(), LoginTaskListener, LoginDialogF
                     createAlertDialog(dialogTitle, loginDetails.message, DO_NOT_EXIT)
                 }
             }
-
-             */
         } else {
             val dialogMessage = LoginSourceExceptionMapper(this).getMessage(exception)
             val dialogTitle = getString(R.string.login_error)

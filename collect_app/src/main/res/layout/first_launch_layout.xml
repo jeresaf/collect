@@ -30,7 +30,7 @@
                 android:layout_marginTop="@dimen/margin_standard"
                 android:adjustViewBounds="true"
                 android:contentDescription="@string/collect_app_name"
-                android:src="@drawable/odk_logo"
+                android:src="@drawable/insights"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintHorizontal_bias="0.5"
                 app:layout_constraintStart_toStartOf="parent"

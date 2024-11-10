@@ -14,7 +14,7 @@ import org.odk.collect.android.storage.StorageSubdirectory
 import org.odk.collect.android.support.StorageUtils
 import org.odk.collect.android.support.pages.FormEntryPage
 import org.odk.collect.projects.Project
-import org.odk.collect.projects.Project.Companion.DEMO_PROJECT
+import org.odk.collect.projects.Project.Companion.PROJECT
 import timber.log.Timber
 import java.io.IOException
 
@@ -48,8 +48,8 @@ class BlankFormTestRule @JvmOverloads constructor(
             // Set up demo project
             val component =
                 DaggerUtils.getComponent(ApplicationProvider.getApplicationContext<Application>())
-            component.projectsRepository().save(DEMO_PROJECT)
-            component.currentProjectProvider().setCurrentProject(Project.DEMO_PROJECT_ID)
+            component.projectsRepository().save(PROJECT)
+            component.currentProjectProvider().setCurrentProject(Project.PROJECT_ID)
             StorageUtils.copyFormToDemoProject(formFilename, mediaFilePaths, true)
         } catch (e: IOException) {
             throw RuntimeException(e)

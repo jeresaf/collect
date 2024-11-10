@@ -57,8 +57,8 @@ class FormEntryActivityTestRule : ExternalResource() {
             // Set up demo project
             val component =
                 DaggerUtils.getComponent(ApplicationProvider.getApplicationContext<Application>())
-            component.projectsRepository().save(Project.DEMO_PROJECT)
-            component.currentProjectProvider().setCurrentProject(Project.DEMO_PROJECT_ID)
+            component.projectsRepository().save(Project.PROJECT)
+            component.currentProjectProvider().setCurrentProject(Project.PROJECT_ID)
             StorageUtils.copyFormToDemoProject(formFilename, null, true)
         } catch (e: IOException) {
             throw RuntimeException(e)

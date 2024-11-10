@@ -27,10 +27,10 @@ sealed class Project {
     }
 
     companion object {
-        const val PROJECT_ID = "INSIGHTS"
-        const val PROJECT_NAME = "Insights"
-        const val PROJECT_ICON = "I"
-        const val PROJECT_COLOR = "#0d81d4"
+        const val PROJECT_ID = "PMT"
+        const val PROJECT_NAME = "PMT"
+        const val PROJECT_ICON = "P"
+        const val PROJECT_COLOR = "#feca28"
 
         val PROJECT = Saved(PROJECT_ID, PROJECT_NAME, PROJECT_ICON, PROJECT_COLOR)
     }

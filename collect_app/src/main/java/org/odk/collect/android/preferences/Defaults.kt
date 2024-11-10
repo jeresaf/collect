@@ -14,7 +14,7 @@ object Defaults {
         get() {
             val hashMap = HashMap<String, Any>()
             // odk_server_preferences.xml
-            hashMap[ProjectKeys.KEY_SERVER_URL] = "https://deronltd.com/pmt"
+            hashMap[ProjectKeys.KEY_SERVER_URL] = "10.255.4.173:443"
             hashMap[ProjectKeys.KEY_USERNAME] = ""
             hashMap[ProjectKeys.KEY_PASSWORD] = ""
             // form_management_preferences.xml

@@ -290,11 +290,11 @@ public class ODKView extends SwipeHandler.View implements OnLongClickListener, W
 
         widgets.add(index, qw);
 
-        int indexAccountingForDividers = index * 2;
+        int indexAccountingForDividers = (index * 2) + 1;
         if (index > 0) {
             widgetsList.addView(getDividerView(), indexAccountingForDividers - 1);
         }
-
+        Timber.e("Final Index: %d", indexAccountingForDividers);
         widgetsList.addView(qw, indexAccountingForDividers, layout);
     }
 

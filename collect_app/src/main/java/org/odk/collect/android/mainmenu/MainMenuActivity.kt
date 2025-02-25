@@ -176,7 +176,7 @@ class MainMenuActivity : LocalizedActivity() {
             return true
         }
         if (item.itemId == R.id.projects) {
-            showIfNotShowing(ProjectSettingsDialog::class.java, supportFragmentManager)
+            //showIfNotShowing(ProjectSettingsDialog::class.java, supportFragmentManager)
             return true
         }
         return super.onOptionsItemSelected(item)
@@ -291,15 +291,17 @@ class MainMenuActivity : LocalizedActivity() {
         val parish = settingsProvider.getUnprotectedSettings().getString(KEY_PARISH)
         val village = settingsProvider.getUnprotectedSettings().getString(KEY_VILLAGE)
 
-        if(district.isNullOrBlank() || sub_county.isNullOrBlank() || parish.isNullOrBlank()) {
+        if(district.isNullOrBlank() || sub_county.isNullOrBlank()) {
             binding.userUnits.visibility = View.GONE
         } else {
             val stringBuilder = StringBuilder()
             stringBuilder.append(district)
             stringBuilder.append(" - ")
             stringBuilder.append(sub_county)
-            stringBuilder.append(" - ")
-            stringBuilder.append(parish)
+            if (!parish.isNullOrBlank()) {
+                stringBuilder.append(" - ")
+                stringBuilder.append(parish)
+            }
             if (!village.isNullOrBlank()) {
                 stringBuilder.append(" - ")
                 stringBuilder.append(village)

@@ -196,7 +196,7 @@ class FirstLaunchActivity : LocalizedActivity(), LoginTaskListener, LoginDialogF
             val dialogMessage = LoginSourceExceptionMapper(this).getMessage(exception)
             val dialogTitle = getString(R.string.login_error)
             createAlertDialog(dialogTitle, dialogMessage, DO_NOT_EXIT)
-            Timber.e("%s", exception.message)
+            Timber.e("%s", exception.stackTraceToString())
         }
     }
 

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<merge xmlns:android="http://schemas.android.com/apk/res/android">
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <include layout="@layout/app_bar_layout" />
 
@@ -12,4 +13,20 @@
         android:layout_marginTop="-7dp"
         android:indeterminate="true"
         android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/progressText"
+        android:textAppearance="?textAppearanceBody1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:textColor="@color/color_on_surface_medium_emphasis"
+        tools:text=""
+        android:background="@drawable/borderbottom"
+        android:layout_marginTop="-7dp"
+        android:textStyle="bold"
+        android:layout_below="@+id/progressBar"
+        android:visibility="gone"/>
+
+
 </merge>

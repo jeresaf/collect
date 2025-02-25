@@ -49,6 +49,10 @@ public class FormEntryViewModel extends ViewModel implements SelectChoiceLoader 
     private final MutableLiveData<ValidationResult> validationResult = new MutableLiveData<>(null);
 
     private final MutableLiveData<Integer> formProgress = new MutableLiveData<>(0);
+    private final MutableLiveData<Boolean> formProgressVisible = new MutableLiveData<>(false);
+
+    private final MutableLiveData<String> formProgressText = new MutableLiveData<>("");
+
     @NonNull
     private final FormSessionRepository formSessionRepository;
     private final String sessionId;
@@ -97,6 +101,14 @@ public class FormEntryViewModel extends ViewModel implements SelectChoiceLoader 
 
     public LiveData<Integer> getFormProgress() {
         return formProgress;
+    }
+
+    public MutableLiveData<Boolean> getFormProgressVisible() {
+        return formProgressVisible;
+    }
+
+    public MutableLiveData<String> getFormProgressText() {
+        return formProgressText;
     }
 
     public LiveData<FormError> getError() {
@@ -292,7 +304,7 @@ public class FormEntryViewModel extends ViewModel implements SelectChoiceLoader 
 
     public void refresh() {
         currentIndex.setValue(formController.getFormIndex());
-        calculateFormProgress();
+        calculateFormProgress(formController.getFormIndex());
     }
 
     public void exit() {
@@ -322,21 +334,30 @@ public class FormEntryViewModel extends ViewModel implements SelectChoiceLoader 
         );
     }
 
-    public void calculateFormProgress() {
+    public void calculateFormProgress(FormIndex formIndex) {
         isLoading.setValue(true);
         scheduler.immediate(
                 () -> {
-                    int progress = -1;
+                    FormEntryTracker fet = new FormEntryTracker(formController.getFormDef());
+                    ProgressTracker progressTracker = null;
                     try {
-                        progress = (new FormEntryTracker(formController.getFormDef())).getCompletionPercentage();
+                        boolean isVisible = fet.getProgressBarVisibility(formIndex);
+                        int[] progressArray = fet.getCompletionPercentage();
+                        int qns = progressArray[0];
+                        int ans = progressArray[1];
+                        int progress = progressArray[2];
+                        String progressText = ans + "/" + qns;
+                        progressTracker = new ProgressTracker(progressText, isVisible, progress);
                     } catch (Exception e) {
                         error.postValue(new NonFatal(e.getMessage()));
                     }
-                    return progress;
-                }, progress -> {
+                    return progressTracker;
+                }, progressTracker -> {
                     isLoading.setValue(false);
-                    if (progress > 0) {
-                        formProgress.setValue(progress);
+                    if (progressTracker != null) {
+                        formProgress.setValue(progressTracker.getProgress());
+                        formProgressText.setValue(progressTracker.getProgressText());
+                        formProgressVisible.setValue(progressTracker.isProgressIsVisible());
                     }
                 }
         );
@@ -344,6 +365,31 @@ public class FormEntryViewModel extends ViewModel implements SelectChoiceLoader 
 
     public abstract static class FormError {
 
+    }
+
+    public static class ProgressTracker {
+
+        private final String progressText;
+        private final boolean progressIsVisible;
+        private final int progress;
+
+        public ProgressTracker(String progressText, boolean progressIsVisible, int progress) {
+            this.progressText = progressText;
+            this.progressIsVisible = progressIsVisible;
+            this.progress = progress;
+        }
+
+        public String getProgressText() {
+            return progressText;
+        }
+
+        public boolean isProgressIsVisible() {
+            return progressIsVisible;
+        }
+
+        public int getProgress() {
+            return progress;
+        }
     }
 
     public static class NonFatal extends FormError {

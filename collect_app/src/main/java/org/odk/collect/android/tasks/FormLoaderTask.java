@@ -29,6 +29,7 @@ import com.opencsv.exceptions.CsvValidationException;
 
 import org.javarosa.core.model.FormDef;
 import org.javarosa.core.model.FormIndex;
+import org.javarosa.core.model.IFormElement;
 import org.javarosa.core.model.instance.InstanceInitializationFactory;
 import org.javarosa.core.model.instance.TreeElement;
 import org.javarosa.core.model.instance.TreeReference;
@@ -61,6 +62,7 @@ import java.io.FileFilter;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -231,6 +233,9 @@ public class FormLoaderTask extends AsyncTask<String, String, FormLoaderTask.FEC
 
         final FormDef formDefFromCache = FormDefCache.readCache(formXml);
         if (formDefFromCache != null) {
+            List<IFormElement> elems = formDefFromCache.getChildren();
+            String qns = getQuestions(elems);
+            Timber.e("Questions in form def: %s", qns);
             return formDefFromCache;
         }
 
@@ -253,10 +258,26 @@ public class FormLoaderTask extends AsyncTask<String, String, FormLoaderTask.FEC
                 Timber.e(e);
             }
 
+            List<IFormElement> elems = formDefFromXml.getChildren();
+            String qns = getQuestions(elems);
+            Timber.e("Questions in form def: %s", qns);
+
             return formDefFromXml;
         }
 
         return null;
+    }
+
+    private String getQuestions(List<IFormElement> elems) {
+        StringBuilder qns = new StringBuilder();
+        for (IFormElement elem : elems) {
+            qns.append(elem.getLabelInnerText());
+            qns.append("  ::::::  ");
+            if(elem.getChildren() != null && !elem.getChildren().isEmpty()) {
+                qns.append(getQuestions(elem.getChildren()));
+            }
+        }
+        return qns.toString();
     }
 
     private void processItemSets(File formMediaDir) {

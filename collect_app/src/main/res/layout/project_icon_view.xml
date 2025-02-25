@@ -6,6 +6,6 @@
     android:background="@drawable/project_icon_background"
     android:textAppearance="@style/TextAppearance.Collect.Subtitle1"
     android:layout_marginVertical="@dimen/margin_small"
-    android:textColor="@android:color/white"
+    android:textColor="@android:color/black"
     android:textAllCaps="true"
     android:gravity="center" />

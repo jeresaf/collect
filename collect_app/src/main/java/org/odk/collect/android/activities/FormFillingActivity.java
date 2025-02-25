@@ -394,6 +394,7 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
     private String sessionId;
 
     private ProgressBar progressBar;
+    private TextView progressText;
 
     /**
      * Called when the activity is first created.
@@ -456,9 +457,10 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
         setContentView(R.layout.form_entry);
 
         progressBar = this.findViewById(R.id.progressBar);
-        progressBar.setVisibility(View.VISIBLE);
         progressBar.setIndeterminate(false);
         progressBar.setMax(100);
+
+        progressText = this.findViewById(R.id.progressText);
 
         setupViewModels(viewModelFactory);
 
@@ -545,6 +547,19 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
         formEntryViewModel.getFormProgress().observe(this, progress -> {
             Timber.e("Setting progress: %d", progress);
             progressBar.setProgress(progress);
+        });
+
+        formEntryViewModel.getFormProgressVisible().observe(this, isVisible -> {
+            Timber.e("Progress is visible: %b", isVisible);
+            if(isVisible) {
+                progressBar.setVisibility(View.VISIBLE);
+                progressText.setVisibility(View.VISIBLE);
+            }
+        });
+
+        formEntryViewModel.getFormProgressText().observe(this, progressTextStr -> {
+            Timber.e("Setting progress text: %s", progressTextStr);
+            progressText.setText( progressTextStr);
         });
 
         formEntryViewModel.isLoading().observe(this, isLoading -> {
@@ -1146,6 +1161,14 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
         return null;
     }
 
+    private String getAllPrompts(FormEntryPrompt[] prompts) {
+        StringBuilder questions = new StringBuilder();
+        for (FormEntryPrompt prompt : prompts) {
+            questions.append(prompt.getQuestionText()).append("(").append(prompt.getIndex().toString()).append(")").append(" ::::: ");
+        }
+        return questions.toString();
+    }
+
     /**
      * Creates and returns a new view based on the event type passed in. The view returned is
      * of type {@link View} if the event passed in represents the end of the form or of type
@@ -1187,7 +1210,7 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
                     odkView.setWidgetValueChangedListener(this);
                     Timber.i("Created view for group %s %s",
                             groups.length > 0 ? groups[groups.length - 1].getLongText() : "[top]",
-                            prompts.length > 0 ? prompts[0].getQuestionText() : "[no question]");
+                            prompts.length > 0 ? getAllPrompts(prompts) : "[no question]");
 
                     String group_header = ODKView.getGroupsPath(groups).toString();
 
@@ -2537,9 +2560,13 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
             immutableQuestionsBeforeSave.add(new ImmutableDisplayableQuestion(questionBeforeSave));
         }
 
+        Timber.e("Questions before save: %s", getAllPrompts(questionsBeforeSave));
+
         saveAnswersForFieldList(questionsBeforeSave, immutableQuestionsBeforeSave);
 
         FormEntryPrompt[] questionsAfterSave = getFormController().getQuestionPrompts();
+
+        Timber.e("Questions after save: %s", getAllPrompts(questionsAfterSave));
 
         Map<FormIndex, FormEntryPrompt> questionsAfterSaveByIndex = new HashMap<>();
         for (FormEntryPrompt question : questionsAfterSave) {
@@ -2579,6 +2606,7 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
                     && !questionsAfterSave[i].getIndex().equals(lastChangedIndex)) {
                 // The values of widgets in intent groups are set by the view so widgetValueChanged
                 // is never called. This means readOnlyOverride can always be set to false.
+                Timber.e("Question: %s, Index: %d", questionsAfterSave[i].getLongText(), i);
                 odkView.addWidgetForQuestion(questionsAfterSave[i], i);
             }
         }

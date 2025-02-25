@@ -123,7 +123,8 @@ private fun serverFormsDetailsFetcher(
     return ServerFormsDetailsFetcher(
         projectDependencyProvider.formsRepository,
         projectDependencyProvider.formSource,
-        diskFormsSynchronizer
+        diskFormsSynchronizer,
+        projectDependencyProvider.settingsProvider
     )
 }
 

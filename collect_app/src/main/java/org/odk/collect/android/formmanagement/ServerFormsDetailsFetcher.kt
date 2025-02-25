@@ -24,9 +24,12 @@ import org.odk.collect.forms.FormSourceException
 import org.odk.collect.forms.FormsRepository
 import org.odk.collect.forms.ManifestFile
 import org.odk.collect.forms.MediaFile
+import org.odk.collect.settings.SettingsProvider
+import org.odk.collect.settings.keys.ProjectKeys.KEY_METADATA_PHONENUMBER
 import org.odk.collect.shared.strings.Md5.getMd5Hash
 import timber.log.Timber
 import java.io.File
+import javax.inject.Inject
 
 /**
  * Open to allow mocking (used in existing Java tests)
@@ -34,7 +37,8 @@ import java.io.File
 open class ServerFormsDetailsFetcher(
     private val formsRepository: FormsRepository,
     private val formSource: FormSource,
-    private val diskFormsSynchronizer: DiskFormsSynchronizer
+    private val diskFormsSynchronizer: DiskFormsSynchronizer,
+    private val settingsProvider: SettingsProvider
 ) {
     open fun updateUrl(url: String) {
         (formSource as OpenRosaFormSource).updateUrl(url)
@@ -100,7 +104,8 @@ open class ServerFormsDetailsFetcher(
 
     private fun getManifestFile(formSource: FormSource, manifestUrl: String): ManifestFile? {
         return try {
-            formSource.fetchManifest(manifestUrl)
+            val url = if (!manifestUrl.isEmpty()) manifestUrl + '/' + settingsProvider.getUnprotectedSettings().getString(KEY_METADATA_PHONENUMBER) else manifestUrl
+            formSource.fetchManifest(url)
         } catch (formSourceException: FormSourceException) {
             Timber.w(formSourceException)
             null
@@ -130,8 +135,14 @@ open class ServerFormsDetailsFetcher(
             return true
         }
 
+        // TODO Forced bug fix on media file downloading
+
+        return false;
+
+        /*
         return localMediaFiles.any {
             newMediaFile.hash == getMd5Hash(it)
         }
+         */
     }
 }

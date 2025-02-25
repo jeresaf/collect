@@ -6,18 +6,13 @@ import org.kxml2.kdom.Document;
 import org.kxml2.kdom.Element;
 //import org.odk.collect.android.login.AdminUnitDetails;
 import org.odk.collect.android.login.LoginDetails;
-import org.odk.collect.forms.FormListItem;
-import org.odk.collect.forms.MediaFile;
-
-import java.util.ArrayList;
-import java.util.List;
 
 import timber.log.Timber;
 
 public class OpenRosaUserResponseParserImpl implements OpenRosaUserResponseParser {
 
-    private static final String NAMESPACE_DERON_COM_LOGIN = "http://deronltd.com/login";
-    private static final String NAMESPACE_DERON_COM_ADMIN_UNITS = "http://deronltd.com/adminUnits";
+    private static final String NAMESPACE_PMT_COM_LOGIN = "https://mev.pdmis.go.ug/pmt/users";
+    private static final String NAMESPACE_PMT_COM_ADMIN_UNITS = "https://mev.pdmis.go.ug/pmt/adminUnits";
 
     //Serious issue here with the response namespace
     private static final String NAMESPACE_OPENROSA_ORG_XFORMS_XFORMS_LIST = "http://openrosa.org/xforms/xformsList";
@@ -118,6 +113,7 @@ public class OpenRosaUserResponseParserImpl implements OpenRosaUserResponseParse
                         continue;
                     }
                     String tag = child.getName();
+                    Timber.e("Tag: %s", tag);
                     switch (tag) {
                         case "userID":
                             user_id = Integer.parseInt(XFormParser.getXMLText(child, true));
@@ -193,7 +189,8 @@ public class OpenRosaUserResponseParserImpl implements OpenRosaUserResponseParse
                             break;
                     }
                 }
-
+                Timber.e("Login details: user id - %s, username - %s, phone - %s, email - %s, full name - %s, token - %s, api username - %s, api password - %s, District - %s,Sub county - %s, Parish - %s, Village - %s", user_id, user_name, phone, email, full_name, token,
+                        api_username, api_password, district, sub_county, parish, village);
                 loginDetails = new LoginDetails(user_id, user_name, phone, email, full_name, token,
                         api_username, api_password, district, sub_county, parish, village, "");
             }
@@ -325,7 +322,7 @@ public class OpenRosaUserResponseParserImpl implements OpenRosaUserResponseParse
      */
 
     private static boolean isLoginNamespacedElement(Element e) {
-        return e.getNamespace().equalsIgnoreCase(NAMESPACE_DERON_COM_LOGIN);
+        return e.getNamespace().equalsIgnoreCase(NAMESPACE_PMT_COM_LOGIN);
     }
 
     /*

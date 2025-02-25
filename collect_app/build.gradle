@@ -75,8 +75,8 @@ android {
         applicationId('com.uginsights.collect.android')
         minSdkVersion Versions.android_min_sdk
         targetSdkVersion Versions.android_target_sdk
-        versionCode 101
-        versionName "1.0.1"
+        versionCode 107
+        versionName "1.0.7"
         testInstrumentationRunner('androidx.test.runner.AndroidJUnitRunner')
         multiDexEnabled true
         vectorDrawables.useSupportLibrary = true

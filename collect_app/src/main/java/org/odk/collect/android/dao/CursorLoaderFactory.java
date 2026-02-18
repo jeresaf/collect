@@ -5,10 +5,15 @@ import android.net.Uri;
 import androidx.loader.content.CursorLoader;
 
 import org.odk.collect.android.application.Collect;
+import org.odk.collect.android.database.entries.DatabaseEntryColumns;
 import org.odk.collect.android.database.instances.DatabaseInstanceColumns;
+import org.odk.collect.android.external.EntriesContract;
 import org.odk.collect.android.external.InstancesContract;
 import org.odk.collect.android.projects.CurrentProjectProvider;
+import org.odk.collect.forms.entries.Entry;
 import org.odk.collect.forms.instances.Instance;
+
+import timber.log.Timber;
 
 @Deprecated
 public class CursorLoaderFactory {
@@ -136,6 +141,39 @@ public class CursorLoaderFactory {
 
     private CursorLoader getInstancesCursorLoader(String selection, String[] selectionArgs, String sortOrder) {
         Uri uri = InstancesContract.getUri(currentProjectProvider.getCurrentProject().getUuid());
+
+        return new CursorLoader(
+                Collect.getInstance(),
+                getUriWithAnalyticsParam(uri),
+                null,
+                selection,
+                selectionArgs,
+                sortOrder);
+    }
+
+    public CursorLoader createEntriesCursorLoader(CharSequence charSequence, String sortOrder) {
+        CursorLoader cursorLoader;
+        if (charSequence.length() == 0) {
+            String selection = DatabaseEntryColumns.STATUS + " =? ";
+            String[] selectionArgs = {Entry.STATUS_INCOMPLETE};
+
+            cursorLoader = getEntriesCursorLoader(selection, selectionArgs, sortOrder);
+        } else {
+            String selection = DatabaseEntryColumns.STATUS + " =? " +
+                    "and " + DatabaseEntryColumns.DISPLAY_NAME + " LIKE ?";
+            String[] selectionArgs = {
+                    Entry.STATUS_INCOMPLETE,
+                    "%" + charSequence + "%"
+            };
+
+            cursorLoader = getEntriesCursorLoader(selection, selectionArgs, sortOrder);
+        }
+
+        return cursorLoader;
+    }
+
+    private CursorLoader getEntriesCursorLoader(String selection, String[] selectionArgs, String sortOrder) {
+        Uri uri = EntriesContract.getUri(currentProjectProvider.getCurrentProject().getUuid());
 
         return new CursorLoader(
                 Collect.getInstance(),

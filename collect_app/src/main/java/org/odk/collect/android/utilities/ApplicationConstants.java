@@ -28,6 +28,8 @@ public class ApplicationConstants {
         public static final String FORM_MODE = "formMode";
         public static final String SUCCESS_KEY = "SUCCESSFUL";
         public static final String FORM_IDS = "FORM_IDS";
+        public static final String ENTRY_IDS = "ENTRY_IDS";
+        public static final String INSTANCE_IDS = "INSTANCE_IDS";
         public static final String MESSAGE = "MESSAGE";
         public static final String USERNAME = "USERNAME";
         public static final String PASSWORD = "PASSWORD";

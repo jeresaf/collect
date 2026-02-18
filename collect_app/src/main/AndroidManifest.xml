@@ -131,10 +131,12 @@ the specific language governing permissions and limitations under the License.
             android:configChanges="orientation|screenSize"
             android:windowSoftInputMode="stateHidden" />
         <activity android:name=".activities.InstanceChooserList" />
+        <activity android:name=".activities.EntryChooserList" />
         <activity
             android:name=".formlists.blankformlist.BlankFormListActivity"
             android:launchMode="singleTop" />
         <activity android:name=".activities.FormDownloadListActivity" />
+        <activity android:name=".activities.EntryDownloadListActivity" />
         <activity android:name=".activities.DeleteSavedFormActivity" />
         <activity
             android:name=".gdrive.GoogleSheetsUploaderActivity"
@@ -223,11 +225,15 @@ the specific language governing permissions and limitations under the License.
 
         <provider
             android:name=".external.FormsProvider"
-            android:authorities="com.uginsights.collect.android.provider.odk.forms"
+            android:authorities="com.uboscis.collect.android.provider.odk.forms"
             android:exported="true" />
         <provider
             android:name=".external.InstanceProvider"
-            android:authorities="com.uginsights.collect.android.provider.odk.instances"
+            android:authorities="com.uboscis.collect.android.provider.odk.instances"
+            android:exported="true" />
+        <provider
+            android:name=".external.EntryProvider"
+            android:authorities="com.uboscis.collect.android.provider.odk.entries"
             android:exported="true" />
 
         <activity-alias

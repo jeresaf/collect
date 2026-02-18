@@ -7,8 +7,9 @@ OR CONDITIONS OF ANY KIND, either express or implied. See the License for
 the specific language governing permissions and limitations under the License. -->
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- strings that should not be translated -->
-    <string name="collect_app_name" translatable="false">PDM Monitoring</string>
-    <string name="app_url" translatable="false">https://mev.pdmis.go.ug/pmt</string>
+    <string name="collect_app_name" translatable="false">Local Government Statistics App</string>
+    <!--<string name="app_url" translatable="false">https://registration.pdmis.go.ug/community</string>-->
+    <string name="app_url" translatable="false">http://192.168.1.66/collect</string>
     <string name="forum_url" translatable="false">"https://community.kobotoolbox.org"</string>
     <string name="never_value" translatable="false">never</string>
     <string name="every_fifteen_minutes_value" translatable="false">every_fifteen_minutes</string>
@@ -45,4 +46,6 @@ the specific language governing permissions and limitations under the License. -
     <string name="login_error" translatable="false">Login failed</string>
     <string name="auth_error" translatable="false">Not authorized to access this service</string>
     <string name="skip_remove" translatable="false">Skip/Remove</string>
+    <string name="logout" translatable="false">Logout</string>
+    <string name="cannot_logout_title" translatable="false">Logout failed</string>
 </resources>

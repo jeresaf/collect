@@ -15,6 +15,8 @@ import org.odk.collect.android.R
 import org.odk.collect.android.activities.ActivityUtils
 import org.odk.collect.android.activities.CrashHandlerActivity
 import org.odk.collect.android.activities.DeleteSavedFormActivity
+import org.odk.collect.android.activities.EntryChooserList
+import org.odk.collect.android.activities.EntryDownloadListActivity
 import org.odk.collect.android.activities.FirstLaunchActivity
 import org.odk.collect.android.activities.FormDownloadListActivity
 import org.odk.collect.android.activities.InstanceChooserList
@@ -176,7 +178,7 @@ class MainMenuActivity : LocalizedActivity() {
             return true
         }
         if (item.itemId == R.id.projects) {
-            //showIfNotShowing(ProjectSettingsDialog::class.java, supportFragmentManager)
+            showIfNotShowing(ProjectSettingsDialog::class.java, supportFragmentManager)
             return true
         }
         return super.onOptionsItemSelected(item)
@@ -271,6 +273,15 @@ class MainMenuActivity : LocalizedActivity() {
             startActivity(Intent(this, DeleteSavedFormActivity::class.java))
         }
 
+        binding.entriesWithIssues.setOnClickListener {
+            formEntryFlowLauncher.launch(
+                Intent(this, EntryChooserList::class.java))
+        }
+
+        binding.getSubmissionsWithIssues.setOnClickListener {
+            startActivity(Intent(this, EntryDownloadListActivity::class.java))
+        }
+
         mainMenuViewModel.sendableInstancesCount.observe(this) { finalized: Int ->
             binding.sendData.setNumberOfForms(finalized)
         }
@@ -291,13 +302,15 @@ class MainMenuActivity : LocalizedActivity() {
         val parish = settingsProvider.getUnprotectedSettings().getString(KEY_PARISH)
         val village = settingsProvider.getUnprotectedSettings().getString(KEY_VILLAGE)
 
-        if(district.isNullOrBlank() || sub_county.isNullOrBlank()) {
+        if(district.isNullOrBlank()) {
             binding.userUnits.visibility = View.GONE
         } else {
             val stringBuilder = StringBuilder()
             stringBuilder.append(district)
-            stringBuilder.append(" - ")
-            stringBuilder.append(sub_county)
+            if(!sub_county.isNullOrBlank()) {
+                stringBuilder.append(" - ")
+                stringBuilder.append(sub_county)
+            }
             if (!parish.isNullOrBlank()) {
                 stringBuilder.append(" - ")
                 stringBuilder.append(parish)

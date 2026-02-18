@@ -93,11 +93,11 @@ public final class CollectHelpers {
     public static String setupDemoProject() {
         createDemoProject();
         DaggerUtils.getComponent(ApplicationProvider.<Application>getApplicationContext()).currentProjectProvider().setCurrentProject(Project.DEMO_PROJECT_ID);
-        return Project.DEMO_PROJECT_ID;
+        return Project.PROJECT_ID;
     }
 
     public static String createDemoProject() {
-        return createProject(Project.Companion.getDEMO_PROJECT());
+        return createProject(Project.Companion.getPROJECT());
     }
 
     public static String createProject(Project project) {

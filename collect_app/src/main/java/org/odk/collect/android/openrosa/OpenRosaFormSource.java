@@ -11,6 +11,7 @@ import org.odk.collect.forms.FormSource;
 import org.odk.collect.forms.FormSourceException;
 import org.odk.collect.forms.ManifestFile;
 import org.odk.collect.forms.MediaFile;
+import org.odk.collect.forms.entries.EntryListItem;
 
 import java.io.InputStream;
 import java.net.HttpURLConnection;

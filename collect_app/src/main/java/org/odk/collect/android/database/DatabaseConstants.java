@@ -12,6 +12,11 @@ public final class DatabaseConstants {
     // Please always test upgrades manually when you change this value
     public static final int INSTANCES_DATABASE_VERSION = 6;
 
+    public static final String ENTRIES_DATABASE_NAME = "entries.db";
+    public static final String ENTRIES_TABLE_NAME = "entries";
+    // Please always test upgrades manually when you change this value
+    public static final int ENTRIES_DATABASE_VERSION = 1;
+
     private DatabaseConstants() {
 
     }

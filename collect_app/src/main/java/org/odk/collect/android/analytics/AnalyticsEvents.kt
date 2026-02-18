@@ -135,6 +135,14 @@ object AnalyticsEvents {
 
     const val INSTANCE_PROVIDER_DELETE = "InstanceProviderDelete"
 
+    const val ENTRY_PROVIDER_QUERY = "EntryProviderQuery"
+
+    const val ENTRY_PROVIDER_INSERT = "EntryProviderInsert"
+
+    const val ENTRY_PROVIDER_UPDATE = "EntryProviderUpdate"
+
+    const val ENTRY_PROVIDER_DELETE = "EntryProviderDelete"
+
     /**
      * Tracks how often "cellular_only" option is used in auto send
      */

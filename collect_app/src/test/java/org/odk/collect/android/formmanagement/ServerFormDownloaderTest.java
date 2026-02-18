@@ -30,6 +30,7 @@ import org.odk.collect.forms.FormSourceException;
 import org.odk.collect.forms.FormsRepository;
 import org.odk.collect.forms.ManifestFile;
 import org.odk.collect.forms.MediaFile;
+import org.odk.collect.forms.entries.EntryListItem;
 import org.odk.collect.formstest.FormUtils;
 import org.odk.collect.formstest.InMemFormsRepository;
 import org.odk.collect.shared.strings.Md5;

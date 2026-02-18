@@ -11,8 +11,11 @@ import timber.log.Timber;
 
 public class OpenRosaUserResponseParserImpl implements OpenRosaUserResponseParser {
 
-    private static final String NAMESPACE_PMT_COM_LOGIN = "https://mev.pdmis.go.ug/pmt/users";
-    private static final String NAMESPACE_PMT_COM_ADMIN_UNITS = "https://mev.pdmis.go.ug/pmt/adminUnits";
+    //private static final String NAMESPACE_UBOS_COM_LOGIN = "https://registration.pdmis.go.ug/community/users";
+    //private static final String NAMESPACE_UBOS_COM_ADMIN_UNITS = "https://registration.pdmis.go.ug/community/adminUnits";
+
+    private static final String NAMESPACE_UBOS_COM_LOGIN = "http://192.168.1.66/collect/users";
+    private static final String NAMESPACE_UBOS_COM_ADMIN_UNITS = "http://192.168.1.66/collect/adminUnits";
 
     //Serious issue here with the response namespace
     private static final String NAMESPACE_OPENROSA_ORG_XFORMS_XFORMS_LIST = "http://openrosa.org/xforms/xformsList";
@@ -322,7 +325,7 @@ public class OpenRosaUserResponseParserImpl implements OpenRosaUserResponseParse
      */
 
     private static boolean isLoginNamespacedElement(Element e) {
-        return e.getNamespace().equalsIgnoreCase(NAMESPACE_PMT_COM_LOGIN);
+        return e.getNamespace().equalsIgnoreCase(NAMESPACE_UBOS_COM_LOGIN);
     }
 
     /*

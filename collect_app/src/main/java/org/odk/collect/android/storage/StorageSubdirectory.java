@@ -2,6 +2,7 @@ package org.odk.collect.android.storage;
 
 public enum StorageSubdirectory {
     FORMS("forms"),
+    ENTRIES("entries"),
     INSTANCES("instances"),
     CACHE(".cache"),
     METADATA("metadata"),

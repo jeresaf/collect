@@ -81,7 +81,7 @@ object ToastUtils {
     private fun showToastInMiddle(
         activity: Activity,
         message: String,
-        duration: Int = Toast.LENGTH_SHORT
+        duration: Int = Toast.LENGTH_LONG
     ) {
         if (Build.VERSION.SDK_INT < 30) {
             hideLastToast()

@@ -72,11 +72,11 @@ android {
     }
 
     defaultConfig {
-        applicationId('com.uginsights.collect.android')
+        applicationId('com.uboscis.collect.android')
         minSdkVersion Versions.android_min_sdk
         targetSdkVersion Versions.android_target_sdk
-        versionCode 107
-        versionName "1.0.7"
+        versionCode 201
+        versionName "2.0.1"
         testInstrumentationRunner('androidx.test.runner.AndroidJUnitRunner')
         multiDexEnabled true
         vectorDrawables.useSupportLibrary = true

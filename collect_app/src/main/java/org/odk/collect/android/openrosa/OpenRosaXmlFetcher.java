@@ -87,10 +87,12 @@ class OpenRosaXmlFetcher {
     @NonNull
     public HttpGetResult fetch(@NonNull String downloadUrl, @Nullable final String contentType) throws Exception {
         URI uri;
+        Timber.e("fetch before fetch url for xml: %s", downloadUrl);
         try {
             // assume the downloadUrl is escaped properly
             URL url = new URL(downloadUrl);
             uri = url.toURI();
+            Timber.e("fetch after encode url for xml: %s", downloadUrl);
         } catch (MalformedURLException | URISyntaxException e) {
             Timber.e(e, "Unable to get a URI for download URL : %s  due to %s : ", downloadUrl, e.getMessage());
             throw e;

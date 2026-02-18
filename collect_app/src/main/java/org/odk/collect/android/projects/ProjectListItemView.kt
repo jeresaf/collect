@@ -28,7 +28,8 @@ class ProjectListItemView(context: Context, attrs: AttributeSet?) : FrameLayout(
         val username = if (generalSettings.getString(ProjectKeys.KEY_PROTOCOL).equals(ProjectKeys.PROTOCOL_GOOGLE_SHEETS)) {
             generalSettings.getString(ProjectKeys.KEY_SELECTED_GOOGLE_ACCOUNT) ?: ""
         } else {
-            generalSettings.getString(ProjectKeys.KEY_USERNAME) ?: ""
+            //generalSettings.getString(ProjectKeys.KEY_USERNAME) ?: ""
+            ""
         }
 
         val connectedTo = if (generalSettings.getString(ProjectKeys.KEY_PROTOCOL).equals(ProjectKeys.PROTOCOL_GOOGLE_SHEETS)) {

@@ -5,6 +5,7 @@ import org.kxml2.kdom.Document
 import org.kxml2.kdom.Element
 import org.odk.collect.forms.FormListItem
 import org.odk.collect.forms.MediaFile
+import org.odk.collect.forms.entries.EntryListItem
 import org.odk.collect.shared.strings.StringUtils.isBlank
 
 class OpenRosaResponseParserImpl : OpenRosaResponseParser {
@@ -122,6 +123,158 @@ class OpenRosaResponseParserImpl : OpenRosaResponseParser {
         }
 
         return formList
+    }
+
+    override fun parseEntryList(document: Document): List<EntryListItem>? {
+        // Attempt OpenRosa 1.0 parsing
+        val xformsElement = try {
+            document.rootElement
+        } catch (e: RuntimeException) {
+            return null
+        }
+
+        if (xformsElement.name != "xforms") {
+            return null
+        }
+
+        if (!isXformsListNamespacedElement(xformsElement)) {
+            return null
+        }
+
+        val entryListItems: MutableList<EntryListItem> = ArrayList()
+        val elements = xformsElement.childCount
+        for (i in 0 until elements) {
+            if (xformsElement.getType(i) != Element.ELEMENT) {
+                // e.g., whitespace (text)
+                continue
+            }
+
+            val xformElement = xformsElement.getElement(i)
+            if (!isXformsListNamespacedElement(xformElement)) {
+                // someone else's extension?
+                continue
+            }
+
+            val xformName = xformElement.name
+            if (!xformName.equals("xform", ignoreCase = true)) {
+                // someone else's extension?
+                continue
+            }
+
+            // this is something we know how to interpret
+            var name: String? = null
+            var formType: String? = null
+            var issue: String? = null
+            var start: String? = null
+            var end: String? = null
+            var date: String? = null
+            var deviceId: String? = null
+            var instanceId: String? = null
+            var downloadUrl: String? = null
+            var hash: String? = null
+            var formId: String? = null
+            var version: String? = null
+
+            val fieldCount = xformElement.childCount
+            for (j in 0 until fieldCount) {
+                if (xformElement.getType(j) != Element.ELEMENT) {
+                    // whitespace
+                    continue
+                }
+
+                val child = xformElement.getElement(j)
+                if (!isXformsListNamespacedElement(child)) {
+                    // someone else's extension?
+                    continue
+                }
+
+                when (child.name) {
+                    "name" -> {
+                        name = XFormParser.getXMLText(child, true)
+                        if (name != null && name.isEmpty()) {
+                            name = null
+                        }
+                    }
+                    "formType" -> {
+                        formType = XFormParser.getXMLText(child, true)
+                        if (formType != null && formType.isEmpty()) {
+                            formType = null
+                        }
+                    }
+                    "issue" -> {
+                        issue = XFormParser.getXMLText(child, true)
+                        if (issue != null && issue.isEmpty()) {
+                            issue = null
+                        }
+                    }
+                    "start" -> {
+                        start = XFormParser.getXMLText(child, true)
+                        if (start != null && isBlank(start)) {
+                            start = null
+                        }
+                    }
+                    "end" -> {
+                        end = XFormParser.getXMLText(child, true)
+                        if (end != null && end.isEmpty()) {
+                            end = null
+                        }
+                    }
+                    "date" -> {
+                        date = XFormParser.getXMLText(child, true)
+                        if (date != null && date.isEmpty()) {
+                            date = null
+                        }
+                    }
+                    "deviceId" -> {
+                        deviceId = XFormParser.getXMLText(child, true)
+                        if (deviceId != null && deviceId.isEmpty()) {
+                            deviceId = null
+                        }
+                    }
+                    "instanceId" -> {
+                        instanceId = XFormParser.getXMLText(child, true)
+                        if (instanceId != null && instanceId.isEmpty()) {
+                            instanceId = null
+                        }
+                    }
+                    "downloadUrl" -> {
+                        downloadUrl = XFormParser.getXMLText(child, true)
+                        if (downloadUrl != null && downloadUrl.isEmpty()) {
+                            downloadUrl = null
+                        }
+                    }
+                    "hash" -> {
+                        hash = XFormParser.getXMLText(child, true)
+                        if (hash != null && hash.isEmpty()) {
+                            hash = null
+                        }
+                    }
+                    "formId" -> {
+                        formId = XFormParser.getXMLText(child, true)
+                        if (formId != null && formId.isEmpty()) {
+                            formId = null
+                        }
+                    }
+                    "version" -> {
+                        version = XFormParser.getXMLText(child, true)
+                        if (version != null && version.isEmpty()) {
+                            version = null
+                        }
+                    }
+                }
+            }
+
+            if (name == null || formType == null || issue == null || start == null || end == null || deviceId == null ||
+                instanceId == null || downloadUrl == null || hash == null || formId == null || version == null) {
+                entryListItems.clear()
+                return null
+            }
+
+            entryListItems.add(EntryListItem(name, formType, issue, start, end, date, deviceId, instanceId, downloadUrl,
+                formId, version, hash))
+        }
+
+        return entryListItems
     }
 
     override fun parseManifest(document: Document): List<MediaFile>? {

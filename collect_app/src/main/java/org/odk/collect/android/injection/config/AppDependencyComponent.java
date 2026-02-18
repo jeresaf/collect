@@ -6,6 +6,8 @@ import org.javarosa.core.reference.ReferenceManager;
 import org.odk.collect.android.activities.AboutActivity;
 import org.odk.collect.android.activities.AppListActivity;
 import org.odk.collect.android.activities.DeleteSavedFormActivity;
+import org.odk.collect.android.activities.EntryChooserList;
+import org.odk.collect.android.activities.EntryDownloadListActivity;
 import org.odk.collect.android.activities.FirstLaunchActivity;
 import org.odk.collect.android.activities.FormDownloadListActivity;
 import org.odk.collect.android.activities.FormFillingActivity;
@@ -29,7 +31,9 @@ import org.odk.collect.android.configure.qr.ShowQRCodeFragment;
 import org.odk.collect.android.draw.DrawActivity;
 import org.odk.collect.android.draw.PenColorPickerDialog;
 import org.odk.collect.android.entities.EntitiesRepositoryProvider;
+import org.odk.collect.android.entrymanagement.EntrySourceProvider;
 import org.odk.collect.android.external.AndroidShortcutsActivity;
+import org.odk.collect.android.external.EntryProvider;
 import org.odk.collect.android.external.FormUriActivity;
 import org.odk.collect.android.external.FormsProvider;
 import org.odk.collect.android.external.InstanceProvider;
@@ -45,6 +49,7 @@ import org.odk.collect.android.formmanagement.matchexactly.SyncStatusAppState;
 import org.odk.collect.android.fragments.AppListFragment;
 import org.odk.collect.android.fragments.BarCodeScannerFragment;
 import org.odk.collect.android.fragments.SavedFormListFragment;
+import org.odk.collect.android.fragments.dialogs.EntriesDownloadResultDialog;
 import org.odk.collect.android.fragments.dialogs.FormsDownloadResultDialog;
 import org.odk.collect.android.fragments.dialogs.SelectMinimalDialog;
 import org.odk.collect.android.gdrive.GoogleDriveActivity;
@@ -81,6 +86,7 @@ import org.odk.collect.android.tasks.InstanceServerUploaderTask;
 import org.odk.collect.android.tasks.MediaLoadingTask;
 import org.odk.collect.android.upload.InstanceUploader;
 import org.odk.collect.android.utilities.AuthDialogUtility;
+import org.odk.collect.android.utilities.EntriesRepositoryProvider;
 import org.odk.collect.android.utilities.FormsRepositoryProvider;
 import org.odk.collect.android.utilities.InstancesRepositoryProvider;
 import org.odk.collect.android.utilities.ProjectResetter;
@@ -162,6 +168,8 @@ public interface AppDependencyComponent {
 
     void inject(FormDownloadListActivity formDownloadListActivity);
 
+    void inject(EntryDownloadListActivity entryDownloadListActivity);
+
     void inject(InstanceUploaderListActivity activity);
 
     void inject(GoogleDriveActivity googleDriveActivity);
@@ -234,9 +242,13 @@ public interface AppDependencyComponent {
 
     void inject(InstanceChooserList instanceChooserList);
 
+    void inject(EntryChooserList entryChooserList);
+
     void inject(FormsProvider formsProvider);
 
     void inject(InstanceProvider instanceProvider);
+
+    void inject(EntryProvider entryProvider);
 
     void inject(BackgroundAudioPermissionDialogFragment backgroundAudioPermissionDialogFragment);
 
@@ -272,6 +284,8 @@ public interface AppDependencyComponent {
 
     void inject(FormsDownloadResultDialog formsDownloadResultDialog);
 
+    void inject(EntriesDownloadResultDialog entriesDownloadResultDialog);
+
     void inject(SelectOneFromMapDialogFragment selectOneFromMapDialogFragment);
 
     void inject(DrawActivity drawActivity);
@@ -304,11 +318,15 @@ public interface AppDependencyComponent {
 
     FormsRepositoryProvider formsRepositoryProvider();
 
+    EntriesRepositoryProvider entriesRepositoryProvider();
+
     InstancesRepositoryProvider instancesRepositoryProvider();
 
     SyncStatusAppState syncStatusAppState();
 
     FormSourceProvider formSourceProvider();
+
+    EntrySourceProvider entrySourceProvider();
 
     LoginSourceProvider loginSourceProvider();
 

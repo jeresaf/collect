@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "870062872741",
-    "project_id": "ug-collect",
-    "storage_bucket": "ug-collect.appspot.com"
+    "project_number": "963667560703",
+    "project_id": "ubos-cis",
+    "storage_bucket": "ubos-cis.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:870062872741:android:58796eab7656d79f0cd54c",
+        "mobilesdk_app_id": "1:963667560703:android:4081fa2374834f0ad6a4ca",
         "android_client_info": {
-          "package_name": "com.uginsights.collect.android"
+          "package_name": "com.uboscis.collect.android"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBh7STLQ7vl96IA6WPM9ccXFX-7R34RITg"
+          "current_key": "AIzaSyBK83wsouORjHNkPdBrbz_Dk0HEvqBimHY"
         }
       ],
       "services": {

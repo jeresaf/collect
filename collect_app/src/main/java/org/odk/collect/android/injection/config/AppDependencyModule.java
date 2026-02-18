@@ -43,6 +43,10 @@ import org.odk.collect.android.configure.qr.QRCodeGenerator;
 import org.odk.collect.android.database.itemsets.DatabaseFastExternalItemsetsRepository;
 import org.odk.collect.android.draw.PenColorPickerViewModel;
 import org.odk.collect.android.entities.EntitiesRepositoryProvider;
+import org.odk.collect.android.entrymanagement.EntryDownloader;
+import org.odk.collect.android.entrymanagement.EntrySourceProvider;
+import org.odk.collect.android.entrymanagement.ServerEntriesDetailsFetcher;
+import org.odk.collect.android.entrymanagement.ServerEntryDownloader;
 import org.odk.collect.android.formentry.AppStateFormSessionRepository;
 import org.odk.collect.android.formentry.FormSessionRepository;
 import org.odk.collect.android.formentry.media.AudioHelperFactory;
@@ -94,6 +98,7 @@ import org.odk.collect.android.utilities.AndroidUserAgent;
 import org.odk.collect.android.utilities.ChangeLockProvider;
 import org.odk.collect.android.utilities.CodeCaptureManagerFactory;
 import org.odk.collect.android.utilities.ContentUriProvider;
+import org.odk.collect.android.utilities.EntriesRepositoryProvider;
 import org.odk.collect.android.utilities.ExternalAppIntentProvider;
 import org.odk.collect.android.utilities.ExternalWebPageHelper;
 import org.odk.collect.android.utilities.FileProvider;
@@ -119,6 +124,7 @@ import org.odk.collect.async.Scheduler;
 import org.odk.collect.audiorecorder.recording.AudioRecorder;
 import org.odk.collect.audiorecorder.recording.AudioRecorderFactory;
 import org.odk.collect.forms.FormsRepository;
+import org.odk.collect.forms.entries.EntriesRepository;
 import org.odk.collect.imageloader.GlideImageLoader;
 import org.odk.collect.imageloader.ImageLoader;
 import org.odk.collect.location.GoogleFusedLocationClient;
@@ -213,6 +219,11 @@ public class AppDependencyModule {
     @Provides
     public FormDownloader providesFormDownloader(FormSourceProvider formSourceProvider, FormsRepositoryProvider formsRepositoryProvider, StoragePathProvider storagePathProvider, Supplier<Long> clock) {
         return new ServerFormDownloader(formSourceProvider.get(), formsRepositoryProvider.get(), new File(storagePathProvider.getOdkDirPath(StorageSubdirectory.CACHE)), storagePathProvider.getOdkDirPath(StorageSubdirectory.FORMS), new FormMetadataParser(), clock);
+    }
+
+    @Provides
+    public EntryDownloader providesEntryDownloader(EntrySourceProvider entrySourceProvider, EntriesRepositoryProvider entriesRepositoryProvider, StoragePathProvider storagePathProvider, Supplier<Long> clock) {
+        return new ServerEntryDownloader(entrySourceProvider.get(), entriesRepositoryProvider.get(), new File(storagePathProvider.getOdkDirPath(StorageSubdirectory.CACHE)), storagePathProvider.getOdkDirPath(StorageSubdirectory.ENTRIES), clock);
     }
 
     @Provides
@@ -372,6 +383,12 @@ public class AppDependencyModule {
     }
 
     @Provides
+    public ServerEntriesDetailsFetcher providesServerEntryDetailsFetcher(EntriesRepositoryProvider entriesRepositoryProvider, EntrySourceProvider entrySourceProvider, SettingsProvider settingsProvider) {
+        EntriesRepository entriesRepository = entriesRepositoryProvider.get();
+        return new ServerEntriesDetailsFetcher(entriesRepository, entrySourceProvider.get(), settingsProvider);
+    }
+
+    @Provides
     public Notifier providesNotifier(Application application, SettingsProvider settingsProvider, ProjectsRepository projectsRepository) {
         return new NotificationManagerNotifier(application, settingsProvider, projectsRepository);
     }
@@ -499,6 +516,11 @@ public class AppDependencyModule {
     }
 
     @Provides
+    public EntriesRepositoryProvider providesEntriesRepositoryProvider(Application application) {
+        return new EntriesRepositoryProvider(application);
+    }
+
+    @Provides
     public InstancesRepositoryProvider providesInstancesRepositoryProvider(Context context, StoragePathProvider storagePathProvider, Supplier<Long> clock) {
         return new InstancesRepositoryProvider(context, storagePathProvider, clock);
     }
@@ -526,6 +548,11 @@ public class AppDependencyModule {
     @Provides
     public FormSourceProvider providesFormSourceProvider(SettingsProvider settingsProvider, OpenRosaHttpInterface openRosaHttpInterface) {
         return new FormSourceProvider(settingsProvider, openRosaHttpInterface);
+    }
+
+    @Provides
+    public EntrySourceProvider providesEntrySourceProvider(SettingsProvider settingsProvider, OpenRosaHttpInterface openRosaHttpInterface) {
+        return new EntrySourceProvider(settingsProvider, openRosaHttpInterface);
     }
 
     @Provides

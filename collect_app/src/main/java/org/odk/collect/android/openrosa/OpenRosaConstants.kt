@@ -7,5 +7,6 @@ object OpenRosaConstants {
 
     // Endpoints
     const val FORM_LIST = "/api/v1/formlist"
+    const val ENTRY_LIST = "/api/v1/entrylist"
     const val SUBMISSION = "/api/v1/submission"
 }

@@ -19,7 +19,11 @@
     <!-- Text for an action button on the main screen. -->
     <string name="view_sent_forms">Sent</string>
     <!-- Text for an action button on the main screen. -->
-    <string name="get_forms">Download form</string>
+    <string name="get_forms">Download form / Update form</string>
+    <!-- Text for an action button on the main screen. -->
+    <string name="get_entries_with_issues">Download entries with issues</string>
+    <!-- Text for an action button on the main screen. -->
+    <string name="entries_with_issues">Entries with issues</string>
     <!-- Text for an action button on the main screen. -->
     <string name="manage_files">Delete form</string>
 
@@ -47,6 +51,14 @@
     <string name="encrypted_form">Encrypted form</string>
     <string name="deleted_form">Deleted form</string>
 
+    <string name="entry_added_on_date_at_time">\'Added on\' yyyy-MM-dd\'T\'HH:mm:ss.SSS</string>
+    <string name="entry_updated_on_date_at_time">\'Updated on\' yyyy-MM-dd\'T\'HH:mm:ss.SSS</string>
+    <string name="entry_saved_on_date_at_time">\'Saved on\' yyyy-MM-dd\'T\'HH:mm:ss.SSS</string>
+    <string name="entry_finalized_on_date_at_time">\'Finalized on\' yyyy-MM-dd\'T\'HH:mm:ss.SSS</string>
+    <string name="entry_sent_on_date_at_time">\'Sent on\' yyyy-MM-dd\'T\'HH:mm:ss.SSS</string>
+    <string name="entry_sending_failed_on_date_at_time">\'Sending failed on\' yyyy-MM-dd\'T\'HH:mm:ss.SSS</string>
+    <string name="entry_deleted_on_date_at_time">\'Deleted on\' yyyy-MM-dd\'T\'HH:mm:ss.SSS</string>
+
     <string name="sort_the_list">Sort the list</string>
     <string name="sort_by">Sort by</string>
     <string name="sort_by_name_asc">Name, A-Z</string>
@@ -61,6 +73,7 @@
 
     <string name="no_items_display">Nothing available to display.</string>
     <string name="no_items_display_forms">Nothing available to display.\n\nTry getting and filling out a blank form.</string>
+    <string name="no_items_display_entries">Nothing available to display.\n\nTry getting entries with issues.</string>
     <string name="no_items_display_sent_forms">Nothing available to display.\n\nTry sending finalized forms before viewing.</string>
     <string name="no_items_display_instances">Nothing available to display.\n\nTry finalizing drafts before sending.</string>
 
@@ -662,7 +675,9 @@
     <string name="downloading_data">Connecting to Server</string>
 
     <string name="fetching_file">Getting %1$s.\n\nForm %2$s of %3$s form(s).</string>
+    <string name="fetching_entry_file">Getting %1$s.\n\nEntry %2$s of %3$s entry(s).</string>
     <string name="form_download_progress">%1$s. Getting media files: %2$s of %3$s</string>
+    <string name="entry_download_progress">%1$s.</string>
 
     <string name="version">Version:</string>
 
@@ -672,6 +687,7 @@
     <string name="form_update_succeeded">Form update succeeded</string>
 
     <string name="load_remote_form_error">Form list download failed</string>
+    <string name="load_remote_entry_error">Entry list download failed</string>
 
     <string name="forms_download_succeeded">Forms download succeeded</string>
     <string name="forms_download_failed">Forms download failed</string>

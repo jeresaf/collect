@@ -3,9 +3,11 @@ package org.odk.collect.android.database
 import android.content.ContentValues
 import android.database.Cursor
 import android.provider.BaseColumns
+import org.odk.collect.android.database.entries.DatabaseEntryColumns
 import org.odk.collect.android.database.forms.DatabaseFormColumns
 import org.odk.collect.android.database.instances.DatabaseInstanceColumns
 import org.odk.collect.forms.Form
+import org.odk.collect.forms.entries.Entry
 import org.odk.collect.forms.instances.Instance
 import org.odk.collect.shared.PathUtils.getAbsoluteFilePath
 import org.odk.collect.shared.PathUtils.getRelativeFilePath
@@ -225,5 +227,94 @@ object DatabaseObjectMapper {
         values.put(DatabaseInstanceColumns.GEOMETRY, instance.geometry)
         values.put(DatabaseInstanceColumns.GEOMETRY_TYPE, instance.geometryType)
         return values
+    }
+
+    @JvmStatic
+    fun getValuesFromEntry(entry: Entry, entriesPath: String): ContentValues {
+        val entryFilePath = getRelativeFilePath(entriesPath, entry.entryFilePath)
+
+        val values = ContentValues()
+        values.put(BaseColumns._ID, entry.dbId)
+        values.put(DatabaseEntryColumns.DISPLAY_NAME, entry.displayName)
+        values.put(DatabaseEntryColumns.FORM_TYPE, entry.formType)
+        values.put(DatabaseEntryColumns.ISSUE, entry.issue)
+        values.put(DatabaseEntryColumns.START, entry.start)
+        values.put(DatabaseEntryColumns.END, entry.end)
+        values.put(DatabaseEntryColumns.DATE, entry.date)
+        values.put(DatabaseEntryColumns.DEVICE_ID, entry.deviceId)
+        values.put(DatabaseEntryColumns.INSTANCE_ID, entry.instanceId)
+        values.put(DatabaseEntryColumns.ENTRY_FILE_PATH, entryFilePath)
+        values.put(DatabaseEntryColumns.MD5_HASH, entry.mD5Hash)
+        values.put(DatabaseEntryColumns.JR_FORM_ID, entry.formId)
+        values.put(DatabaseEntryColumns.JR_VERSION, entry.formVersion)
+        values.put(DatabaseEntryColumns.STATUS, entry.status)
+        values.put(DatabaseEntryColumns.DELETED_DATE, entry.deletedDate)
+        return values
+    }
+
+    @JvmStatic
+    fun getEntryFromValues(values: ContentValues): Entry {
+
+        return Entry.Builder()
+            .dbId(values.getAsLong(BaseColumns._ID))
+            .displayName(values.getAsString(DatabaseEntryColumns.DISPLAY_NAME))
+            .formType(values.getAsString(DatabaseEntryColumns.FORM_TYPE))
+            .issue(values.getAsString(DatabaseEntryColumns.ISSUE))
+            .start(values.getAsString(DatabaseEntryColumns.START))
+            .end(values.getAsString(DatabaseEntryColumns.END))
+            .date(values.getAsString(DatabaseEntryColumns.DATE))
+            .deviceId(values.getAsString(DatabaseEntryColumns.DEVICE_ID))
+            .instanceId(values.getAsString(DatabaseEntryColumns.INSTANCE_ID))
+            .entryFilePath(values.getAsString(DatabaseEntryColumns.ENTRY_FILE_PATH))
+            .md5Hash(values.getAsString(DatabaseEntryColumns.MD5_HASH))
+            .formId(values.getAsString(DatabaseEntryColumns.JR_FORM_ID))
+            .formVersion(values.getAsString(DatabaseEntryColumns.JR_VERSION))
+            .status(values.getAsString(DatabaseEntryColumns.STATUS))
+            .deleted(values.getAsLong(DatabaseEntryColumns.DELETED_DATE) != null)
+            .build()
+    }
+
+    @JvmStatic
+    fun getEntryFromCurrentCursorPosition(
+        cursor: Cursor,
+        entriesPath: String
+    ): Entry? {
+        val idColumnIndex = cursor.getColumnIndex(BaseColumns._ID)
+        val displayNameColumnIndex = cursor.getColumnIndex(DatabaseEntryColumns.DISPLAY_NAME)
+        val formTypeColumnIndex = cursor.getColumnIndex(DatabaseEntryColumns.FORM_TYPE)
+        val issueColumnIndex = cursor.getColumnIndex(DatabaseEntryColumns.ISSUE)
+        val startColumnIndex = cursor.getColumnIndex(DatabaseEntryColumns.START)
+        val endColumnIndex = cursor.getColumnIndex(DatabaseEntryColumns.END)
+        val dateColumnIndex = cursor.getColumnIndex(DatabaseEntryColumns.DATE)
+        val deviceIdColumnIndex = cursor.getColumnIndex(DatabaseEntryColumns.DEVICE_ID)
+        val instanceIdColumnIndex = cursor.getColumnIndex(DatabaseEntryColumns.INSTANCE_ID)
+        val entryFilePathColumnIndex = cursor.getColumnIndex(DatabaseEntryColumns.ENTRY_FILE_PATH)
+        val md5HashColumnIndex = cursor.getColumnIndex(DatabaseEntryColumns.MD5_HASH)
+        val jrFormIdColumnIndex = cursor.getColumnIndex(DatabaseEntryColumns.JR_FORM_ID)
+        val jrVersionColumnIndex = cursor.getColumnIndex(DatabaseEntryColumns.JR_VERSION)
+        val statusColumnIndex = cursor.getColumnIndex(DatabaseEntryColumns.STATUS)
+        val deletedDateColumnIndex = cursor.getColumnIndex(DatabaseEntryColumns.DELETED_DATE)
+        return Entry.Builder()
+            .dbId(cursor.getLong(idColumnIndex))
+            .displayName(cursor.getString(displayNameColumnIndex))
+            .formType(cursor.getString(formTypeColumnIndex))
+            .issue(cursor.getString(issueColumnIndex))
+            .start(cursor.getString(startColumnIndex))
+            .end(cursor.getString(endColumnIndex))
+            .date(cursor.getString(dateColumnIndex))
+            .deviceId(cursor.getString(deviceIdColumnIndex))
+            .instanceId(cursor.getString(instanceIdColumnIndex))
+            .entryFilePath(
+                getAbsoluteFilePath(
+                    entriesPath,
+                    cursor.getString(entryFilePathColumnIndex)
+                )
+            )
+            .md5Hash(cursor.getString(md5HashColumnIndex))
+            .formId(cursor.getString(jrFormIdColumnIndex))
+            .formVersion(cursor.getString(jrVersionColumnIndex))
+            .status(cursor.getString(statusColumnIndex))
+            .deleted(!cursor.isNull(deletedDateColumnIndex))
+            .build()
     }
 }

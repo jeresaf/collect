@@ -52,8 +52,8 @@ public class FormLoaderTaskTest {
                 try {
                     // Set up demo project
                     AppDependencyComponent component = DaggerUtils.getComponent(ApplicationProvider.<Application>getApplicationContext());
-                    component.projectsRepository().save(Project.Companion.getDEMO_PROJECT());
-                    component.currentProjectProvider().setCurrentProject(Project.DEMO_PROJECT_ID);
+                    component.projectsRepository().save(Project.Companion.getPROJECT());
+                    component.currentProjectProvider().setCurrentProject(Project.PROJECT_ID);
 
                     StorageUtils.copyFormToDemoProject(SECONDARY_INSTANCE_EXTERNAL_CSV_FORM, Arrays.asList("external_csv_cities.csv", "external_csv_countries.csv", "external_csv_neighbourhoods.csv"));
                     StorageUtils.copyFormToDemoProject(SIMPLE_SEARCH_EXTERNAL_CSV_FORM, Collections.singletonList(SIMPLE_SEARCH_EXTERNAL_CSV_FILE));

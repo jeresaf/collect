@@ -10,9 +10,12 @@ import android.view.View.VISIBLE
 import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import org.odk.collect.analytics.Analytics
 import org.odk.collect.android.R
 import org.odk.collect.android.activities.AboutActivity
 import org.odk.collect.android.activities.ActivityUtils
+import org.odk.collect.android.activities.FirstLaunchActivity
+import org.odk.collect.android.analytics.AnalyticsEvents
 import org.odk.collect.android.databinding.ProjectSettingsDialogLayoutBinding
 import org.odk.collect.android.injection.DaggerUtils
 import org.odk.collect.android.mainmenu.CurrentProjectViewModel
@@ -29,6 +32,9 @@ class ProjectSettingsDialog(private val viewModelFactory: ViewModelProvider.Fact
 
     @Inject
     lateinit var projectsRepository: ProjectsRepository
+
+    @Inject
+    lateinit var projectDeleter: ProjectDeleter
 
     @Inject
     lateinit var settingsProvider: SettingsProvider
@@ -61,6 +67,11 @@ class ProjectSettingsDialog(private val viewModelFactory: ViewModelProvider.Fact
             dismiss()
         }
 
+        binding.logoutButton.setOnClickListener {
+            deleteProject()
+            dismiss()
+        }
+
         binding.generalSettingsButton.setOnClickListener {
             startActivity(Intent(requireContext(), ProjectPreferencesActivity::class.java))
             dismiss()
@@ -82,6 +93,48 @@ class ProjectSettingsDialog(private val viewModelFactory: ViewModelProvider.Fact
         return MaterialAlertDialogBuilder(requireContext())
             .setView(binding.root)
             .create()
+    }
+
+    fun deleteProject() {
+        Analytics.log(AnalyticsEvents.DELETE_PROJECT)
+
+        when (val deleteProjectResult = projectDeleter.deleteCurrentProject()) {
+            is DeleteProjectResult.UnsentInstances -> {
+                MaterialAlertDialogBuilder(requireActivity())
+                    .setTitle(R.string.cannot_logout_title)
+                    .setMessage(R.string.cannot_delete_project_message_one)
+                    .setPositiveButton(R.string.ok, null)
+                    .show()
+            }
+            is DeleteProjectResult.RunningBackgroundJobs -> {
+                MaterialAlertDialogBuilder(requireActivity())
+                    .setTitle(R.string.cannot_logout_title)
+                    .setMessage(R.string.cannot_delete_project_message_two)
+                    .setPositiveButton(R.string.ok, null)
+                    .show()
+            }
+            is DeleteProjectResult.DeletedSuccessfully -> {
+                val newCurrentProject = deleteProjectResult.newCurrentProject
+                if (newCurrentProject != null) {
+                    ActivityUtils.startActivityAndCloseAllOthers(
+                        requireActivity(),
+                        MainMenuActivity::class.java
+                    )
+                    ToastUtils.showLongToast(
+                        requireContext(),
+                        getString(
+                            R.string.switched_project,
+                            newCurrentProject.name
+                        )
+                    )
+                } else {
+                    ActivityUtils.startActivityAndCloseAllOthers(
+                        requireActivity(),
+                        FirstLaunchActivity::class.java
+                    )
+                }
+            }
+        }
     }
 
     private fun inflateListOfInActiveProjects(context: Context, currentProject: Project.Saved) {

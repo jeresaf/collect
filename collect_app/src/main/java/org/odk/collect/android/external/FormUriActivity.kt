@@ -8,7 +8,6 @@ import org.odk.collect.analytics.Analytics
 import org.odk.collect.android.R
 import org.odk.collect.android.activities.FormFillingActivity
 import org.odk.collect.android.analytics.AnalyticsEvents
-import org.odk.collect.android.entrymanagement.EntryDeleter
 import org.odk.collect.android.injection.DaggerUtils
 import org.odk.collect.android.instancemanagement.InstanceDeleter
 import org.odk.collect.android.projects.CurrentProjectProvider
@@ -23,7 +22,6 @@ import org.odk.collect.projects.ProjectsRepository
 import org.odk.collect.settings.SettingsProvider
 import org.odk.collect.settings.keys.ProtectedProjectKeys
 import org.odk.collect.strings.localization.LocalizedActivity
-import timber.log.Timber
 import java.io.File
 import javax.inject.Inject
 
@@ -109,13 +107,13 @@ class FormUriActivity : LocalizedActivity() {
 
     private fun assertValidUri(): Boolean {
         val isUriValid = intent.data?.let {
-            Timber.e("Entry URI assertValidUri: %s", it.toString())
             val uriMimeType = contentResolver.getType(it)
-            Timber.e("Entry URI assertValidUri uriMimeType: %s", uriMimeType)
             if (uriMimeType == null) {
                 return@let false
             } else {
-                return@let uriMimeType == FormsContract.CONTENT_ITEM_TYPE || uriMimeType == InstancesContract.CONTENT_ITEM_TYPE  || uriMimeType == EntriesContract.CONTENT_ITEM_TYPE
+                return@let uriMimeType == FormsContract.CONTENT_ITEM_TYPE ||
+                    uriMimeType == InstancesContract.CONTENT_ITEM_TYPE ||
+                    uriMimeType == EntriesContract.CONTENT_ITEM_TYPE
             }
         } ?: false
 
@@ -131,15 +129,13 @@ class FormUriActivity : LocalizedActivity() {
         val uri = intent.data!!
         val uriMimeType = contentResolver.getType(uri)
 
-        val doesFormExist = if (uriMimeType == FormsContract.CONTENT_ITEM_TYPE) {
-            formsRepositoryProvider.get().get(ContentUriHelper.getIdFromUri(uri))?.let {
+        val doesFormExist = when (uriMimeType) {
+            FormsContract.CONTENT_ITEM_TYPE -> formsRepositoryProvider.get().get(ContentUriHelper.getIdFromUri(uri))?.let {
                 File(it.formFilePath).exists()
             } ?: false
-        } else if (uriMimeType == InstancesContract.CONTENT_ITEM_TYPE) {
-            instanceRepositoryProvider.get().get(ContentUriHelper.getIdFromUri(uri))?.let {
-                if (!File(it.instanceFilePath).exists()) {
-                    Analytics.log(AnalyticsEvents.OPEN_DELETED_INSTANCE)
-                    InstanceDeleter(instanceRepositoryProvider.get(), formsRepositoryProvider.get()).delete(it.dbId)
+
+            EntriesContract.CONTENT_ITEM_TYPE -> entriesRepositoryProvider.get().get(ContentUriHelper.getIdFromUri(uri))?.let {
+                if (!File(it.entryFilePath).exists()) {
                     displayErrorDialog(getString(R.string.instance_deleted_message))
                     return false
                 }
@@ -162,11 +158,11 @@ class FormUriActivity : LocalizedActivity() {
 
                 true
             } ?: false
-        } else {
-            entriesRepositoryProvider.get().get(ContentUriHelper.getIdFromUri(uri))?.let {
-                if (!File(it.entryFilePath).exists()) {
+
+            else -> instanceRepositoryProvider.get().get(ContentUriHelper.getIdFromUri(uri))?.let {
+                if (!File(it.instanceFilePath).exists()) {
                     Analytics.log(AnalyticsEvents.OPEN_DELETED_INSTANCE)
-                    EntryDeleter(entriesRepositoryProvider.get(), formsRepositoryProvider.get()).delete(it.dbId)
+                    InstanceDeleter(instanceRepositoryProvider.get(), formsRepositoryProvider.get()).delete(it.dbId)
                     displayErrorDialog(getString(R.string.instance_deleted_message))
                     return false
                 }
@@ -198,6 +194,7 @@ class FormUriActivity : LocalizedActivity() {
             true
         }
     }
+
 
     private fun assertFormNotEncrypted(): Boolean {
         val uri = intent.data!!

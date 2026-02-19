@@ -728,10 +728,34 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
 
         if (uriMimeType != null && uriMimeType.equals(InstancesContract.CONTENT_ITEM_TYPE)) {
             Instance instance = new InstancesRepositoryProvider(Collect.getInstance()).get().get(ContentUriHelper.getIdFromUri(uri));
+            if (instance == null) {
+                showFormLoadErrorAndExit(getString(R.string.bad_uri));
+                return;
+            }
 
             instancePath = instance.getInstanceFilePath();
 
             List<Form> candidateForms = formsRepository.getAllByFormIdAndVersion(instance.getFormId(), instance.getFormVersion());
+            if (candidateForms.isEmpty()) {
+                showFormLoadErrorAndExit(getString(R.string.parent_form_not_present, instance.getFormId()));
+                return;
+            }
+
+            formPath = candidateForms.get(0).getFormFilePath();
+        } else if (uriMimeType != null && uriMimeType.equals(EntriesContract.CONTENT_ITEM_TYPE)) {
+            org.odk.collect.forms.entries.Entry entry = new EntriesRepositoryProvider(Collect.getInstance()).get().get(ContentUriHelper.getIdFromUri(uri));
+            if (entry == null) {
+                showFormLoadErrorAndExit(getString(R.string.bad_uri));
+                return;
+            }
+
+            instancePath = entry.getEntryFilePath();
+
+            List<Form> candidateForms = formsRepository.getAllByFormIdAndVersion(entry.getFormId(), entry.getFormVersion());
+            if (candidateForms.isEmpty()) {
+                showFormLoadErrorAndExit(getString(R.string.parent_form_not_present, entry.getFormId()));
+                return;
+            }
 
             formPath = candidateForms.get(0).getFormFilePath();
         } else if (uriMimeType != null && uriMimeType.equals(FormsContract.CONTENT_ITEM_TYPE)) {

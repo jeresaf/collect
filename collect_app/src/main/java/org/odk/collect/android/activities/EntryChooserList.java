@@ -57,6 +57,8 @@ import java.util.Arrays;
 
 import javax.inject.Inject;
 
+import timber.log.Timber;
+
 /**
  * Responsible for displaying all the valid entries in the entry directory.
  *
@@ -136,7 +138,7 @@ public class EntryChooserList extends AppListActivity implements AdapterView.OnI
                 Cursor c = (Cursor) listView.getAdapter().getItem(position);
                 long entryId = c.getLong(c.getColumnIndex(DatabaseEntryColumns._ID));
                 Uri entryUri = EntriesContract.getUri(currentProjectProvider.getCurrentProject().getUuid(), entryId);
-
+                Timber.e("Entry URI: %s", entryUri.toString());
                 String action = getIntent().getAction();
                 if (Intent.ACTION_PICK.equals(action)) {
                     // caller is waiting on a picked form

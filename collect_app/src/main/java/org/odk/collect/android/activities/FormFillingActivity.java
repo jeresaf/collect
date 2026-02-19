@@ -93,6 +93,7 @@ import org.odk.collect.android.audio.M4AAppender;
 import org.odk.collect.android.backgroundwork.InstanceSubmitScheduler;
 import org.odk.collect.android.entities.EntitiesRepositoryProvider;
 import org.odk.collect.android.exception.JavaRosaException;
+import org.odk.collect.android.external.EntriesContract;
 import org.odk.collect.android.external.FormsContract;
 import org.odk.collect.android.external.InstancesContract;
 import org.odk.collect.android.formentry.BackgroundAudioPermissionDialogFragment;
@@ -155,6 +156,7 @@ import org.odk.collect.android.utilities.ApplicationConstants;
 import org.odk.collect.android.utilities.ContentUriHelper;
 import org.odk.collect.android.utilities.ControllableLifecyleOwner;
 import org.odk.collect.android.utilities.DialogUtils;
+import org.odk.collect.android.utilities.EntriesRepositoryProvider;
 import org.odk.collect.android.utilities.ExternalAppIntentProvider;
 import org.odk.collect.android.utilities.FormsRepositoryProvider;
 import org.odk.collect.android.utilities.InstancesRepositoryProvider;
@@ -187,6 +189,7 @@ import org.odk.collect.audiorecorder.recording.AudioRecorder;
 import org.odk.collect.externalapp.ExternalAppUtils;
 import org.odk.collect.forms.Form;
 import org.odk.collect.forms.FormsRepository;
+import org.odk.collect.forms.entries.Entry;
 import org.odk.collect.forms.instances.Instance;
 import org.odk.collect.location.LocationClient;
 import org.odk.collect.material.MaterialProgressDialogFragment;
@@ -742,6 +745,14 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
              * explicitly saved instance is edited via edit-saved-form.
              */
             instancePath = loadSavePoint();
+        } else if (uriMimeType != null && uriMimeType.equals(EntriesContract.CONTENT_ITEM_TYPE)) {
+            Entry entry = new EntriesRepositoryProvider(Collect.getInstance()).get().get(ContentUriHelper.getIdFromUri(uri));
+
+            instancePath = entry.getEntryFilePath();
+
+            List<Form> candidateForms = formsRepository.getAllByFormIdAndVersion(entry.getFormId(), entry.getFormVersion());
+
+            formPath = candidateForms.get(0).getFormFilePath();
         }
 
         formLoaderTask = new FormLoaderTask(instancePath, null, null, formEntryControllerFactory);

@@ -8,11 +8,13 @@ import org.odk.collect.analytics.Analytics
 import org.odk.collect.android.R
 import org.odk.collect.android.activities.FormFillingActivity
 import org.odk.collect.android.analytics.AnalyticsEvents
+import org.odk.collect.android.entrymanagement.EntryDeleter
 import org.odk.collect.android.injection.DaggerUtils
 import org.odk.collect.android.instancemanagement.InstanceDeleter
 import org.odk.collect.android.projects.CurrentProjectProvider
 import org.odk.collect.android.utilities.ApplicationConstants
 import org.odk.collect.android.utilities.ContentUriHelper
+import org.odk.collect.android.utilities.EntriesRepositoryProvider
 import org.odk.collect.android.utilities.FormsRepositoryProvider
 import org.odk.collect.android.utilities.InstancesRepositoryProvider
 import org.odk.collect.forms.Form
@@ -21,6 +23,7 @@ import org.odk.collect.projects.ProjectsRepository
 import org.odk.collect.settings.SettingsProvider
 import org.odk.collect.settings.keys.ProtectedProjectKeys
 import org.odk.collect.strings.localization.LocalizedActivity
+import timber.log.Timber
 import java.io.File
 import javax.inject.Inject
 
@@ -41,6 +44,9 @@ class FormUriActivity : LocalizedActivity() {
 
     @Inject
     lateinit var instanceRepositoryProvider: InstancesRepositoryProvider
+
+    @Inject
+    lateinit var entriesRepositoryProvider: EntriesRepositoryProvider
 
     @Inject
     lateinit var settingsProvider: SettingsProvider
@@ -103,11 +109,13 @@ class FormUriActivity : LocalizedActivity() {
 
     private fun assertValidUri(): Boolean {
         val isUriValid = intent.data?.let {
+            Timber.e("Entry URI assertValidUri: %s", it.toString())
             val uriMimeType = contentResolver.getType(it)
+            Timber.e("Entry URI assertValidUri uriMimeType: %s", uriMimeType)
             if (uriMimeType == null) {
                 return@let false
             } else {
-                return@let uriMimeType == FormsContract.CONTENT_ITEM_TYPE || uriMimeType == InstancesContract.CONTENT_ITEM_TYPE
+                return@let uriMimeType == FormsContract.CONTENT_ITEM_TYPE || uriMimeType == InstancesContract.CONTENT_ITEM_TYPE  || uriMimeType == EntriesContract.CONTENT_ITEM_TYPE
             }
         } ?: false
 
@@ -127,11 +135,38 @@ class FormUriActivity : LocalizedActivity() {
             formsRepositoryProvider.get().get(ContentUriHelper.getIdFromUri(uri))?.let {
                 File(it.formFilePath).exists()
             } ?: false
-        } else {
+        } else if (uriMimeType == InstancesContract.CONTENT_ITEM_TYPE) {
             instanceRepositoryProvider.get().get(ContentUriHelper.getIdFromUri(uri))?.let {
                 if (!File(it.instanceFilePath).exists()) {
                     Analytics.log(AnalyticsEvents.OPEN_DELETED_INSTANCE)
                     InstanceDeleter(instanceRepositoryProvider.get(), formsRepositoryProvider.get()).delete(it.dbId)
+                    displayErrorDialog(getString(R.string.instance_deleted_message))
+                    return false
+                }
+
+                val candidateForms = formsRepositoryProvider.get().getAllByFormIdAndVersion(it.formId, it.formVersion)
+
+                if (candidateForms.isEmpty()) {
+                    val version = if (it.formVersion == null) {
+                        ""
+                    } else {
+                        "\n${getString(R.string.version)} ${it.formVersion}"
+                    }
+
+                    displayErrorDialog(getString(R.string.parent_form_not_present, "${it.formId}$version"))
+                    return false
+                } else if (candidateForms.count { form: Form -> !form.isDeleted } > 1) {
+                    displayErrorDialog(getString(R.string.survey_multiple_forms_error))
+                    return false
+                }
+
+                true
+            } ?: false
+        } else {
+            entriesRepositoryProvider.get().get(ContentUriHelper.getIdFromUri(uri))?.let {
+                if (!File(it.entryFilePath).exists()) {
+                    Analytics.log(AnalyticsEvents.OPEN_DELETED_INSTANCE)
+                    EntryDeleter(entriesRepositoryProvider.get(), formsRepositoryProvider.get()).delete(it.dbId)
                     displayErrorDialog(getString(R.string.instance_deleted_message))
                     return false
                 }

@@ -139,8 +139,10 @@ public class EntryListCursorAdapter extends SimpleCursorAdapter {
     private void setUpSubtext(View view) {
         Timber.e("Column names: %s", Arrays.toString(getCursor().getColumnNames()));
         String date = getCursor().getString(getCursor().getColumnIndex(DatabaseEntryColumns.DATE));
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
         Timber.e("Date 1: %s", date);
         if(date == null || date.isEmpty()) {
+            sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.getDefault());
             date = getCursor().getString(getCursor().getColumnIndex(DatabaseEntryColumns.END));
             Timber.e("Date 2: %s", date);
         }
@@ -148,7 +150,6 @@ public class EntryListCursorAdapter extends SimpleCursorAdapter {
         String subtext = "";
         if(date != null && !date.isEmpty()) {
             try {
-                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.getDefault());
                 subtext = EntryProvider.getDisplaySubtext(context, status, sdf.parse(date));
                 Timber.e("Subtext : %s", subtext);
             } catch (ParseException e) {

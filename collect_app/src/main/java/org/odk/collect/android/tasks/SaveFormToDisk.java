@@ -43,6 +43,7 @@ import org.odk.collect.android.R;
 import org.odk.collect.android.application.Collect;
 import org.odk.collect.android.database.instances.DatabaseInstanceColumns;
 import org.odk.collect.android.exception.EncryptionException;
+import org.odk.collect.android.external.EntriesContract;
 import org.odk.collect.android.external.InstancesContract;
 import org.odk.collect.android.formentry.saving.FormSaver;
 import org.odk.collect.android.javarosawrapper.FailedValidationResult;
@@ -53,6 +54,7 @@ import org.odk.collect.android.storage.StorageSubdirectory;
 import org.odk.collect.android.utilities.ContentUriHelper;
 import org.odk.collect.android.utilities.EncryptionUtils;
 import org.odk.collect.android.utilities.EncryptionUtils.EncryptedFormInformation;
+import org.odk.collect.android.utilities.EntriesRepositoryProvider;
 import org.odk.collect.android.utilities.FileUtils;
 import org.odk.collect.android.utilities.FormsRepositoryProvider;
 import org.odk.collect.android.utilities.MediaUtils;
@@ -213,7 +215,21 @@ public class SaveFormToDisk {
             uri = InstancesContract.getUri(currentProjectId, newInstance.getDbId());
         } else {
             Timber.i("No instance found, creating");
-            Form form = new FormsRepositoryProvider(Collect.getInstance()).get().get(ContentUriHelper.getIdFromUri(uri));
+            Form form;
+            if (EntriesContract.CONTENT_ITEM_TYPE.equals(Collect.getInstance().getContentResolver().getType(uri))) {
+                org.odk.collect.forms.entries.Entry entry = new EntriesRepositoryProvider(Collect.getInstance()).get().get(ContentUriHelper.getIdFromUri(uri));
+                if (entry == null) {
+                    throw new IllegalStateException("Entry not found for URI: " + uri);
+                }
+
+                form = new FormsRepositoryProvider(Collect.getInstance()).get().getLatestByFormIdAndVersion(entry.getFormId(), entry.getFormVersion());
+            } else {
+                form = new FormsRepositoryProvider(Collect.getInstance()).get().get(ContentUriHelper.getIdFromUri(uri));
+            }
+
+            if (form == null) {
+                throw new IllegalStateException("Form not found for URI: " + uri);
+            }
 
             // add missing fields into values
             instanceBuilder.instanceFilePath(instancePath);

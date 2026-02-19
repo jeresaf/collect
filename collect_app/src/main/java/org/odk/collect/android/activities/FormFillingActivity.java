@@ -2215,7 +2215,7 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
                 runOnUiThread(() -> showLongToast(this, R.string.savepoint_used));
             }
 
-            if (formController.getInstanceFile() == null) {
+            if (formController.getInstanceFile() == null || instanceFileIsInEntriesDirectory(formController.getInstanceFile())) {
                 FormInstanceFileCreator formInstanceFileCreator = new FormInstanceFileCreator(
                         storagePathProvider,
                         System::currentTimeMillis
@@ -2303,6 +2303,11 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
             showLongToast(this, R.string.loading_form_failed);
             exit();
         }
+    }
+
+    private boolean instanceFileIsInEntriesDirectory(File instanceFile) {
+        String entriesDirectoryPath = storagePathProvider.getOdkDirPath(StorageSubdirectory.ENTRIES) + File.separator;
+        return instanceFile.getAbsolutePath().startsWith(entriesDirectoryPath);
     }
 
     /**

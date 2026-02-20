@@ -30,7 +30,7 @@ public final class Entry {
 
     public static final String STATUS_INCOMPLETE = "incomplete";
     public static final String STATUS_COMPLETE = "complete";
-    public static final String STATUS_SUBMITTED = "submitted";
+    public static final String STATUS_SUBMITTED = Instance.STATUS_SUBMITTED;
     public static final String STATUS_SUBMISSION_FAILED = "submissionFailed";
 
     private final String displayName;

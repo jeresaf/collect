@@ -158,17 +158,15 @@ public class EntryChooserList extends AppListActivity implements AdapterView.OnI
                     }
                     // caller wants to view/edit a form, so launch FormFillingActivity
                     Intent parentIntent = this.getIntent();
-                    Intent intent = new Intent(this, FormUriActivity.class);
-                    intent.setAction(Intent.ACTION_EDIT);
-                    intent.setData(entryUri);
                     String formMode = parentIntent.getStringExtra(ApplicationConstants.BundleKeys.FORM_MODE);
                     if (formMode == null || ApplicationConstants.FormModes.EDIT_SAVED.equalsIgnoreCase(formMode)) {
-                        logFormEdit(c);
-                        intent.putExtra(ApplicationConstants.BundleKeys.FORM_MODE, ApplicationConstants.FormModes.EDIT_SAVED);
-                        formLauncher.launch(intent);
+                        String issue = c.getString(c.getColumnIndex(DatabaseEntryColumns.ISSUE));
+                        showEntryIssueDialog(issue, () -> {
+                            logFormEdit(c);
+                            launchForm(entryUri, ApplicationConstants.FormModes.EDIT_SAVED);
+                        });
                     } else {
-                        intent.putExtra(ApplicationConstants.BundleKeys.FORM_MODE, ApplicationConstants.FormModes.VIEW_SENT);
-                        startActivity(intent);
+                        launchForm(entryUri, ApplicationConstants.FormModes.VIEW_SENT);
                         finish();
                     }
                 }
@@ -204,6 +202,28 @@ public class EntryChooserList extends AppListActivity implements AdapterView.OnI
         listAdapter = new EntryListCursorAdapter(
                 this, R.layout.entry_chooser_list_item, null, data, view, shouldCheckDisabled);
         listView.setAdapter(listAdapter);
+    }
+
+    private void showEntryIssueDialog(String issue, Runnable onConfirm) {
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.entries_with_issues)
+                .setMessage(issue)
+                .setPositiveButton(R.string.edit_form, (dialog, which) -> onConfirm.run())
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    private void launchForm(Uri entryUri, String formMode) {
+        Intent intent = new Intent(this, FormUriActivity.class);
+        intent.setAction(Intent.ACTION_EDIT);
+        intent.setData(entryUri);
+        intent.putExtra(ApplicationConstants.BundleKeys.FORM_MODE, formMode);
+
+        if (ApplicationConstants.FormModes.EDIT_SAVED.equalsIgnoreCase(formMode)) {
+            formLauncher.launch(intent);
+        } else {
+            startActivity(intent);
+        }
     }
 
     @Override

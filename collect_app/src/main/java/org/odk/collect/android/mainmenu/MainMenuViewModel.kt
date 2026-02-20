@@ -3,6 +3,7 @@ package org.odk.collect.android.mainmenu
 import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import org.odk.collect.android.R
 import org.odk.collect.android.formmanagement.InstancesAppState
@@ -12,10 +13,12 @@ import org.odk.collect.android.instancemanagement.autosend.shouldFormBeSentAutom
 import org.odk.collect.android.preferences.utilities.FormUpdateMode
 import org.odk.collect.android.preferences.utilities.SettingsUtils
 import org.odk.collect.android.utilities.ContentUriHelper
+import org.odk.collect.android.utilities.EntriesRepositoryProvider
 import org.odk.collect.android.utilities.FormsRepositoryProvider
 import org.odk.collect.android.utilities.InstancesRepositoryProvider
 import org.odk.collect.android.version.VersionInformation
 import org.odk.collect.async.Scheduler
+import org.odk.collect.forms.entries.Entry
 import org.odk.collect.forms.instances.Instance
 import org.odk.collect.settings.SettingsProvider
 import org.odk.collect.settings.keys.ProtectedProjectKeys
@@ -30,6 +33,8 @@ class MainMenuViewModel(
     private val instancesRepositoryProvider: InstancesRepositoryProvider,
     private val autoSendSettingsProvider: AutoSendSettingsProvider
 ) : ViewModel() {
+
+    private val _incompleteEntriesCount = MutableLiveData(0)
 
     val version: String
         get() = versionInformation.versionToDisplay
@@ -92,6 +97,9 @@ class MainMenuViewModel(
         scheduler.immediate<Any?>({
             InstanceDiskSynchronizer(settingsProvider).doInBackground()
             instancesAppState.update()
+            _incompleteEntriesCount.postValue(
+                EntriesRepositoryProvider(application).get().getCountByStatus(Entry.STATUS_INCOMPLETE)
+            )
             null
         }) { }
     }
@@ -104,6 +112,9 @@ class MainMenuViewModel(
 
     val sentInstancesCount: LiveData<Int>
         get() = instancesAppState.sentCount
+
+    val incompleteEntriesCount: LiveData<Int>
+        get() = _incompleteEntriesCount
 
     fun getFormSavedSnackbarDetails(uri: Uri): Pair<Int, Int?>? {
         val instance = instancesRepositoryProvider.get().get(ContentUriHelper.getIdFromUri(uri))

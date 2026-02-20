@@ -291,6 +291,9 @@ class MainMenuActivity : LocalizedActivity() {
         mainMenuViewModel.sentInstancesCount.observe(this) { sent: Int ->
             binding.viewSentForms.setNumberOfForms(sent)
         }
+        mainMenuViewModel.incompleteEntriesCount.observe(this) { entries: Int ->
+            binding.entriesWithIssues.setNumberOfForms(entries)
+        }
     }
 
     private fun initMetaData() {

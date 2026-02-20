@@ -260,7 +260,12 @@ public class EntryProvider extends ContentProvider {
                         ContentValues existingValues = getValuesFromEntry(entry, entriesPath);
 
                         existingValues.putAll(values);
-                        entriesRepository.save(getEntryFromValues(existingValues));
+                        Entry updatedEntry = getEntryFromValues(existingValues);
+                        if (Entry.STATUS_SUBMITTED.equals(updatedEntry.getStatus())) {
+                            new EntryDeleter(entriesRepositoryProvider.get(projectId), formsRepositoryProvider.get(projectId)).delete(updatedEntry.getDbId());
+                        } else {
+                            entriesRepository.save(updatedEntry);
+                        }
                     }
 
                     count = cursor.getCount();
@@ -275,7 +280,12 @@ public class EntryProvider extends ContentProvider {
                     ContentValues existingValues = getValuesFromEntry(entry, entriesPath);
 
                     existingValues.putAll(values);
-                    entriesRepository.save(getEntryFromValues(existingValues));
+                    Entry updatedEntry = getEntryFromValues(existingValues);
+                    if (Entry.STATUS_SUBMITTED.equals(updatedEntry.getStatus())) {
+                        new EntryDeleter(entriesRepositoryProvider.get(projectId), formsRepositoryProvider.get(projectId)).delete(updatedEntry.getDbId());
+                    } else {
+                        entriesRepository.save(updatedEntry);
+                    }
                     count = 1;
                 } else {
                     try (Cursor cursor = dbQuery(projectId, new String[]{_ID}, where, whereArgs, null)) {
@@ -285,7 +295,12 @@ public class EntryProvider extends ContentProvider {
                                 ContentValues existingValues = getValuesFromEntry(entry, entriesPath);
 
                                 existingValues.putAll(values);
-                                entriesRepository.save(getEntryFromValues(existingValues));
+                                Entry updatedEntry = getEntryFromValues(existingValues);
+                                if (Entry.STATUS_SUBMITTED.equals(updatedEntry.getStatus())) {
+                                    new EntryDeleter(entriesRepositoryProvider.get(projectId), formsRepositoryProvider.get(projectId)).delete(updatedEntry.getDbId());
+                                } else {
+                                    entriesRepository.save(updatedEntry);
+                                }
                                 break;
                             }
                         }

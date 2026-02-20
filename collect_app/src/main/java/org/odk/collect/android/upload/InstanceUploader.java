@@ -20,7 +20,10 @@ import androidx.annotation.Nullable;
 import org.odk.collect.android.application.Collect;
 import org.odk.collect.android.formmanagement.InstancesAppState;
 import org.odk.collect.android.injection.DaggerUtils;
+import org.odk.collect.android.utilities.EntriesRepositoryProvider;
 import org.odk.collect.android.utilities.InstancesRepositoryProvider;
+import org.odk.collect.forms.entries.Entry;
+import org.odk.collect.forms.entries.EntriesRepository;
 import org.odk.collect.forms.instances.Instance;
 
 import java.util.ArrayList;
@@ -32,6 +35,9 @@ public abstract class InstanceUploader {
 
     @Inject
     InstancesRepositoryProvider instancesRepositoryProvider;
+
+    @Inject
+    EntriesRepositoryProvider entriesRepositoryProvider;
 
     @Inject
     InstancesAppState instancesAppState;
@@ -85,6 +91,12 @@ public abstract class InstanceUploader {
                         .status(Instance.STATUS_SUBMITTED)
                         .build()
                 );
+
+        EntriesRepository entriesRepository = entriesRepositoryProvider.get();
+        entriesRepository.getAllByInstanceId(instance.getInstanceId())
+                .forEach(entry -> entriesRepository.save(new Entry.Builder(entry)
+                        .status(Entry.STATUS_SUBMITTED)
+                        .build()));
 
         instancesAppState.update();
     }

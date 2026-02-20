@@ -60,6 +60,8 @@ import org.odk.collect.android.utilities.FormsRepositoryProvider;
 import org.odk.collect.android.utilities.MediaUtils;
 import org.odk.collect.entities.EntitiesRepository;
 import org.odk.collect.forms.Form;
+import org.odk.collect.forms.entries.Entry;
+import org.odk.collect.forms.entries.EntriesRepository;
 import org.odk.collect.forms.instances.Instance;
 import org.odk.collect.forms.instances.InstancesRepository;
 
@@ -255,6 +257,20 @@ public class SaveFormToDisk {
         return newInstance;
     }
 
+    private void updateEntryStatus(Long entryId, String status) {
+        if (entryId == null) {
+            return;
+        }
+
+        EntriesRepository entriesRepository = new EntriesRepositoryProvider(Collect.getInstance()).get(currentProjectId);
+        Entry entry = entriesRepository.get(entryId);
+        if (entry != null) {
+            entriesRepository.save(new Entry.Builder(entry)
+                    .status(status)
+                    .build());
+        }
+    }
+
     /**
      * Extracts geometry information from the given xpath path in the given instance.
      * <p>
@@ -368,6 +384,9 @@ public class SaveFormToDisk {
         String lastSavedPath = formController.getLastSavedPath();
         writeFile(payload, lastSavedPath);
 
+        boolean startedFromEntry = EntriesContract.CONTENT_ITEM_TYPE.equals(Collect.getInstance().getContentResolver().getType(uri));
+        Long entryId = startedFromEntry ? ContentUriHelper.getIdFromUri(uri) : null;
+
         // update the uri. We have exported the reloadable instance, so update status...
         // Since we saved a reloadable instance, it is flagged as re-openable so that if any error
         // occurs during the packaging of the data for the server fails (e.g., encryption),
@@ -424,6 +443,9 @@ public class SaveFormToDisk {
             //    and remove the plaintext attachments if encrypting
 
             instance = updateInstanceDatabase(false, canEditAfterCompleted);
+            if (startedFromEntry) {
+                updateEntryStatus(entryId, Entry.STATUS_COMPLETE);
+            }
 
             if (!canEditAfterCompleted) {
                 manageFilesAfterSavingEncryptedForm(instanceXml, submissionXml);

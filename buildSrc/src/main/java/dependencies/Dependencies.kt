@@ -45,7 +45,7 @@ object Dependencies {
     const val opencsv = "com.opencsv:opencsv:5.7.1"
     const val javarosa = "org.getodk:javarosa:4.2.0"
     const val javarosa_local = "org.getodk:javarosa:local"
-    const val kxml2 = "net.sf.kxml:kxml2:2.3.0"
+    const val kxml2 = "org.kxml2:kxml2:2.3.0"
     const val karumi_dexter = "com.karumi:dexter:6.2.3"
     const val zxing_android_embedded = "com.journeyapps:zxing-android-embedded:4.3.0"
     const val dagger = "com.google.dagger:dagger:${Versions.dagger}"

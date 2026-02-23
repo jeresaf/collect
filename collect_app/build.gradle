@@ -315,7 +315,7 @@ dependencies {
         exclude group: 'org.slf4j'
         exclude group: 'org.hamcrest', module: 'hamcrest-all'
         exclude group: 'xmlpull', module: 'xmlpull'
-        exclude group: 'net.sf.kxml', module: 'kxml2'
+        exclude group: 'org.kxml2', module: 'kxml2'
     }
     implementation(Dependencies.kxml2) {
         exclude group: 'xmlpull', module: 'xmlpull'

@@ -314,6 +314,7 @@ dependencies {
         exclude group: 'joda-time'
         exclude group: 'org.slf4j'
         exclude group: 'org.hamcrest', module: 'hamcrest-all'
+        exclude group: 'xmlpull', module: 'xmlpull'
     }
     implementation(Dependencies.google_api_client_android) {
         exclude group: 'org.apache.httpcomponents'

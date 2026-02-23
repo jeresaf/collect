@@ -92,11 +92,13 @@ public abstract class InstanceUploader {
                         .build()
                 );
 
+        /*
         EntriesRepository entriesRepository = entriesRepositoryProvider.get();
         entriesRepository.getAllByInstanceId(instance.getInstanceId())
                 .forEach(entry -> entriesRepository.save(new Entry.Builder(entry)
                         .status(Entry.STATUS_SUBMITTED)
                         .build()));
+        */
 
         instancesAppState.update();
     }

@@ -14,8 +14,8 @@ public class OpenRosaUserResponseParserImpl implements OpenRosaUserResponseParse
     //private static final String NAMESPACE_UBOS_COM_LOGIN = "https://registration.pdmis.go.ug/community/users";
     //private static final String NAMESPACE_UBOS_COM_ADMIN_UNITS = "https://registration.pdmis.go.ug/community/adminUnits";
 
-    private static final String NAMESPACE_UBOS_COM_LOGIN = "http://192.168.1.66/collect/users";
-    private static final String NAMESPACE_UBOS_COM_ADMIN_UNITS = "http://192.168.1.66/collect/adminUnits";
+    private static final String NAMESPACE_UBOS_COM_LOGIN = "http://registration.pdmis.go.ug/collect/users";
+    private static final String NAMESPACE_UBOS_COM_ADMIN_UNITS = "http://registration.pdmis.go.ug/collect/adminUnits";
 
     //Serious issue here with the response namespace
     private static final String NAMESPACE_OPENROSA_ORG_XFORMS_XFORMS_LIST = "http://openrosa.org/xforms/xformsList";

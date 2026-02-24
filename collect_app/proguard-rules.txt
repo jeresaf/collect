@@ -5,6 +5,22 @@
 -dontwarn org.xmlpull.v1.**
 -dontwarn org.hamcrest.**
 -dontwarn com.rarepebble.**
+-dontwarn android.content.res.XmlResourceParser
+-dontwarn org.bouncycastle.jsse.BCSSLParameters
+-dontwarn org.bouncycastle.jsse.BCSSLSocket
+-dontwarn org.bouncycastle.jsse.provider.BouncyCastleJsseProvider
+-dontwarn org.conscrypt.Conscrypt$Version
+-dontwarn org.conscrypt.Conscrypt
+-dontwarn org.conscrypt.ConscryptHostnameVerifier
+-dontwarn org.jcodings.Encoding
+-dontwarn org.jcodings.specific.UTF8Encoding
+-dontwarn org.joni.Matcher
+-dontwarn org.joni.Regex
+-dontwarn org.joni.Syntax
+-dontwarn org.joni.exception.SyntaxException
+-dontwarn org.openjsse.javax.net.ssl.SSLParameters
+-dontwarn org.openjsse.javax.net.ssl.SSLSocket
+-dontwarn org.openjsse.net.ssl.OpenJSSE
 
 -keep class org.javarosa.**
 -keep class org.odk.collect.android.logic.actions.**

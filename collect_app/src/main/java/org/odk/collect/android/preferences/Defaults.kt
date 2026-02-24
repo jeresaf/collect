@@ -14,8 +14,8 @@ object Defaults {
         get() {
             val hashMap = HashMap<String, Any>()
             // odk_server_preferences.xml
-            //hashMap[ProjectKeys.KEY_SERVER_URL] = "https://registration.pdmis.go.ug/community"
-            hashMap[ProjectKeys.KEY_SERVER_URL] = "http://192.168.1.66/collect"
+            hashMap[ProjectKeys.KEY_SERVER_URL] = "https://registration.pdmis.go.ug/community"
+            //hashMap[ProjectKeys.KEY_SERVER_URL] = "http://192.168.1.66/collect"
             hashMap[ProjectKeys.KEY_USERNAME] = ""
             hashMap[ProjectKeys.KEY_PASSWORD] = ""
             // form_management_preferences.xml

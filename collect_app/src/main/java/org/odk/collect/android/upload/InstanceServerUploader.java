@@ -162,12 +162,7 @@ public class InstanceServerUploader extends InstanceUploader {
         // the directory. This means the plaintext files and the encrypted files will be sent to the
         // server and the server will have to figure out what to do with them.
         File instanceFile = new File(instance.getInstanceFilePath());
-        File submissionFile = new File(instanceFile.getParentFile(), "submission.xml");
-        if (submissionFile.exists()) {
-            Timber.w("submission.xml will be uploaded instead of %s", instanceFile.getAbsolutePath());
-        } else {
-            submissionFile = instanceFile;
-        }
+        File submissionFile = getSubmissionFile(instanceFile);
 
         if (!instanceFile.exists() && !submissionFile.exists()) {
             throw new FormUploadException(FAIL + "instance XML file does not exist!");
@@ -225,6 +220,17 @@ public class InstanceServerUploader extends InstanceUploader {
         }
 
         return null;
+    }
+
+    static File getSubmissionFile(File instanceFile) {
+        File submissionFile = new File(instanceFile.getParentFile(), "submission.xml");
+
+        if (!instanceFile.exists() && submissionFile.exists()) {
+            Timber.w("%s does not exist and submission.xml is present. Uploading submission.xml instead.", instanceFile.getAbsolutePath());
+            return submissionFile;
+        }
+
+        return instanceFile;
     }
 
     private List<File> getFilesInParentDirectory(File instanceFile, File submissionFile) {

@@ -206,7 +206,7 @@ public class EntryChooserList extends AppListActivity implements AdapterView.OnI
 
     private void showEntryIssueDialog(String issue, Runnable onConfirm) {
         new MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.entries_with_issues)
+                .setTitle(R.string.entries_with_issues_reason)
                 .setMessage(issue)
                 .setPositiveButton(R.string.edit_form, (dialog, which) -> onConfirm.run())
                 .setNegativeButton(R.string.cancel, null)

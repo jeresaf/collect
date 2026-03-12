@@ -24,6 +24,8 @@
     <string name="get_entries_with_issues">Download entries with issues</string>
     <!-- Text for an action button on the main screen. -->
     <string name="entries_with_issues">Entries with issues</string>
+
+    <string name="entries_with_issues_reason">Reasons why entry was rejected</string>
     <!-- Text for an action button on the main screen. -->
     <string name="manage_files">Delete form</string>
 

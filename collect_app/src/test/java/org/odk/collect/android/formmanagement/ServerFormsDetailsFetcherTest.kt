@@ -16,6 +16,7 @@ import org.odk.collect.forms.ManifestFile
 import org.odk.collect.forms.MediaFile
 import org.odk.collect.formstest.FormUtils
 import org.odk.collect.formstest.InMemFormsRepository
+import org.odk.collect.settings.SettingsProvider
 import org.odk.collect.shared.TempFiles
 import org.odk.collect.shared.strings.Md5.getMd5Hash
 import java.io.BufferedWriter
@@ -25,6 +26,8 @@ import java.io.FileWriter
 
 class ServerFormsDetailsFetcherTest {
 
+
+    private val settingsProvider: SettingsProvider = mock();
     private val formsRepository: FormsRepository = InMemFormsRepository()
     private val diskFormsSynchronizer = mock<DiskFormsSynchronizer>()
     private val formSource = mock<FormSource> {
@@ -37,7 +40,7 @@ class ServerFormsDetailsFetcherTest {
     }
 
     private val fetcher =
-        ServerFormsDetailsFetcher(formsRepository, formSource, diskFormsSynchronizer)
+        ServerFormsDetailsFetcher(formsRepository, formSource, diskFormsSynchronizer, settingsProvider)
 
     @Test
     fun whenFormHasManifestUrl_returnsMediaFilesInDetails() {

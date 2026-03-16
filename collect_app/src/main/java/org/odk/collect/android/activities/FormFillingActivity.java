@@ -1251,10 +1251,14 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
 
                     odkView.setRepeatAddOnCLickListener(
                         v -> {
-                            //swipeHandler.setBeenSwiped(true);
-                            //onSwipeForward();
-                            swipeHandler.setBeenSwiped(false);
-                            formEntryViewModel.addRepeat();
+                            String constraintBehavior = settingsProvider.getUnprotectedSettings().getString(ProjectKeys.KEY_CONSTRAINT_BEHAVIOR);
+                            boolean evaluateConstraints = getFormController().currentPromptIsQuestion()
+                                    && constraintBehavior.equals(ProjectKeys.CONSTRAINT_BEHAVIOR_ON_SWIPE);
+
+                            if (formEntryViewModel.updateAnswersForScreen(getAnswers(), evaluateConstraints)) {
+                                swipeHandler.setBeenSwiped(false);
+                                formEntryViewModel.addRepeat();
+                            }
                         }
                     );
                     odkView.setRepeatDeleteOnClickListener(

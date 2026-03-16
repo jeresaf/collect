@@ -1257,7 +1257,7 @@ public class FormFillingActivity extends LocalizedActivity implements AnimationL
 
                             if (formEntryViewModel.updateAnswersForScreen(getAnswers(), evaluateConstraints)) {
                                 swipeHandler.setBeenSwiped(false);
-                                formEntryViewModel.addRepeat();
+                                formEntryViewModel.addRepeatFromCurrentScreen();
                             }
                         }
                     );

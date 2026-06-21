@@ -52,11 +52,9 @@ public interface OpenRosaUserHttpInterface {
      * @return ResponseMessageParser object that contains the response XML
      * @throws IOException can be thrown if files do not exist
      */
-    /*
     @NonNull
     HttpGetResult fetchUnits(@NonNull String username,
                         @NonNull URI uri,
                         @Nullable HttpCredentialsInterface credentials,
                         @NonNull long contentLength) throws Exception;
-    */
 }

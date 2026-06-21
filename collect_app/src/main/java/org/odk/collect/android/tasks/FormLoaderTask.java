@@ -342,6 +342,7 @@ public class FormLoaderTask extends AsyncTask<String, String, FormLoaderTask.FEC
                     Timber.i("Importing data");
                     publishProgress(getLocalizedString(Collect.getInstance(), R.string.survey_loading_reading_data_message));
                     importData(instanceXml, fec);
+                    EditedInstancePreloadUpdater.updatePropertyPreloads(formDef);
                     formDef.initialize(false, instanceInit);
                 } catch (IOException | RuntimeException e) {
                     // Skip a savepoint file that is corrupted or 0-sized

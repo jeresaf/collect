@@ -11,7 +11,7 @@ import java.util.List;
  */
 public interface FormSource {
 
-    List<FormListItem> fetchFormList() throws FormSourceException;
+    List<FormListItem> fetchFormList(String username) throws FormSourceException;
 
     ManifestFile fetchManifest(String manifestURL) throws FormSourceException;
 

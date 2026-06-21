@@ -4,18 +4,18 @@ import org.javarosa.xform.parse.XFormParser;
 import org.jetbrains.annotations.Nullable;
 import org.kxml2.kdom.Document;
 import org.kxml2.kdom.Element;
-//import org.odk.collect.android.login.AdminUnitDetails;
+import org.odk.collect.android.login.AdminUnitDetails;
 import org.odk.collect.android.login.LoginDetails;
 
 import timber.log.Timber;
 
 public class OpenRosaUserResponseParserImpl implements OpenRosaUserResponseParser {
 
-    //private static final String NAMESPACE_UBOS_COM_LOGIN = "https://registration.pdmis.go.ug/community/users";
-    //private static final String NAMESPACE_UBOS_COM_ADMIN_UNITS = "https://registration.pdmis.go.ug/community/adminUnits";
+    private static final String NAMESPACE_UBOS_COM_LOGIN = "https://registration.pdmis.go.ug/community/users";
+    private static final String NAMESPACE_UBOS_COM_ADMIN_UNITS = "https://registration.pdmis.go.ug/community/adminUnits";
 
-    private static final String NAMESPACE_UBOS_COM_LOGIN = "http://registration.pdmis.go.ug/collect/users";
-    private static final String NAMESPACE_UBOS_COM_ADMIN_UNITS = "http://registration.pdmis.go.ug/collect/adminUnits";
+    //private static final String NAMESPACE_UBOS_COM_LOGIN = "http://192.168.1.86/collect/users";
+    //private static final String NAMESPACE_UBOS_COM_ADMIN_UNITS = "http://192.168.1.86/collect/adminUnits";
 
     //Serious issue here with the response namespace
     private static final String NAMESPACE_OPENROSA_ORG_XFORMS_XFORMS_LIST = "http://openrosa.org/xforms/xformsList";
@@ -126,7 +126,7 @@ public class OpenRosaUserResponseParserImpl implements OpenRosaUserResponseParse
                             break;
                         case "userName":
                             user_name = XFormParser.getXMLText(child, true);
-                            if (user_name != null && user_name.length() == 0) {
+                            if (user_name != null && user_name.isEmpty()) {
                                 user_name = null;
                             }
                             break;
@@ -138,55 +138,55 @@ public class OpenRosaUserResponseParserImpl implements OpenRosaUserResponseParse
                             break;
                         case "email":
                             email = XFormParser.getXMLText(child, true);
-                            if (email != null && email.length() == 0) {
+                            if (email != null && email.isEmpty()) {
                                 email = null;
                             }
                             break;
                         case "name":
                             full_name = XFormParser.getXMLText(child, true);
-                            if (full_name != null && full_name.length() == 0) {
+                            if (full_name != null && full_name.isEmpty()) {
                                 full_name = null;
                             }
                             break;
                         case "token":
                             token = XFormParser.getXMLText(child, true);
-                            if (token != null && token.length() == 0) {
+                            if (token != null && token.isEmpty()) {
                                 token = null;
                             }
                             break;
                         case "api_username":
                             api_username = XFormParser.getXMLText(child, true);
-                            if (api_username != null && api_username.length() == 0) {
+                            if (api_username != null && api_username.isEmpty()) {
                                 api_username = null;
                             }
                             break;
                         case "api_password":
                             api_password = XFormParser.getXMLText(child, true);
-                            if (api_password != null && api_password.length() == 0) {
+                            if (api_password != null && api_password.isEmpty()) {
                                 api_password = null;
                             }
                             break;
                         case "district":
                             district = XFormParser.getXMLText(child, true);
-                            if (district != null && district.length() == 0) {
+                            if (district != null && district.isEmpty()) {
                                 district = null;
                             }
                             break;
                         case "sub_county":
                             sub_county = XFormParser.getXMLText(child, true);
-                            if (sub_county != null && sub_county.length() == 0) {
+                            if (sub_county != null && sub_county.isEmpty()) {
                                 sub_county = null;
                             }
                             break;
                         case "parish":
                             parish = XFormParser.getXMLText(child, true);
-                            if (parish != null && parish.length() == 0) {
+                            if (parish != null && parish.isEmpty()) {
                                 parish = null;
                             }
                             break;
                         case "village":
                             village = XFormParser.getXMLText(child, true);
-                            if (village != null && village.length() == 0) {
+                            if (village != null && village.isEmpty()) {
                                 village = null;
                             }
                             break;
@@ -204,7 +204,6 @@ public class OpenRosaUserResponseParserImpl implements OpenRosaUserResponseParse
         return loginDetails;
     }
 
-    /*
     @Override
     @Nullable
     public AdminUnitDetails parseAdminUnits(Document document) {
@@ -288,25 +287,25 @@ public class OpenRosaUserResponseParserImpl implements OpenRosaUserResponseParse
                     switch (tag) {
                         case "district":
                             district = XFormParser.getXMLText(child, true);
-                            if (district != null && district.length() == 0) {
+                            if (district != null && district.isEmpty()) {
                                 district = "";
                             }
                             break;
                         case "sub_county":
                             sub_county = XFormParser.getXMLText(child, true);
-                            if (sub_county != null && sub_county.length() == 0) {
+                            if (sub_county != null && sub_county.isEmpty()) {
                                 sub_county = "";
                             }
                             break;
                         case "parish":
                             parish = XFormParser.getXMLText(child, true);
-                            if (parish != null && parish.length() == 0) {
+                            if (parish != null && parish.isEmpty()) {
                                 parish = "";
                             }
                             break;
                         case "village":
                             village = XFormParser.getXMLText(child, true);
-                            if (village != null && village.length() == 0) {
+                            if (village != null && village.isEmpty()) {
                                 village = "";
                             }
                             break;
@@ -322,18 +321,13 @@ public class OpenRosaUserResponseParserImpl implements OpenRosaUserResponseParse
         return adminUnitDetails;
     }
 
-     */
-
     private static boolean isLoginNamespacedElement(Element e) {
         return e.getNamespace().equalsIgnoreCase(NAMESPACE_UBOS_COM_LOGIN);
     }
 
-    /*
     private static boolean isAdminUnitsNamespacedElement(Element e) {
-        return e.getNamespace().equalsIgnoreCase(NAMESPACE_DERON_COM_ADMIN_UNITS);
+        return e.getNamespace().equalsIgnoreCase(NAMESPACE_UBOS_COM_ADMIN_UNITS);
     }
-
-     */
 
     private static boolean isXformsListNamespacedElement(Element e) {
         return e.getNamespace().equalsIgnoreCase(NAMESPACE_OPENROSA_ORG_XFORMS_XFORMS_LIST);

@@ -44,7 +44,7 @@ public class OpenRosaFormSourceTest {
                 "", 200
         ));
 
-        formListApi.fetchFormList();
+        formListApi.fetchFormList("demo_user");
         verify(httpInterface).executeGetRequest(eq(new URI("http://blah.com/formList")), any(), any());
     }
 
@@ -54,7 +54,7 @@ public class OpenRosaFormSourceTest {
 
         try {
             when(httpInterface.executeGetRequest(any(), any(), any())).thenThrow(UnknownHostException.class);
-            formListApi.fetchFormList();
+            formListApi.fetchFormList("demo_user");
             fail("No exception thrown!");
         } catch (FormSourceException.Unreachable e) {
             assertThat(e.getServerUrl(), is("http://blah.com"));
@@ -67,7 +67,7 @@ public class OpenRosaFormSourceTest {
 
         try {
             when(httpInterface.executeGetRequest(any(), any(), any())).thenThrow(SSLException.class);
-            formListApi.fetchFormList();
+            formListApi.fetchFormList("demo_user");
             fail("No exception thrown!");
         } catch (FormSourceException.SecurityError e) {
             assertThat(e.getServerUrl(), is("http://blah.com"));
@@ -80,7 +80,7 @@ public class OpenRosaFormSourceTest {
 
         try {
             when(httpInterface.executeGetRequest(any(), any(), any())).thenThrow(SocketTimeoutException.class);
-            formListApi.fetchFormList();
+            formListApi.fetchFormList("demo_user");
             fail("No exception thrown!");
         } catch (FormSourceException.FetchError e) {
             // pass
@@ -93,7 +93,7 @@ public class OpenRosaFormSourceTest {
 
         try {
             when(httpInterface.executeGetRequest(any(), any(), any())).thenReturn(new HttpGetResult(null, new HashMap<>(), "hash", 404));
-            formListApi.fetchFormList();
+            formListApi.fetchFormList("demo_user");
             fail("No exception thrown!");
         } catch (FormSourceException.Unreachable e) {
             assertThat(e.getServerUrl(), is("http://blah.com"));
@@ -106,7 +106,7 @@ public class OpenRosaFormSourceTest {
 
         try {
             when(httpInterface.executeGetRequest(any(), any(), any())).thenReturn(new HttpGetResult(null, new HashMap<>(), "hash", 500));
-            formListApi.fetchFormList();
+            formListApi.fetchFormList("demo_user");
             fail("No exception thrown!");
         } catch (FormSourceException.ServerError e) {
             assertThat(e.getStatusCode(), is(500));
@@ -129,7 +129,7 @@ public class OpenRosaFormSourceTest {
             ));
 
             when(responseParser.parseFormList(any())).thenReturn(null);
-            formListApi.fetchFormList();
+            formListApi.fetchFormList("demo_user");
             fail("No exception thrown!");
         } catch (FormSourceException.ParseError e) {
             assertThat(e.getServerUrl(), is("http://blah.com"));
@@ -147,7 +147,7 @@ public class OpenRosaFormSourceTest {
         ));
 
         try {
-            formListApi.fetchFormList();
+            formListApi.fetchFormList("demo_user");
             fail("Expected exception because server is not OpenRosa server.");
         } catch (FormSourceException.ServerNotOpenRosaError e) {
             // pass

@@ -101,7 +101,6 @@ class OpenRosaUserFetcher extends OpenRosaXmlFetcher{
      * @return DocumentFetchResult - an object that contains the results of the "get" operation
      */
 
-    /*
     @SuppressWarnings("PMD.AvoidRethrowingException")
     public DocumentFetchResult getAdminUnitXML(@NonNull String username, String urlString) throws Exception {
 
@@ -150,8 +149,6 @@ class OpenRosaUserFetcher extends OpenRosaXmlFetcher{
         return new DocumentFetchResult(doc, inputStreamResult.isOpenRosaResponse(), inputStreamResult.getHash());
     }
 
-     */
-
     /**
      * Creates a Http connection and input stream
      *
@@ -193,7 +190,6 @@ class OpenRosaUserFetcher extends OpenRosaXmlFetcher{
      * @throws Exception - Can throw a multitude of Exceptions, such as MalformedURLException or IOException
      */
 
-    /*
     @NonNull
     public HttpGetResult fetchAdminUnits(@NonNull String username, @NonNull String downloadUrl) throws Exception {
         URI uri;
@@ -215,5 +211,5 @@ class OpenRosaUserFetcher extends OpenRosaXmlFetcher{
 
         return httpInterface.fetchUnits(username, uri, webCredentialsUtils.getCredentials(uri), contentLength);
     }
-     */
+
 }

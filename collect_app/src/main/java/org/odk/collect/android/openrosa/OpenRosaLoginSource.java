@@ -4,12 +4,13 @@ import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_UNAUTHORIZED;
 
 import org.jetbrains.annotations.NotNull;
-//import org.odk.collect.android.login.AdminUnitDetails;
+import org.odk.collect.android.login.AdminUnitDetails;
 import org.odk.collect.android.login.LoginDetails;
 import org.odk.collect.android.login.LoginSource;
 import org.odk.collect.android.login.LoginSourceException;
 import org.odk.collect.android.utilities.DocumentFetchResult;
 import org.odk.collect.android.utilities.WebCredentialsUtils;
+import org.odk.collect.forms.FormSourceException;
 
 import java.net.UnknownHostException;
 import java.util.concurrent.Callable;
@@ -68,8 +69,7 @@ public class OpenRosaLoginSource implements LoginSource {
         }
     }
 
-    /*
-    public AdminUnitDetails fetchAdminUnits(String username) throws FormSourceException {
+    public AdminUnitDetails fetchAdminUnits(String username) throws FormSourceException, LoginSourceException {
         DocumentFetchResult result = mapException(() -> openRosaXMLFetcher.getAdminUnitXML(username, getAdminUnitsURL()));
         Timber.e("Doc returns");
         if (result.errorMessage != null) {
@@ -100,8 +100,6 @@ public class OpenRosaLoginSource implements LoginSource {
             throw new FormSourceException.ServerNotOpenRosaError();
         }
     }
-
-     */
 
     public void updateUrl(String url) {
         this.serverURL = url;

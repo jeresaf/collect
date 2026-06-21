@@ -18,6 +18,7 @@ package org.odk.collect.android.login;
 
 import org.odk.collect.android.openrosa.OpenRosaLoginSource;
 import org.odk.collect.android.utilities.WebCredentialsUtils;
+import org.odk.collect.forms.FormSourceException;
 
 import timber.log.Timber;
 
@@ -40,5 +41,10 @@ public class LoginDetailsFetcher {
     public LoginDetails fetchUserDetails(String username, String password) throws LoginSourceException {
         Timber.e("Server User Detail Fetcher");
         return ((OpenRosaLoginSource) loginSource).fetchUser(username, password);
+    }
+
+    public AdminUnitDetails fetchAdminUnits(String username) throws LoginSourceException, FormSourceException {
+        Timber.e("Server Admin Units Fetcher");
+        return ((OpenRosaLoginSource) loginSource).fetchAdminUnits(username);
     }
 }

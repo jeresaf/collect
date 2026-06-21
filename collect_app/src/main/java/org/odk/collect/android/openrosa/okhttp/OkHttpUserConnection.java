@@ -126,7 +126,6 @@ public class OkHttpUserConnection extends OkHttpConnection implements OpenRosaUs
 
     }
 
-    /*
     @NonNull
     public HttpGetResult fetchUnits(@NonNull String username,
                                @NonNull URI uri,
@@ -197,8 +196,6 @@ public class OkHttpUserConnection extends OkHttpConnection implements OpenRosaUs
         return new HttpGetResult(downloadStream, responseHeaders, hash, statusCode);
 
     }
-
-     */
 
     /**
      * Utility to ensure that the entity stream of a response is drained of

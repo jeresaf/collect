@@ -51,8 +51,8 @@ open class ServerFormsDetailsFetcher(
     @Throws(FormSourceException::class)
     open fun fetchFormDetails(): List<ServerFormDetails> {
         diskFormsSynchronizer.synchronize()
-
-        val formList = formSource.fetchFormList()
+        val username = settingsProvider.getUnprotectedSettings().getString(KEY_METADATA_PHONENUMBER);
+        val formList = formSource.fetchFormList(username)
         return formList.map { listItem ->
             val manifestFile = listItem.manifestURL?.let {
                 getManifestFile(formSource, it)

@@ -37,8 +37,8 @@ public class OpenRosaFormSource implements FormSource {
     }
 
     @Override
-    public List<FormListItem> fetchFormList() throws FormSourceException {
-        DocumentFetchResult result = mapException(() -> openRosaXMLFetcher.getXML(getFormListURL()));
+    public List<FormListItem> fetchFormList(String username) throws FormSourceException {
+        DocumentFetchResult result = mapException(() -> openRosaXMLFetcher.getXML(getFormListURL(username)));
 
         if (result.errorMessage != null) {
             if (result.responseCode == HTTP_UNAUTHORIZED) {
@@ -143,7 +143,7 @@ public class OpenRosaFormSource implements FormSource {
     }
 
     @NotNull
-    private String getFormListURL() {
+    private String getFormListURL(String username) {
         String downloadListUrl = serverURL;
 
         while (downloadListUrl.endsWith("/")) {
@@ -151,6 +151,7 @@ public class OpenRosaFormSource implements FormSource {
         }
 
         downloadListUrl += OpenRosaConstants.FORM_LIST;
+        downloadListUrl += ("?username=" + username);
         return downloadListUrl;
     }
 

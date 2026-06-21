@@ -780,7 +780,7 @@ public class ServerFormDownloaderTest {
         }
 
         @Override
-        public List<FormListItem> fetchFormList() {
+        public List<FormListItem> fetchFormList(String username) {
             throw new UnsupportedOperationException();
         }
 
@@ -821,7 +821,7 @@ public class ServerFormDownloaderTest {
         }
 
         @Override
-        public List<FormListItem> fetchFormList() {
+        public List<FormListItem> fetchFormList(String username) {
             throw new UnsupportedOperationException();
         }
 

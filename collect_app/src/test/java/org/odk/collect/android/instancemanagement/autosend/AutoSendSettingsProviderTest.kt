@@ -16,7 +16,7 @@ class AutoSendSettingsProviderTest {
     private val networkStateProvider: NetworkStateProvider = mock()
     private val settingsProvider = InMemSettingsProvider()
 
-    private val projectId = Project.DEMO_PROJECT_NAME
+    private val projectId = Project.PROJECT_NAME
 
     @Test
     fun `return false when autosend is disabled in settings and network is not available`() {

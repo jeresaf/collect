@@ -24,7 +24,7 @@ class NotificationManagerNotifierTest {
     private lateinit var notifier: NotificationManagerNotifier
     private lateinit var notificationManager: NotificationManager
     private val projectsRepository: ProjectsRepository = InMemProjectsRepository().apply {
-        save(Project.DEMO_PROJECT)
+        save(Project.PROJECT)
     }
 
     @Before
@@ -41,12 +41,12 @@ class NotificationManagerNotifierTest {
 
     @Test
     fun onSync_whenExceptionNull_clearsNotification() {
-        notifier.onSync(FormSourceException.FetchError(), Project.DEMO_PROJECT_ID)
+        notifier.onSync(FormSourceException.FetchError(), Project.PROJECT_ID)
         assertThat(
             Shadows.shadowOf(notificationManager).allNotifications.size,
             `is`(1)
         )
-        notifier.onSync(null, Project.DEMO_PROJECT_ID)
+        notifier.onSync(null, Project.PROJECT_ID)
         assertThat(
             Shadows.shadowOf(notificationManager).allNotifications.size,
             `is`(0)
@@ -67,13 +67,13 @@ class NotificationManagerNotifierTest {
                 null
             )
         )
-        notifier.onUpdatesAvailable(updates, Project.DEMO_PROJECT_ID)
+        notifier.onUpdatesAvailable(updates, Project.PROJECT_ID)
         assertThat(
             Shadows.shadowOf(notificationManager).allNotifications.size,
             `is`(1)
         )
         notificationManager.cancelAll()
-        notifier.onUpdatesAvailable(updates, Project.DEMO_PROJECT_ID)
+        notifier.onUpdatesAvailable(updates, Project.PROJECT_ID)
         assertThat(
             Shadows.shadowOf(notificationManager).allNotifications.size,
             `is`(0)
@@ -94,7 +94,7 @@ class NotificationManagerNotifierTest {
                 null
             )
         )
-        notifier.onUpdatesAvailable(updates, Project.DEMO_PROJECT_ID)
+        notifier.onUpdatesAvailable(updates, Project.PROJECT_ID)
         assertThat(
             Shadows.shadowOf(notificationManager).allNotifications.size,
             `is`(1)
@@ -112,7 +112,7 @@ class NotificationManagerNotifierTest {
             )
         )
         notificationManager.cancelAll()
-        notifier.onUpdatesAvailable(updates, Project.DEMO_PROJECT_ID)
+        notifier.onUpdatesAvailable(updates, Project.PROJECT_ID)
         assertThat(
             Shadows.shadowOf(notificationManager).allNotifications.size,
             `is`(1)
@@ -133,7 +133,7 @@ class NotificationManagerNotifierTest {
                 ManifestFile("manifest-hash", emptyList())
             )
         )
-        notifier.onUpdatesAvailable(updates, Project.DEMO_PROJECT_ID)
+        notifier.onUpdatesAvailable(updates, Project.PROJECT_ID)
         assertThat(
             Shadows.shadowOf(notificationManager).allNotifications.size,
             `is`(1)
@@ -151,7 +151,7 @@ class NotificationManagerNotifierTest {
             )
         )
         notificationManager.cancelAll()
-        notifier.onUpdatesAvailable(updates, Project.DEMO_PROJECT_ID)
+        notifier.onUpdatesAvailable(updates, Project.PROJECT_ID)
         assertThat(
             Shadows.shadowOf(notificationManager).allNotifications.size,
             `is`(1)

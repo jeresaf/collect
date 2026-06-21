@@ -162,6 +162,16 @@ public class FormEntryViewModel extends ViewModel implements SelectChoiceLoader 
         refresh();
     }
 
+    public void addRepeatFromCurrentScreen() {
+        if (formController == null) {
+            return;
+        }
+
+        jumpBackIndex = null;
+        jumpToNewRepeat();
+        addRepeat();
+    }
+
     public void cancelRepeatPrompt() {
         if (formController == null) {
             return;

@@ -17,7 +17,7 @@ import org.odk.collect.shared.TempFiles.createTempDir
 class InstanceAutoSendFetcherTest {
     private val autoSendSettingsProvider: AutoSendSettingsProvider = mock()
     private val instanceAutoSendFetcher = InstanceAutoSendFetcher(autoSendSettingsProvider)
-    private val projectId = Project.DEMO_PROJECT_NAME
+    private val projectId = Project.PROJECT_NAME
     private val instancesRepository = InMemInstancesRepository()
     private val formsRepository = InMemFormsRepository()
 

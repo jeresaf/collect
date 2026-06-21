@@ -1,5 +1,6 @@
 package org.odk.collect.android.openrosa;
 
+import static java.net.HttpURLConnection.HTTP_FORBIDDEN;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_UNAUTHORIZED;
 
@@ -76,6 +77,8 @@ public class OpenRosaLoginSource implements LoginSource {
             if (result.responseCode == HTTP_UNAUTHORIZED) {
                 Timber.e("Unauthorised");
                 throw new FormSourceException.AuthRequired();
+            } else if (result.responseCode == HTTP_FORBIDDEN && isUserNotAllowedAccess(result.errorMessage)) {
+                throw new LoginSourceException.UserNotAllowedAccess();
             } else if (result.responseCode == HTTP_NOT_FOUND) {
                 Timber.e("Not found");
                 throw new FormSourceException.Unreachable(serverURL);
@@ -99,6 +102,10 @@ public class OpenRosaLoginSource implements LoginSource {
             Timber.e("Not open rosa");
             throw new FormSourceException.ServerNotOpenRosaError();
         }
+    }
+
+    private boolean isUserNotAllowedAccess(String message) {
+        return message != null && message.contains("User not allowed access to system");
     }
 
     public void updateUrl(String url) {

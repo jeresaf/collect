@@ -111,13 +111,7 @@ class OpenRosaUserFetcher extends OpenRosaXmlFetcher{
         try {
             inputStreamResult = fetchAdminUnits(username, urlString);
 
-            if (inputStreamResult.getStatusCode() != HttpURLConnection.HTTP_OK) {
-                String error = "getXML failed while accessing "
-                        + urlString + " with status code: " + inputStreamResult.getStatusCode();
-                Timber.e(error);
-                return new DocumentFetchResult(error, inputStreamResult.getStatusCode());
-            }
-
+            String fn;
             try (InputStream resultInputStream = inputStreamResult.getInputStream();
                  InputStreamReader oStreamReader = new InputStreamReader(resultInputStream, "UTF-8")) {
 
@@ -129,9 +123,18 @@ class OpenRosaUserFetcher extends OpenRosaXmlFetcher{
                     data = oStreamReader.read();
                 }
 
-                String fn = res.toString().trim();
+                fn = res.toString().trim();
                 Timber.e(fn);
+            }
 
+            if (inputStreamResult.getStatusCode() != HttpURLConnection.HTTP_OK) {
+                String error = "getXML failed while accessing "
+                        + urlString + " with status code: " + inputStreamResult.getStatusCode() + ": " + fn;
+                Timber.e(error);
+                return new DocumentFetchResult(error, inputStreamResult.getStatusCode());
+            }
+
+            try {
                 InputStream is = new ByteArrayInputStream( fn.getBytes() );
                 InputStreamReader streamReader = new InputStreamReader(is, "UTF-8");
 

@@ -18,17 +18,24 @@ import org.odk.collect.android.activities.FirstLaunchActivity
 import org.odk.collect.android.analytics.AnalyticsEvents
 import org.odk.collect.android.databinding.ProjectSettingsDialogLayoutBinding
 import org.odk.collect.android.injection.DaggerUtils
+import org.odk.collect.android.listeners.AdminUnitsTaskListener
+import org.odk.collect.android.login.AdminUnitDetails
+import org.odk.collect.android.login.LoginDetailsFetcher
+import org.odk.collect.android.login.LoginSourceException
+import org.odk.collect.android.login.LoginSourceExceptionMapper
 import org.odk.collect.android.mainmenu.CurrentProjectViewModel
 import org.odk.collect.android.mainmenu.MainMenuActivity
 import org.odk.collect.android.preferences.screens.ProjectPreferencesActivity
 import org.odk.collect.androidshared.ui.DialogFragmentUtils
 import org.odk.collect.androidshared.ui.ToastUtils
+import org.odk.collect.android.tasks.AdminUnitsTask
 import org.odk.collect.projects.Project
 import org.odk.collect.projects.ProjectsRepository
 import org.odk.collect.settings.SettingsProvider
+import org.odk.collect.settings.keys.ProjectKeys
 import javax.inject.Inject
 
-class ProjectSettingsDialog(private val viewModelFactory: ViewModelProvider.Factory) : DialogFragment() {
+class ProjectSettingsDialog(private val viewModelFactory: ViewModelProvider.Factory) : DialogFragment(), AdminUnitsTaskListener {
 
     @Inject
     lateinit var projectsRepository: ProjectsRepository
@@ -39,9 +46,14 @@ class ProjectSettingsDialog(private val viewModelFactory: ViewModelProvider.Fact
     @Inject
     lateinit var settingsProvider: SettingsProvider
 
+    @Inject
+    lateinit var loginDetailsFetcher: LoginDetailsFetcher
+
     lateinit var binding: ProjectSettingsDialogLayoutBinding
 
     private lateinit var currentProjectViewModel: CurrentProjectViewModel
+
+    private var adminUnitsTask: AdminUnitsTask? = null
 
     override fun onAttach(context: Context) {
         super.onAttach(context)
@@ -72,6 +84,10 @@ class ProjectSettingsDialog(private val viewModelFactory: ViewModelProvider.Fact
             dismiss()
         }
 
+        binding.refreshAdminUnitsButton.setOnClickListener {
+            refreshAdminUnits()
+        }
+
         binding.generalSettingsButton.setOnClickListener {
             startActivity(Intent(requireContext(), ProjectPreferencesActivity::class.java))
             dismiss()
@@ -93,6 +109,71 @@ class ProjectSettingsDialog(private val viewModelFactory: ViewModelProvider.Fact
         return MaterialAlertDialogBuilder(requireContext())
             .setView(binding.root)
             .create()
+    }
+
+    private fun refreshAdminUnits() {
+        adminUnitsTask?.setDownloaderListener(null)
+        adminUnitsTask?.cancel(true)
+
+        val username = settingsProvider.getUnprotectedSettings().getString(ProjectKeys.KEY_USERNAME)
+        if (username.isNullOrBlank()) {
+            ToastUtils.showLongToast(requireContext(), getString(R.string.admin_units_refresh_failed))
+            return
+        }
+
+        loginDetailsFetcher.updateAdminUnitsPath("/api/v1/adminUnits")
+        adminUnitsTask = AdminUnitsTask(loginDetailsFetcher)
+        adminUnitsTask!!.setDownloaderListener(this)
+        adminUnitsTask!!.execute(hashMapOf("username" to username))
+    }
+
+    override fun adminUnitsComplete(adminUnitDetails: AdminUnitDetails?, exception: LoginSourceException?) {
+        adminUnitsTask?.setDownloaderListener(null)
+        adminUnitsTask = null
+
+        if (exception is LoginSourceException.UserNotAllowedAccess || adminUnitDetails?.message == ACCESS_REVOKED_MESSAGE) {
+            deleteProject()
+            MaterialAlertDialogBuilder(requireActivity())
+                .setTitle(R.string.access_revoked_title)
+                .setMessage(R.string.access_revoked_message)
+                .setPositiveButton(R.string.ok, null)
+                .show()
+            dismiss()
+        } else if (exception == null && adminUnitDetails != null && adminUnitDetails.message.isNullOrBlank()) {
+            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_DISTRICT, adminUnitDetails.district)
+            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_SUB_COUNTY, adminUnitDetails.sub_county)
+            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_PARISH, adminUnitDetails.parish)
+            settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_VILLAGE, adminUnitDetails.village)
+            ToastUtils.showLongToast(requireContext(), getString(R.string.admin_units_refreshed))
+        } else {
+            val message = if (exception != null) {
+                LoginSourceExceptionMapper(requireContext()).getMessage(exception)
+            } else {
+                adminUnitDetails?.message ?: getString(R.string.admin_units_refresh_failed)
+            }
+
+            MaterialAlertDialogBuilder(requireActivity())
+                .setTitle(R.string.admin_units_refresh_failed)
+                .setMessage(message)
+                .setPositiveButton(R.string.ok, null)
+                .show()
+        }
+    }
+
+    override fun progressUpdate(currentFile: String?, progress: Int, total: Int) {
+        // No progress UI for admin unit refreshes.
+    }
+
+    override fun adminUnitsCancelled() {
+        adminUnitsTask?.setDownloaderListener(null)
+        adminUnitsTask = null
+    }
+
+    override fun onDestroyView() {
+        adminUnitsTask?.setDownloaderListener(null)
+        adminUnitsTask?.cancel(true)
+        adminUnitsTask = null
+        super.onDestroyView()
     }
 
     fun deleteProject() {
@@ -168,5 +249,9 @@ class ProjectSettingsDialog(private val viewModelFactory: ViewModelProvider.Fact
             getString(R.string.switched_project, project.name)
         )
         dismiss()
+    }
+
+    companion object {
+        private const val ACCESS_REVOKED_MESSAGE = "User not allowed access to system"
     }
 }

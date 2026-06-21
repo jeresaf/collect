@@ -48,6 +48,9 @@ class LoginSourceExceptionMapper(private val context: Context) {
                     R.string.report_to_project_lead
                 )
             }
+            is LoginSourceException.UserNotAllowedAccess -> {
+                context.getLocalizedString(R.string.access_revoked_message)
+            }
             is LoginSourceException.ServerNotOpenRosaError -> {
                 "This server does not correctly implement the OpenRosa formList API." + " " + context.getLocalizedString(
                     R.string.report_to_project_lead

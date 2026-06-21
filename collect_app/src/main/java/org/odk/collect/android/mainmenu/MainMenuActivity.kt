@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
@@ -29,13 +31,20 @@ import org.odk.collect.android.formlists.blankformlist.BlankFormListActivity
 import org.odk.collect.android.formmanagement.FormFillingIntentFactory
 import org.odk.collect.android.gdrive.GoogleDriveActivity
 import org.odk.collect.android.injection.DaggerUtils
+import org.odk.collect.android.listeners.AdminUnitsTaskListener
+import org.odk.collect.android.login.AdminUnitDetails
+import org.odk.collect.android.login.LoginDetailsFetcher
+import org.odk.collect.android.login.LoginSourceException
+import org.odk.collect.android.projects.ProjectDeleter
 import org.odk.collect.android.projects.ProjectIconView
 import org.odk.collect.android.projects.ProjectSettingsDialog
+import org.odk.collect.android.tasks.AdminUnitsTask
 import org.odk.collect.android.utilities.ApplicationConstants
 import org.odk.collect.android.utilities.PlayServicesChecker
 import org.odk.collect.android.utilities.ThemeUtils
 import org.odk.collect.androidshared.ui.DialogFragmentUtils.showIfNotShowing
 import org.odk.collect.androidshared.ui.FragmentFactoryBuilder
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.odk.collect.androidshared.ui.SnackbarUtils
 import org.odk.collect.androidshared.ui.multiclicksafe.MultiClickGuard.allowClick
 import org.odk.collect.crashhandler.CrashHandler
@@ -53,7 +62,7 @@ import org.odk.collect.strings.localization.LocalizedActivity
 import timber.log.Timber
 import javax.inject.Inject
 
-class MainMenuActivity : LocalizedActivity() {
+class MainMenuActivity : LocalizedActivity(), AdminUnitsTaskListener {
 
     @Inject
     lateinit var viewModelFactory: MainMenuViewModelFactory
@@ -64,9 +73,26 @@ class MainMenuActivity : LocalizedActivity() {
     @Inject
     lateinit var permissionsProvider: PermissionsProvider
 
+    @Inject
+    lateinit var loginDetailsFetcher: LoginDetailsFetcher
+
+    @Inject
+    lateinit var projectDeleter: ProjectDeleter
+
     private lateinit var binding: MainMenuBinding
     private lateinit var mainMenuViewModel: MainMenuViewModel
     private lateinit var currentProjectViewModel: CurrentProjectViewModel
+
+    private val adminUnitsHandler = Handler(Looper.getMainLooper())
+    private var adminUnitsTask: AdminUnitsTask? = null
+    private var accessRevokedDialogShown = false
+
+    private val adminUnitsCheck = object : Runnable {
+        override fun run() {
+            refreshAdminUnits()
+            adminUnitsHandler.postDelayed(this, ADMIN_UNITS_CHECK_INTERVAL_MS)
+        }
+    }
 
     private val formEntryFlowLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -143,6 +169,20 @@ class MainMenuActivity : LocalizedActivity() {
         mainMenuViewModel.refreshInstances()
         setButtonsVisibility()
         manageGoogleDriveDeprecationBanner()
+        adminUnitsHandler.removeCallbacks(adminUnitsCheck)
+        adminUnitsHandler.postDelayed(adminUnitsCheck, ADMIN_UNITS_CHECK_INTERVAL_MS)
+    }
+
+    override fun onPause() {
+        adminUnitsHandler.removeCallbacks(adminUnitsCheck)
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        adminUnitsTask?.setDownloaderListener(null)
+        adminUnitsTask?.cancel(true)
+        adminUnitsTask = null
+        super.onDestroy()
     }
 
     private fun setButtonsVisibility() {
@@ -327,6 +367,56 @@ class MainMenuActivity : LocalizedActivity() {
         }
     }
 
+    private fun refreshAdminUnits() {
+        if (adminUnitsTask != null || !currentProjectViewModel.hasCurrentProject()) {
+            return
+        }
+
+        val username = settingsProvider.getUnprotectedSettings().getString(ProjectKeys.KEY_USERNAME)
+        if (username.isNullOrBlank()) {
+            return
+        }
+
+        loginDetailsFetcher.updateAdminUnitsPath("/api/v1/adminUnits")
+        adminUnitsTask = AdminUnitsTask(loginDetailsFetcher)
+        adminUnitsTask!!.setDownloaderListener(this)
+        adminUnitsTask!!.execute(hashMapOf("username" to username))
+    }
+
+    override fun adminUnitsComplete(adminUnitDetails: AdminUnitDetails?, exception: LoginSourceException?) {
+        adminUnitsTask?.setDownloaderListener(null)
+        adminUnitsTask = null
+
+        if (exception is LoginSourceException.UserNotAllowedAccess || adminUnitDetails?.message == ACCESS_REVOKED_MESSAGE) {
+            if (!accessRevokedDialogShown) {
+                accessRevokedDialogShown = true
+                projectDeleter.deleteCurrentProject()
+                MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.access_revoked_title)
+                    .setMessage(R.string.access_revoked_message)
+                    .setPositiveButton(R.string.ok) { _, _ ->
+                        ActivityUtils.startActivityAndCloseAllOthers(this, FirstLaunchActivity::class.java)
+                    }
+                    .show()
+            }
+        } else if (exception == null && adminUnitDetails != null && adminUnitDetails.message.isNullOrBlank()) {
+            settingsProvider.getUnprotectedSettings().save(KEY_DISTRICT, adminUnitDetails.district)
+            settingsProvider.getUnprotectedSettings().save(KEY_SUB_COUNTY, adminUnitDetails.sub_county)
+            settingsProvider.getUnprotectedSettings().save(KEY_PARISH, adminUnitDetails.parish)
+            settingsProvider.getUnprotectedSettings().save(KEY_VILLAGE, adminUnitDetails.village)
+            initMetaData()
+        }
+    }
+
+    override fun progressUpdate(currentFile: String?, progress: Int, total: Int) {
+        // No progress UI for admin unit refreshes.
+    }
+
+    override fun adminUnitsCancelled() {
+        adminUnitsTask?.setDownloaderListener(null)
+        adminUnitsTask = null
+    }
+
     private fun initAppName() {
         binding.appName.text = String.format(
             "%s %s",
@@ -400,5 +490,10 @@ class MainMenuActivity : LocalizedActivity() {
                 displayDismissButton = true
             )
         }
+    }
+
+    companion object {
+        private const val ADMIN_UNITS_CHECK_INTERVAL_MS = 15 * 60 * 1000L
+        private const val ACCESS_REVOKED_MESSAGE = "User not allowed access to system"
     }
 }

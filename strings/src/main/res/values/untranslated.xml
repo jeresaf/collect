@@ -48,4 +48,9 @@ the specific language governing permissions and limitations under the License. -
     <string name="skip_remove" translatable="false">Skip/Remove</string>
     <string name="logout" translatable="false">Logout</string>
     <string name="cannot_logout_title" translatable="false">Logout failed</string>
+    <string name="refresh_admin_units" translatable="false">Refresh admin units</string>
+    <string name="admin_units_refreshed" translatable="false">Admin units refreshed</string>
+    <string name="admin_units_refresh_failed" translatable="false">Could not refresh admin units</string>
+    <string name="access_revoked_title" translatable="false">Access revoked</string>
+    <string name="access_revoked_message" translatable="false">User not allowed access to system. You have been logged out.</string>
 </resources>

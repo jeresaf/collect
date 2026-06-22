@@ -81,12 +81,14 @@ public class OkHttpUserConnection extends OkHttpConnection implements OpenRosaUs
 
         int statusCode = response.code();
 
+        /*
         if (statusCode != HttpURLConnection.HTTP_OK) {
             discardEntityBytes(response);
             Timber.i("Error: %s (%s at %s", response.message(), String.valueOf(statusCode), uri.toString());
 
             return new HttpGetResult(null, new HashMap<String, String>(), "", statusCode);
         }
+         */
 
         ResponseBody body = response.body();
 
@@ -152,12 +154,14 @@ public class OkHttpUserConnection extends OkHttpConnection implements OpenRosaUs
 
         int statusCode = response.code();
 
+        /*
         if (statusCode != HttpURLConnection.HTTP_OK) {
             discardEntityBytes(response);
             Timber.i("Error: %s (%s at %s", response.message(), String.valueOf(statusCode), uri.toString());
 
             return new HttpGetResult(null, new HashMap<String, String>(), "", statusCode);
         }
+         */
 
         ResponseBody body = response.body();
 

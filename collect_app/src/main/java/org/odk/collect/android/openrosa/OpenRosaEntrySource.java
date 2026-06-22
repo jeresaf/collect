@@ -2,10 +2,13 @@ package org.odk.collect.android.openrosa;
 
 import static org.odk.collect.android.utilities.ApplicationConstants.BundleKeys.USERNAME;
 import static org.odk.collect.settings.keys.ProjectKeys.KEY_METADATA_PHONENUMBER;
+import static java.net.HttpURLConnection.HTTP_FORBIDDEN;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static java.net.HttpURLConnection.HTTP_OK;
 import static java.net.HttpURLConnection.HTTP_UNAUTHORIZED;
 
 import org.jetbrains.annotations.NotNull;
+import org.odk.collect.android.login.LoginSourceException;
 import org.odk.collect.android.utilities.DocumentFetchResult;
 import org.odk.collect.android.utilities.WebCredentialsUtils;
 import org.odk.collect.forms.entries.EntryListItem;
@@ -43,10 +46,13 @@ public class OpenRosaEntrySource implements EntrySource {
     @Override
     public List<EntryListItem> fetchEntryListURL(String username) throws EntrySourceException {
         DocumentFetchResult result = mapException(() -> openRosaXMLFetcher.getXML(getEntryListURL(username)));
-        Timber.e("fetchEntryListURL Entry List: %s", result.doc.toString());
-        if (result.errorMessage != null) {
+
+        if (result.responseCode != HTTP_OK) {
             if (result.responseCode == HTTP_UNAUTHORIZED) {
                 throw new EntrySourceException.AuthRequired();
+            } else if (result.responseCode == HTTP_FORBIDDEN || isUserNotAllowedAccess(result.errorMessage)) {
+                Timber.e("Forbidden");
+                throw new EntrySourceException.UserNotAllowedAccess();
             } else if (result.responseCode == HTTP_NOT_FOUND) {
                 throw new EntrySourceException.Unreachable(serverURL);
             } else {
@@ -55,6 +61,7 @@ public class OpenRosaEntrySource implements EntrySource {
         }
 
         if (result.isOpenRosaResponse) {
+            Timber.e("fetchEntryListURL Entry List: %s", result.doc.toString());
             List<EntryListItem> formList = openRosaResponseParser.parseEntryList(result.doc);
 
             if (formList != null) {
@@ -78,6 +85,10 @@ public class OpenRosaEntrySource implements EntrySource {
         } else {
             return result.getInputStream();
         }
+    }
+
+    private boolean isUserNotAllowedAccess(String message) {
+        return message != null && message.contains("User not allowed access to system");
     }
 
     public void updateUrl(String url) {

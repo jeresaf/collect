@@ -34,9 +34,11 @@ import androidx.lifecycle.ViewModelProvider;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import org.odk.collect.analytics.Analytics;
 import org.odk.collect.android.R;
 import org.odk.collect.android.activities.viewmodels.FormDownloadListViewModel;
 import org.odk.collect.android.adapters.FormDownloadListAdapter;
+import org.odk.collect.android.analytics.AnalyticsEvents;
 import org.odk.collect.android.formentry.RefreshFormListDialogFragment;
 import org.odk.collect.android.formlists.sorting.FormListSortingOption;
 import org.odk.collect.android.formmanagement.FormDownloadException;
@@ -48,6 +50,9 @@ import org.odk.collect.android.fragments.dialogs.FormsDownloadResultDialog;
 import org.odk.collect.android.injection.DaggerUtils;
 import org.odk.collect.android.listeners.DownloadFormsTaskListener;
 import org.odk.collect.android.listeners.FormListDownloaderListener;
+import org.odk.collect.android.mainmenu.MainMenuActivity;
+import org.odk.collect.android.projects.DeleteProjectResult;
+import org.odk.collect.android.projects.ProjectDeleter;
 import org.odk.collect.androidshared.network.NetworkStateProvider;
 import org.odk.collect.android.openrosa.HttpCredentialsInterface;
 import org.odk.collect.android.tasks.DownloadFormListTask;
@@ -60,6 +65,7 @@ import org.odk.collect.android.views.DayNightProgressDialog;
 import org.odk.collect.androidshared.ui.DialogFragmentUtils;
 import org.odk.collect.androidshared.ui.ToastUtils;
 import org.odk.collect.forms.FormSourceException;
+import org.odk.collect.projects.Project;
 
 import java.io.Serializable;
 import java.net.URI;
@@ -117,6 +123,7 @@ public class FormDownloadListActivity extends FormListActivity implements FormLi
     private final ArrayList<HashMap<String, String>> filteredFormList = new ArrayList<>();
 
     private static final boolean DO_NOT_EXIT = false;
+    private boolean accessRevokedDialogShown = false;
 
     private boolean displayOnlyUpdatedForms;
 
@@ -133,6 +140,9 @@ public class FormDownloadListActivity extends FormListActivity implements FormLi
 
     @Inject
     FormDownloader formDownloader;
+
+    @Inject
+    ProjectDeleter projectDeleter;
 
     @SuppressWarnings("unchecked")
     @Override
@@ -545,7 +555,16 @@ public class FormDownloadListActivity extends FormListActivity implements FormLi
                 performDownloadModeDownload();
             }
         } else {
-            if (exception instanceof FormSourceException.AuthRequired) {
+            if (exception instanceof FormSourceException.UserNotAllowedAccess) {
+                if (!accessRevokedDialogShown) {
+                    accessRevokedDialogShown = true;
+                    new MaterialAlertDialogBuilder(this)
+                            .setTitle(R.string.access_revoked_title)
+                            .setMessage(R.string.access_revoked_message)
+                            .setPositiveButton(R.string.ok, (dialog, i) -> deleteProject())
+                            .show();
+                }
+            } else if (exception instanceof FormSourceException.AuthRequired) {
                 createAuthDialog();
             } else {
                 String dialogMessage = new FormSourceExceptionMapper(this).getMessage(exception);
@@ -556,6 +575,53 @@ public class FormDownloadListActivity extends FormListActivity implements FormLi
                 }
 
                 createAlertDialog(dialogTitle, dialogMessage, DO_NOT_EXIT);
+            }
+        }
+    }
+
+    public void deleteProject() {
+        Analytics.log(AnalyticsEvents.DELETE_PROJECT);
+
+        DeleteProjectResult deleteProjectResult = projectDeleter.deleteCurrentProject();
+
+        if (deleteProjectResult instanceof DeleteProjectResult.UnsentInstances) {
+            new MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.cannot_logout_title)
+                    .setMessage(R.string.cannot_delete_project_message_one)
+                    .setPositiveButton(R.string.ok, null)
+                    .show();
+
+        } else if (deleteProjectResult instanceof DeleteProjectResult.RunningBackgroundJobs) {
+            new MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.cannot_logout_title)
+                    .setMessage(R.string.cannot_delete_project_message_two)
+                    .setPositiveButton(R.string.ok, null)
+                    .show();
+
+        } else if (deleteProjectResult instanceof DeleteProjectResult.DeletedSuccessfully) {
+            DeleteProjectResult.DeletedSuccessfully deletedSuccessfully =
+                    (DeleteProjectResult.DeletedSuccessfully) deleteProjectResult;
+
+            Project newCurrentProject = deletedSuccessfully.getNewCurrentProject();
+
+            if (newCurrentProject != null) {
+                ActivityUtils.startActivityAndCloseAllOthers(
+                        this,
+                        MainMenuActivity.class
+                );
+
+                ToastUtils.showLongToast(
+                        this,
+                        getString(
+                                R.string.switched_project,
+                                newCurrentProject.getName()
+                        )
+                );
+            } else {
+                ActivityUtils.startActivityAndCloseAllOthers(
+                        this,
+                        FirstLaunchActivity.class
+                );
             }
         }
     }

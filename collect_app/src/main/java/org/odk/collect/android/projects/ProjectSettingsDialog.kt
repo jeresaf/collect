@@ -115,13 +115,13 @@ class ProjectSettingsDialog(private val viewModelFactory: ViewModelProvider.Fact
         adminUnitsTask?.setDownloaderListener(null)
         adminUnitsTask?.cancel(true)
 
-        val username = settingsProvider.getUnprotectedSettings().getString(ProjectKeys.KEY_USERNAME)
+        val username = settingsProvider.getUnprotectedSettings().getString(ProjectKeys.KEY_METADATA_PHONENUMBER)
         if (username.isNullOrBlank()) {
             ToastUtils.showLongToast(requireContext(), getString(R.string.admin_units_refresh_failed))
             return
         }
 
-        loginDetailsFetcher.updateAdminUnitsPath("/api/v1/adminUnits")
+        loginDetailsFetcher.updateAdminUnitsPath("/api/v1/adminunits")
         adminUnitsTask = AdminUnitsTask(loginDetailsFetcher)
         adminUnitsTask!!.setDownloaderListener(this)
         adminUnitsTask!!.execute(hashMapOf("username" to username))
@@ -132,13 +132,13 @@ class ProjectSettingsDialog(private val viewModelFactory: ViewModelProvider.Fact
         adminUnitsTask = null
 
         if (exception is LoginSourceException.UserNotAllowedAccess || adminUnitDetails?.message == ACCESS_REVOKED_MESSAGE) {
-            deleteProject()
             MaterialAlertDialogBuilder(requireActivity())
                 .setTitle(R.string.access_revoked_title)
                 .setMessage(R.string.access_revoked_message)
-                .setPositiveButton(R.string.ok, null)
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    deleteProject()
+                }
                 .show()
-            dismiss()
         } else if (exception == null && adminUnitDetails != null && adminUnitDetails.message.isNullOrBlank()) {
             settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_DISTRICT, adminUnitDetails.district)
             settingsProvider.getUnprotectedSettings().save(ProjectKeys.KEY_SUB_COUNTY, adminUnitDetails.sub_county)

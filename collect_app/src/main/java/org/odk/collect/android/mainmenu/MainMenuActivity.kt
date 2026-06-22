@@ -45,7 +45,11 @@ import org.odk.collect.android.utilities.ThemeUtils
 import org.odk.collect.androidshared.ui.DialogFragmentUtils.showIfNotShowing
 import org.odk.collect.androidshared.ui.FragmentFactoryBuilder
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import org.odk.collect.analytics.Analytics
+import org.odk.collect.android.analytics.AnalyticsEvents
+import org.odk.collect.android.projects.DeleteProjectResult
 import org.odk.collect.androidshared.ui.SnackbarUtils
+import org.odk.collect.androidshared.ui.ToastUtils
 import org.odk.collect.androidshared.ui.multiclicksafe.MultiClickGuard.allowClick
 import org.odk.collect.crashhandler.CrashHandler
 import org.odk.collect.permissions.PermissionsProvider
@@ -112,7 +116,11 @@ class MainMenuActivity : LocalizedActivity(), AdminUnitsTaskListener {
             }
         }
 
-        DaggerUtils.getComponent(this).inject(this)
+        try {
+            DaggerUtils.getComponent(this).inject(this)
+        } catch (E: Exception) {
+            Timber.e(E)
+        }
 
         val viewModelProvider = ViewModelProvider(this, viewModelFactory)
         mainMenuViewModel = viewModelProvider[MainMenuViewModel::class.java]
@@ -372,12 +380,12 @@ class MainMenuActivity : LocalizedActivity(), AdminUnitsTaskListener {
             return
         }
 
-        val username = settingsProvider.getUnprotectedSettings().getString(ProjectKeys.KEY_USERNAME)
+        val username = settingsProvider.getUnprotectedSettings().getString(KEY_METADATA_PHONENUMBER)
         if (username.isNullOrBlank()) {
             return
         }
 
-        loginDetailsFetcher.updateAdminUnitsPath("/api/v1/adminUnits")
+        loginDetailsFetcher.updateAdminUnitsPath("/api/v1/adminunits")
         adminUnitsTask = AdminUnitsTask(loginDetailsFetcher)
         adminUnitsTask!!.setDownloaderListener(this)
         adminUnitsTask!!.execute(hashMapOf("username" to username))
@@ -390,12 +398,11 @@ class MainMenuActivity : LocalizedActivity(), AdminUnitsTaskListener {
         if (exception is LoginSourceException.UserNotAllowedAccess || adminUnitDetails?.message == ACCESS_REVOKED_MESSAGE) {
             if (!accessRevokedDialogShown) {
                 accessRevokedDialogShown = true
-                projectDeleter.deleteCurrentProject()
                 MaterialAlertDialogBuilder(this)
                     .setTitle(R.string.access_revoked_title)
                     .setMessage(R.string.access_revoked_message)
                     .setPositiveButton(R.string.ok) { _, _ ->
-                        ActivityUtils.startActivityAndCloseAllOthers(this, FirstLaunchActivity::class.java)
+                        deleteProject()
                     }
                     .show()
             }
@@ -405,6 +412,48 @@ class MainMenuActivity : LocalizedActivity(), AdminUnitsTaskListener {
             settingsProvider.getUnprotectedSettings().save(KEY_PARISH, adminUnitDetails.parish)
             settingsProvider.getUnprotectedSettings().save(KEY_VILLAGE, adminUnitDetails.village)
             initMetaData()
+        }
+    }
+
+    fun deleteProject() {
+        Analytics.log(AnalyticsEvents.DELETE_PROJECT)
+
+        when (val deleteProjectResult = projectDeleter.deleteCurrentProject()) {
+            is DeleteProjectResult.UnsentInstances -> {
+                MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.cannot_logout_title)
+                    .setMessage(R.string.cannot_delete_project_message_one)
+                    .setPositiveButton(R.string.ok, null)
+                    .show()
+            }
+            is DeleteProjectResult.RunningBackgroundJobs -> {
+                MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.cannot_logout_title)
+                    .setMessage(R.string.cannot_delete_project_message_two)
+                    .setPositiveButton(R.string.ok, null)
+                    .show()
+            }
+            is DeleteProjectResult.DeletedSuccessfully -> {
+                val newCurrentProject = deleteProjectResult.newCurrentProject
+                if (newCurrentProject != null) {
+                    ActivityUtils.startActivityAndCloseAllOthers(
+                        this,
+                        MainMenuActivity::class.java
+                    )
+                    ToastUtils.showLongToast(
+                        this,
+                        getString(
+                            R.string.switched_project,
+                            newCurrentProject.name
+                        )
+                    )
+                } else {
+                    ActivityUtils.startActivityAndCloseAllOthers(
+                        this,
+                        FirstLaunchActivity::class.java
+                    )
+                }
+            }
         }
     }
 
@@ -493,7 +542,7 @@ class MainMenuActivity : LocalizedActivity(), AdminUnitsTaskListener {
     }
 
     companion object {
-        private const val ADMIN_UNITS_CHECK_INTERVAL_MS = 15 * 60 * 1000L
+        private const val ADMIN_UNITS_CHECK_INTERVAL_MS = 5 * 60 * 1000L
         private const val ACCESS_REVOKED_MESSAGE = "User not allowed access to system"
     }
 }

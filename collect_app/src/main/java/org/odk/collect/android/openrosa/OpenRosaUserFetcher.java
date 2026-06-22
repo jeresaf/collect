@@ -134,17 +134,16 @@ class OpenRosaUserFetcher extends OpenRosaXmlFetcher{
                 return new DocumentFetchResult(error, inputStreamResult.getStatusCode());
             }
 
-            try {
-                InputStream is = new ByteArrayInputStream( fn.getBytes() );
-                InputStreamReader streamReader = new InputStreamReader(is, "UTF-8");
 
-                doc = new Document();
-                KXmlParser parser = new KXmlParser();
-                parser.setInput(streamReader);
-                parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true);
+            InputStream is = new ByteArrayInputStream( fn.getBytes() );
+            InputStreamReader streamReader = new InputStreamReader(is, "UTF-8");
 
-                doc.parse(parser);
-            }
+            doc = new Document();
+            KXmlParser parser = new KXmlParser();
+            parser.setInput(streamReader);
+            parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true);
+
+            doc.parse(parser);
         } catch (Exception e) {
             throw e;
         }

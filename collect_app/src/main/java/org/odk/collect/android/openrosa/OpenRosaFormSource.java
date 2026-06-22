@@ -1,9 +1,12 @@
 package org.odk.collect.android.openrosa;
 
+import static java.net.HttpURLConnection.HTTP_FORBIDDEN;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static java.net.HttpURLConnection.HTTP_OK;
 import static java.net.HttpURLConnection.HTTP_UNAUTHORIZED;
 
 import org.jetbrains.annotations.NotNull;
+import org.odk.collect.android.login.LoginSourceException;
 import org.odk.collect.android.utilities.DocumentFetchResult;
 import org.odk.collect.android.utilities.WebCredentialsUtils;
 import org.odk.collect.forms.FormListItem;
@@ -20,6 +23,8 @@ import java.util.List;
 import java.util.concurrent.Callable;
 
 import javax.net.ssl.SSLException;
+
+import timber.log.Timber;
 
 public class OpenRosaFormSource implements FormSource {
 
@@ -40,9 +45,12 @@ public class OpenRosaFormSource implements FormSource {
     public List<FormListItem> fetchFormList(String username) throws FormSourceException {
         DocumentFetchResult result = mapException(() -> openRosaXMLFetcher.getXML(getFormListURL(username)));
 
-        if (result.errorMessage != null) {
+        if (result.responseCode != HTTP_OK) {
             if (result.responseCode == HTTP_UNAUTHORIZED) {
                 throw new FormSourceException.AuthRequired();
+            } else if (result.responseCode == HTTP_FORBIDDEN || isUserNotAllowedAccess(result.errorMessage)) {
+                Timber.e("Forbidden");
+                throw new FormSourceException.UserNotAllowedAccess();
             } else if (result.responseCode == HTTP_NOT_FOUND) {
                 throw new FormSourceException.Unreachable(serverURL);
             } else {
@@ -113,6 +121,10 @@ public class OpenRosaFormSource implements FormSource {
         } else {
             return result.getInputStream();
         }
+    }
+
+    private boolean isUserNotAllowedAccess(String message) {
+        return message != null && message.contains("User not allowed access to system");
     }
 
     public void updateUrl(String url) {

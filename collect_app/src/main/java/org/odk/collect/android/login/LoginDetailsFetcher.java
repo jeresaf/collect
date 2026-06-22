@@ -34,6 +34,10 @@ public class LoginDetailsFetcher {
         ((OpenRosaLoginSource) loginSource).updateLoginPath(url);
     }
 
+    public void updateAdminUnitsPath(String url) {
+        ((OpenRosaLoginSource) loginSource).updateAdminUnitsPath(url);
+    }
+
     public void updateCredentials(WebCredentialsUtils webCredentialsUtils) {
         ((OpenRosaLoginSource) loginSource).updateWebCredentialsUtils(webCredentialsUtils);
     }
@@ -43,7 +47,7 @@ public class LoginDetailsFetcher {
         return ((OpenRosaLoginSource) loginSource).fetchUser(username, password);
     }
 
-    public AdminUnitDetails fetchAdminUnits(String username) throws LoginSourceException, FormSourceException {
+    public AdminUnitDetails fetchAdminUnits(String username) throws LoginSourceException {
         Timber.e("Server Admin Units Fetcher");
         return ((OpenRosaLoginSource) loginSource).fetchAdminUnits(username);
     }

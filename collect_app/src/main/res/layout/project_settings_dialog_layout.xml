@@ -64,20 +64,22 @@
         style="@style/Widget.Collect.Button.OutlinedButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:backgroundTint="@color/colorError"
+        android:textColor="@color/colorOnError"
         android:layout_marginStart="38dp"
         android:text="@string/logout"
         app:layout_constraintStart_toStartOf="@+id/current_project"
-        app:layout_constraintTop_toBottomOf="@+id/current_project" />
+        app:layout_constraintTop_toBottomOf="@+id/refresh_admin_units_button" />
 
     <org.odk.collect.androidshared.ui.multiclicksafe.MultiClickSafeButton
         android:id="@+id/refresh_admin_units_button"
         style="@style/Widget.Collect.Button.OutlinedButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="@dimen/margin_small"
+        android:layout_marginStart="38dp"
         android:text="@string/refresh_admin_units"
-        app:layout_constraintStart_toEndOf="@+id/logout_button"
-        app:layout_constraintTop_toTopOf="@+id/logout_button" />
+        app:layout_constraintStart_toStartOf="@+id/current_project"
+        app:layout_constraintTop_toBottomOf="@+id/current_project" />
 
     <View
         android:visibility="invisible"

@@ -44,6 +44,9 @@ public class OpenRosaLoginSource implements LoginSource {
             if (result.responseCode == HTTP_UNAUTHORIZED) {
                 Timber.e("Unauthorised");
                 throw new LoginSourceException.AuthRequired();
+            } else if (result.responseCode == HTTP_FORBIDDEN && isUserNotAllowedAccess(result.errorMessage)) {
+                Timber.e("Forbidden");
+                throw new LoginSourceException.UserNotAllowedAccess();
             } else if (result.responseCode == HTTP_NOT_FOUND) {
                 Timber.e("Not found");
                 throw new LoginSourceException.Unreachable(serverURL);
@@ -70,21 +73,22 @@ public class OpenRosaLoginSource implements LoginSource {
         }
     }
 
-    public AdminUnitDetails fetchAdminUnits(String username) throws FormSourceException, LoginSourceException {
+    public AdminUnitDetails fetchAdminUnits(String username) throws LoginSourceException {
         DocumentFetchResult result = mapException(() -> openRosaXMLFetcher.getAdminUnitXML(username, getAdminUnitsURL()));
         Timber.e("Doc returns");
         if (result.errorMessage != null) {
             if (result.responseCode == HTTP_UNAUTHORIZED) {
                 Timber.e("Unauthorised");
-                throw new FormSourceException.AuthRequired();
+                throw new LoginSourceException.AuthRequired();
             } else if (result.responseCode == HTTP_FORBIDDEN && isUserNotAllowedAccess(result.errorMessage)) {
+                Timber.e("Forbidden");
                 throw new LoginSourceException.UserNotAllowedAccess();
             } else if (result.responseCode == HTTP_NOT_FOUND) {
                 Timber.e("Not found");
-                throw new FormSourceException.Unreachable(serverURL);
+                throw new LoginSourceException.Unreachable(serverURL);
             } else {
                 Timber.e("Random code: %d", result.responseCode);
-                throw new FormSourceException.ServerError(result.responseCode, serverURL);
+                throw new LoginSourceException.ServerError(result.responseCode, serverURL);
             }
         } else {
             Timber.e("Empty error");
@@ -96,11 +100,11 @@ public class OpenRosaLoginSource implements LoginSource {
             if (adminUnitDetails != null) {
                 return adminUnitDetails;
             } else {
-                throw new FormSourceException.ParseError(serverURL);
+                throw new LoginSourceException.ParseError(serverURL);
             }
         } else {
             Timber.e("Not open rosa");
-            throw new FormSourceException.ServerNotOpenRosaError();
+            throw new LoginSourceException.ServerNotOpenRosaError();
         }
     }
 

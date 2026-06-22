@@ -38,8 +38,6 @@ public class AdminUnitsTask extends AsyncTask<Map<String, String>, String, Pair<
             adminUnitDetails = loginDetailsFetcher.fetchAdminUnits(values[0].get("username"));
         } catch (LoginSourceException e) {
             exception = e;
-        } catch (FormSourceException e) {
-            throw new RuntimeException(e);
         }
 
         return new Pair<>(adminUnitDetails, exception);

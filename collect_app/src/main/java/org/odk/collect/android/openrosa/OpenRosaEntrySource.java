@@ -56,6 +56,7 @@ public class OpenRosaEntrySource implements EntrySource {
             } else if (result.responseCode == HTTP_NOT_FOUND) {
                 throw new EntrySourceException.Unreachable(serverURL);
             } else {
+                Timber.e("ServerError: %s, %s", result.responseCode, serverURL);
                 throw new EntrySourceException.ServerError(result.responseCode, serverURL);
             }
         }

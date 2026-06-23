@@ -54,6 +54,7 @@ public class OpenRosaFormSource implements FormSource {
             } else if (result.responseCode == HTTP_NOT_FOUND) {
                 throw new FormSourceException.Unreachable(serverURL);
             } else {
+                Timber.e("ServerError: %s, %s", result.responseCode, serverURL);
                 throw new FormSourceException.ServerError(result.responseCode, serverURL);
             }
         }

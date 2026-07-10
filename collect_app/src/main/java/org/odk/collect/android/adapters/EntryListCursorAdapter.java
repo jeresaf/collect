@@ -71,6 +71,32 @@ public class EntryListCursorAdapter extends SimpleCursorAdapter {
         String formVersion = getCursor().getString(getCursor().getColumnIndex(DatabaseEntryColumns.JR_VERSION));
         Form form = new FormsRepositoryProvider(context.getApplicationContext()).get().getLatestByFormIdAndVersion(formId, formVersion);
 
+        Timber.i("formId is %s", formId);
+        Timber.i("formVersion is %s", formVersion);
+
+        //Check using formID only
+        if (form == null) {
+            Timber.i("Form is initially null, Check using formID only");
+            form = new FormsRepositoryProvider(context.getApplicationContext()).get().getLatestByFormId(formId);
+            //deprecated fix
+            //check with spaces replaced with underscores
+            if (form == null) {
+                Timber.i("Form is still null, check with spaces replaced with underscores");
+                form = new FormsRepositoryProvider(context.getApplicationContext()).get().getLatestByFormId(formId.replace(" ", "_"));
+                //check with underscores replaced with spaces
+                if (form == null) {
+                    Timber.i("Form is still null, check with underscores replaced with spaces");
+                    form = new FormsRepositoryProvider(context.getApplicationContext()).get().getLatestByFormId(formId.replace("_", " "));
+                }
+            }
+            if (form != null) {
+                Timber.i("FormId is %s", form.getFormId());
+                Timber.i("formVersion is %s", form.getVersion());
+            }
+        }
+
+        Timber.i("Form is null again? %b", form == null);
+
         if (form != null) {
             String base64RSAPublicKey = form.getBASE64RSAPublicKey();
             formExists = true;

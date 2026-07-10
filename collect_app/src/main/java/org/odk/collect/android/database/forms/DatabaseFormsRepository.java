@@ -82,6 +82,20 @@ public class DatabaseFormsRepository implements FormsRepository {
 
     @Nullable
     @Override
+    public Form getLatestByFormId(String jrFormId) {
+        Timber.i("Final Form ID is %s", jrFormId);
+        List<Form> all = getAllByFormId(jrFormId);
+        if (!all.isEmpty()) {
+            Timber.i("Forms exist");
+            return all.stream().max(Comparator.comparingLong(Form::getDate)).get();
+        } else {
+            Timber.i("No forms exist");
+            return null;
+        }
+    }
+
+    @Nullable
+    @Override
     public Form getOneByPath(String path) {
         String selection = FORM_FILE_PATH + "=?";
         String[] selectionArgs = {getRelativeFilePath(formsPath, path)};

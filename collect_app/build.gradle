@@ -75,8 +75,8 @@ android {
         applicationId('com.uboscis.collect.android')
         minSdkVersion Versions.android_min_sdk
         targetSdkVersion Versions.android_target_sdk
-        versionCode 224
-        versionName "2.2.4"
+        versionCode 226
+        versionName "2.2.6"
         testInstrumentationRunner('androidx.test.runner.AndroidJUnitRunner')
         multiDexEnabled true
         vectorDrawables.useSupportLibrary = true

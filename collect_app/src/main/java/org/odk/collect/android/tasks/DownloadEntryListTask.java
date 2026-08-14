@@ -86,7 +86,7 @@ public class DownloadEntryListTask extends AsyncTask<Void, String, Pair<List<Ser
                 if (result.first != null) {
                     HashMap<String, ServerEntryDetails> detailsHashMap = new HashMap<>();
                     for (ServerEntryDetails details : result.first) {
-                        detailsHashMap.put(details.getFormId(), details);
+                        detailsHashMap.put(details.getInstanceId(), details);
                     }
 
                     stateListener.entryListDownloadingComplete(detailsHashMap, result.second);

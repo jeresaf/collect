@@ -140,7 +140,17 @@ class FormUriActivity : LocalizedActivity() {
                     return false
                 }
 
-                val candidateForms = formsRepositoryProvider.get().getAllByFormIdAndVersion(it.formId, it.formVersion)
+                var candidateForms = formsRepositoryProvider.get().getAllByFormIdAndVersion(it.formId, it.formVersion)
+
+                if (candidateForms.isEmpty()) {
+                    candidateForms = formsRepositoryProvider.get().getAllByFormId(it.formId)
+                    if (candidateForms.isEmpty()) {
+                        candidateForms = formsRepositoryProvider.get().getAllByFormId(it.formId.replace(" ", "_"))
+                        if (candidateForms.isEmpty()) {
+                            candidateForms = formsRepositoryProvider.get().getAllByFormId(it.formId.replace("_", " "))
+                        }
+                    }
+                }
 
                 if (candidateForms.isEmpty()) {
                     val version = if (it.formVersion == null) {
@@ -167,7 +177,17 @@ class FormUriActivity : LocalizedActivity() {
                     return false
                 }
 
-                val candidateForms = formsRepositoryProvider.get().getAllByFormIdAndVersion(it.formId, it.formVersion)
+                var candidateForms = formsRepositoryProvider.get().getAllByFormIdAndVersion(it.formId, it.formVersion)
+
+                if (candidateForms.isEmpty()) {
+                    candidateForms = formsRepositoryProvider.get().getAllByFormId(it.formId)
+                    if (candidateForms.isEmpty()) {
+                        candidateForms = formsRepositoryProvider.get().getAllByFormId(it.formId.replace(" ", "_"))
+                        if (candidateForms.isEmpty()) {
+                            candidateForms = formsRepositoryProvider.get().getAllByFormId(it.formId.replace("_", " "))
+                        }
+                    }
+                }
 
                 if (candidateForms.isEmpty()) {
                     val version = if (it.formVersion == null) {

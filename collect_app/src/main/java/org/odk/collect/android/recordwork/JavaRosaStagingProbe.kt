@@ -148,7 +148,7 @@ class JavaRosaStagingProbe(private val privateCacheDirectory: File) {
 
     companion object {
         private const val MAX_XML_SIZE = 8_388_608
-        private val EXTERNAL_SRC = Regex("""\bsrc\s*=""", RegexOption.IGNORE_CASE)
+        private val EXTERNAL_SRC = Regex("""\bsrc\s*=\s*["']""", RegexOption.IGNORE_CASE)
         private fun sha256(data: String): String = MessageDigest.getInstance("SHA-256")
             .digest(data.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }

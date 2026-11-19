@@ -4,13 +4,10 @@ import okhttp3.Credentials
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
-import org.odk.collect.android.utilities.WebCredentialsUtils
 import org.odk.collect.settings.SettingsProvider
 import org.odk.collect.settings.keys.ProjectKeys
-import org.odk.collect.shared.settings.Settings
 import java.io.ByteArrayOutputStream
 import java.io.IOException
-import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
@@ -69,9 +66,10 @@ class RecordWorkReadOnlyClient(
         } catch (_: IllegalArgumentException) {
             throw ReadOnlyRecordException(ReadOnlyRequestFailure.INVALID_PROJECT)
         }
-        val credentials = WebCredentialsUtils(settings).getCredentials(URI(serverUrl))
-        val username = credentials.username.orEmpty()
-        val password = credentials.password.orEmpty()
+        // Read exactly the active project's ODK settings. Temporary host-wide
+        // credentials from unrelated project sessions are intentionally ignored.
+        val username = settings.getString(ProjectKeys.KEY_USERNAME).orEmpty()
+        val password = settings.getString(ProjectKeys.KEY_PASSWORD).orEmpty()
         if (username.isBlank() || password.isBlank()) {
             throw ReadOnlyRecordException(ReadOnlyRequestFailure.NO_CREDENTIALS)
         }
@@ -113,7 +111,7 @@ class RecordWorkReadOnlyClient(
                 val body = response.body
                     ?: throw ReadOnlyRecordException(ReadOnlyRequestFailure.INVALID_RESPONSE)
                 val mime = body.contentType()
-                if (mime?.type != "application" || mime.subtype != "json") {
+                if (mime?.type != "application" || mime?.subtype != "json") {
                     throw ReadOnlyRecordException(ReadOnlyRequestFailure.INVALID_RESPONSE)
                 }
                 val bytes = body.byteStream().use(::boundedRead)

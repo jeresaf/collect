@@ -139,7 +139,7 @@ class ReviewedScalarTransferProbe(private val privateCacheDirectory: File) {
                 val path = candidate.targetPath
                 val src = uniquePath(sourceRoot, path)
                     ?: throw IllegalArgumentException("Approved original field not found")
-                require(src.children.isEmpty()) { "Source is not a scalar node" }
+                require(src.numChildren == 0) { "Source is not a scalar node" }
                 val text = src.value?.value as? String
                     ?: throw IllegalArgumentException("Only original text is supported")
                 require(text.length <= MAX_TEXT) { "Text answer exceeds safety bound" }
@@ -195,7 +195,7 @@ class ReviewedScalarTransferProbe(private val privateCacheDirectory: File) {
         }
         var node = root
         for (part in parts.drop(1)) {
-            val matches = node.children.filter { it.name == part }
+            val matches = node.getChildrenWithName(part)
             require(matches.size <= 1) { "Ambiguous source repeat path" }
             node = matches.singleOrNull() ?: return null
         }

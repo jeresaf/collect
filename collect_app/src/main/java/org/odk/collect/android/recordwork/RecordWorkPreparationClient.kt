@@ -212,14 +212,15 @@ class RecordWorkPreparationClient(
             if (assessCrossVersion && nativeProbe != null) {
                 val exactSourceForm = if (json.isNull("sourceXFormXml")) null
                     else json.getString("sourceXFormXml")
+                val plan = requireNotNull(preview.mappingPlan)
                 val native = nativeProbe.invoke(
-                    requireNotNull(preview.mappingPlan),
+                    plan,
                     json.getString("targetXFormXml"),
                     exactSourceForm
                 )
                 require(native.workId == preview.workId &&
                     native.targetFormVersionId == preview.targetFormVersionId &&
-                    native.targetXFormSha256 == preview.mappingPlan.targetXFormSha256 &&
+                    native.targetXFormSha256 == plan.targetXFormSha256 &&
                     native.targetJavaRosaInitialized) {
                     "Native validation must match the exact prepared target"
                 }

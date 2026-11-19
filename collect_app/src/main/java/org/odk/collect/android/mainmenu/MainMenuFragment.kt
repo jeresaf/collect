@@ -15,6 +15,8 @@ import androidx.appcompat.widget.Toolbar
 import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import org.odk.collect.android.BuildConfig
+import org.odk.collect.android.recordwork.RecordWorkBrowserActivity
 import org.odk.collect.android.activities.DeleteFormsActivity
 import org.odk.collect.android.activities.FormDownloadListActivity
 import org.odk.collect.android.activities.InstanceChooserList
@@ -206,6 +208,10 @@ class MainMenuFragment(
             startActivity(intent)
         }
 
+        binding.recordWorkBrowser.setOnClickListener {
+            startActivity(Intent(requireContext(), RecordWorkBrowserActivity::class.java))
+        }
+
         binding.manageForms.setOnClickListener {
             startActivity(Intent(requireContext(), DeleteFormsActivity::class.java))
         }
@@ -237,6 +243,9 @@ class MainMenuFragment(
     }
 
     private fun setButtonsVisibility(binding: MainMenuBinding) {
+        // Only our branded app exposes Data Collector's M3-specific API.
+        binding.recordWorkBrowser.visibility =
+            if (BuildConfig.CUSTOM_DISTRIBUTION) View.VISIBLE else View.GONE
         binding.reviewData.visibility =
             if (mainMenuViewModel.shouldEditSavedFormButtonBeVisible()) View.VISIBLE else View.GONE
         binding.sendData.visibility =

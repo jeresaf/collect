@@ -178,6 +178,9 @@ object HistoricalSchemaMappingEngine {
             }
             if (old == null) risks += MappingRisk.MISSING_SOURCE_FIELD
             if (old != null && old.type != destination.type) risks += MappingRisk.TYPE_CHANGED
+            if (old?.type == "unbound" || destination.type == "unbound") {
+                risks += MappingRisk.UNBOUND_FIELD
+            }
             if (destination.isRepeat || old?.isRepeat == true) risks += MappingRisk.REPEAT
             if (destination.choiceValues != null || old?.choiceValues != null) {
                 risks += if (destination.dynamicChoices || old?.dynamicChoices == true) {
@@ -241,6 +244,17 @@ object HistoricalSchemaMappingEngine {
             metadata.id == id && metadata.version == version) {
             "XForm primary instance identity was changed"
         }
+        // Unsupported relative references must never be silently dropped:
+        // dropping a repeat/bind/select would incorrectly mark a path safe.
+        for (element in descendants(doc.documentElement)) {
+            if (local(element) in setOf("repeat", "bind", "select", "select1", "upload")) {
+                val raw = element.getAttribute("ref")
+                    .ifBlank { element.getAttribute("nodeset") }.trim()
+                require(raw.isNotBlank() && raw.startsWith("/")) {
+                    "Unsupported relative or missing form path"
+                }
+            }
+        }
         val binds = descendants(doc.documentElement).filter { local(it) == "bind" }
             .mapNotNull { e -> reference(e)?.let { it to e } }.toMap()
         val repeatPaths = descendants(doc.documentElement)
@@ -267,7 +281,8 @@ object HistoricalSchemaMappingEngine {
                     val dynamic = choice?.let { c ->
                         descendants(c).any { local(it) == "itemset" } || hasItems.isNullOrEmpty()
                     } ?: false
-                    val type = bind?.getAttribute("type")?.lowercase().orEmpty().ifBlank { "string" }
+                    val type = if (bind == null) "unbound" else
+                        bind.getAttribute("type").lowercase().ifBlank { "string" }
                     val calculated = bind?.getAttribute("calculate").orEmpty().isNotBlank() ||
                         bind?.getAttribute("readonly") in setOf("true", "true()")
                     val relevant = bind?.getAttribute("relevant").orEmpty().isNotBlank() ||

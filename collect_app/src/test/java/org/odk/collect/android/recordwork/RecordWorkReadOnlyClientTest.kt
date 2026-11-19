@@ -12,6 +12,7 @@ import org.mockito.kotlin.whenever
 import org.odk.collect.settings.SettingsProvider
 import org.odk.collect.settings.keys.ProjectKeys
 import org.odk.collect.shared.settings.Settings
+import org.robolectric.annotation.Config
 import org.robolectric.RobolectricTestRunner
 import java.io.ByteArrayInputStream
 import java.net.HttpURLConnection
@@ -19,6 +20,7 @@ import java.net.URL
 import java.nio.charset.StandardCharsets
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35]) // Robolectric 4.16.1 cannot emulate the app's API 37 target.
 class RecordWorkReadOnlyClientTest {
     private val projectId = "c77a446e-18b6-4a5a-9f52-aa12fedba010"
     private val submissionId = "a8c07f51-b4c1-40a4-b31c-956d2ca5e048"

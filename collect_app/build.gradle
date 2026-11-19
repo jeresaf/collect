@@ -47,6 +47,14 @@ def cartoApiKey = secrets.getProperty('CARTO_API_KEY', null)
 
 // Optional single-URL deployment configuration. Never include credentials in this value.
 // Example: ./gradlew :collect_app:assembleDebug -PCOLLECT_SERVER_URL=https://server.example/v1/projects/<id>
+// Each Data Collector APK has a distinct package/provider namespace, so it can coexist
+// with official ODK Collect. A stable default means the project URL is the only required input.
+def collectApplicationId = (project.findProperty('COLLECT_APPLICATION_ID') ?: 'org.jeresaf.datacollector.android').toString().trim()
+if (!(collectApplicationId ==~ /[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+/)) {
+    throw new GradleException('COLLECT_APPLICATION_ID must be a lower-case, dotted Android application ID')
+}
+def isOfficialOdkApplication = collectApplicationId == 'org.odk.collect.android'
+
 def collectServerUrl = (project.findProperty('COLLECT_SERVER_URL') ?: '').toString().trim()
 if (collectServerUrl) {
     java.net.URI parsedCollectServerUrl
@@ -72,18 +80,19 @@ android {
     }
 
     defaultConfig {
-        applicationId('org.odk.collect.android')
+        applicationId(collectApplicationId)
         minSdk libs.versions.minSdk.get().toInteger()
         targetSdkVersion libs.versions.targetSdk.get().toInteger()
         versionCode project.hasProperty('versionCode') ? project.getProperties()['versionCode'].toInteger() : 5112
         versionName getVersionName()
         buildConfigField('String', 'COLLECT_SERVER_URL', groovy.json.JsonOutput.toJson(collectServerUrl))
+        buildConfigField('boolean', 'CUSTOM_DISTRIBUTION', isOfficialOdkApplication ? 'false' : 'true')
         testInstrumentationRunner('androidx.test.runner.AndroidJUnitRunner')
         vectorDrawables.useSupportLibrary = true
     }
 
     base {
-        archivesName = "ODK-Collect"
+        archivesName = isOfficialOdkApplication ? "ODK-Collect" : "Data-Collector"
     }
 
     signingConfigs {
@@ -420,10 +429,10 @@ dependencies {
     selfSignedReleaseImplementation libs.leakcanary
 }
 
-// Must be at bottom to prevent dependency collisions
-// https://developers.google.com/android/guides/google-services-plugin
-apply plugin: 'com.google.gms.google-services'
-
-// Must be after google-services to prevent build failure
-// https://stackoverflow.com/a/67995305
-apply plugin: 'com.google.firebase.crashlytics'
+// Only official ODK builds may use upstream's Firebase google-services.json.
+// Our separately branded distribution must never report telemetry to ODK's project.
+// No-op analytics is selected in AppDependencyModule when CUSTOM_DISTRIBUTION=true.
+if (isOfficialOdkApplication) {
+    apply plugin: 'com.google.gms.google-services'
+    apply plugin: 'com.google.firebase.crashlytics'
+}

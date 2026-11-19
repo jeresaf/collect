@@ -5,6 +5,16 @@ on:
     branches:
       - codex/odk-2026-app-identity
   workflow_dispatch:
+    inputs:
+      server_url:
+        description: 'HTTPS OpenRosa project base URL (never include credentials)'
+        required: true
+        type: string
+      application_id:
+        description: 'Android application ID; keep stable for future upgrades'
+        required: false
+        default: 'org.jeresaf.datacollector.android'
+        type: string
 
 permissions:
   contents: read
@@ -35,20 +45,36 @@ jobs:
             --tests org.odk.collect.android.external.BrandedContentProviderContractsTest \
             --tests org.odk.collect.android.formlists.blankformlist.BlankFormListItemTest \
             --no-daemon --stacktrace
-      - name: Assemble branded debug APK with only a server URL
+      - name: Assemble debug APK for the selected project
+        env:
+          COLLECT_BUILD_URL: ${{ inputs.server_url || 'https://collector.example.org/v1/projects/00000000-0000-0000-0000-000000000000' }}
+          COLLECT_BUILD_APPLICATION_ID: ${{ inputs.application_id || 'org.jeresaf.datacollector.android' }}
         run: |
+          set -euo pipefail
           ./gradlew :collect_app:assembleDebug \
-            -PCOLLECT_SERVER_URL=https://collector.example.org/v1/projects/00000000-0000-0000-0000-000000000000 \
+            "-PCOLLECT_SERVER_URL=$COLLECT_BUILD_URL" \
+            "-PCOLLECT_APPLICATION_ID=$COLLECT_BUILD_APPLICATION_ID" \
             --no-daemon --stacktrace
       - name: Verify APK package and branded label
+        env:
+          EXPECTED_ANDROID_ID: ${{ inputs.application_id || 'org.jeresaf.datacollector.android' }}
         run: |
           set -euo pipefail
           apk="$(find collect_app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
           test -f "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" > /tmp/collect-badging.txt
-          grep -q "package: name='org.jeresaf.datacollector.android'" /tmp/collect-badging.txt
-          grep -q "application-label:'Data Collector'" /tmp/collect-badging.txt
+          grep -Fq "package: name='$EXPECTED_ANDROID_ID'" /tmp/collect-badging.txt
+          grep -Fq "application-label:'Data Collector'" /tmp/collect-badging.txt
           echo "Verified package and display label"
+
+      - name: Upload debug APK for physical-device qualification only
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-collector-debug-apk
+          path: collect_app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
       - name: Publish test evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4

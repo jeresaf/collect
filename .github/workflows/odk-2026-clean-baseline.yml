@@ -1,0 +1,33 @@
+name: ODK 2026 Clean Upstream Build Baseline
+
+on:
+  push:
+    branches:
+      - codex/odk-2026-clean-ci-baseline
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unmodified-source-qualification:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+      - name: Android API 37.0
+        run: |
+          sdkmanager --install 'platforms;android-37.0' 'build-tools;36.0.0'
+          if [ -d "$ANDROID_HOME/platforms/android-37.0" ] && [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Assemble official unmodified ODK Collect debug
+        run: |
+          chmod +x gradlew
+          ./gradlew :collect_app:assembleDebug --no-daemon --stacktrace

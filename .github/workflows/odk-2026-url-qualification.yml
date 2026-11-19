@@ -16,7 +16,7 @@ concurrency:
 jobs:
   android-qualification:
     name: Android URL bootstrap tests and debug compile
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Checkout exact branch
@@ -28,11 +28,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android SDK tools
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android API 37
-        run: sdkmanager --install 'platforms;android-37' 'build-tools;36.0.0'
+      - name: Install Android API 37 using runner's SDK tools
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          sdkmanager --version
+          set +o pipefail
+          yes | sdkmanager --licenses >/dev/null
+          set -o pipefail
+          sdkmanager --install 'platforms;android-37' 'build-tools;36.0.0'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

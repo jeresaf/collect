@@ -76,6 +76,10 @@ class RecordWorkPreparationClient(
     private val nativeProbe: ((
         HistoricalMappingPlan, String, String?
     ) -> NativeStagingEvidence)? = null,
+    private val transferProbe: ((
+        HistoricalMappingPlan, MappingReviewSnapshot, String, String,
+        String, String?, String
+    ) -> ReviewedTransferEvidence)? = null,
     private val openConnection: (URL) -> HttpURLConnection = {
         it.openConnection() as HttpsURLConnection
     }
@@ -226,6 +230,95 @@ class RecordWorkPreparationClient(
                 }
                 preview.copy(nativeStaging = native)
             } else preview
+        }
+    }
+
+    /**
+     * Re-fetches the READY work item, re-checks all server identities and
+     * original/target bytes, then validates the operator's explicit mapping
+     * in an ephemeral native model. No draft/save/upload API is exposed.
+     */
+    fun validateReviewedTransfer(
+        projectId: String,
+        previouslyPrepared: PreparedRecordPreview,
+        review: MappingReviewSnapshot
+    ): ReviewedTransferEvidence {
+        val validator = transferProbe
+            ?: throw PreparationException(PreparationError.BAD_RESPONSE)
+        val previousPlan = previouslyPrepared.mappingPlan
+            ?: throw PreparationException(PreparationError.BAD_RESPONSE)
+        val previousAssessment = previouslyPrepared.assessment
+            ?: throw PreparationException(PreparationError.BAD_RESPONSE)
+        val paths = session(projectId)
+        val response = request(
+            paths, paths.paths.prepare(previouslyPrepared.workId),
+            "GET", 200, MAX_PREPARE
+        )
+        return parseOrReject {
+            val json = JSONObject(response)
+            val work = json.getJSONObject("work")
+            require(json.getBoolean("mappingApprovalRequired")) {
+                "Mapping approval is a server-required state"
+            }
+            require(work.getString("state") == "READY" &&
+                uuid(work.getString("id")) == previouslyPrepared.workId &&
+                uuid(work.getString("sourceSubmissionId")) == previouslyPrepared.sourceSubmissionId &&
+                uuid(work.getString("targetFormVersionId")) ==
+                    previouslyPrepared.targetFormVersionId &&
+                RecordWorkType.valueOf(work.getString("workType")) ==
+                    previouslyPrepared.type) {
+                "Work item changed after operator review"
+            }
+            require(previouslyPrepared.type == RecordWorkType.AMENDMENT) {
+                "Independent follow-up cannot copy old answers"
+            }
+            val sourceXml = json.getString("sourceXml")
+            val targetXml = json.getString("targetXFormXml")
+            val sourceForm = if (json.isNull("sourceXFormXml")) null
+                else json.getString("sourceXFormXml")
+            val newPlan = HistoricalSchemaMappingEngine.plan(
+                workId = previouslyPrepared.workId,
+                sourceSubmissionId = previouslyPrepared.sourceSubmissionId,
+                targetFormVersionId = previouslyPrepared.targetFormVersionId,
+                workType = previouslyPrepared.type,
+                sourceXml = sourceXml,
+                sourceXFormXml = sourceForm,
+                targetXFormXml = targetXml,
+                targetFormId = json.getString("targetFormId"),
+                targetFormVersion = json.getString("targetFormVersion")
+            )
+            require(newPlan == previousPlan) {
+                "Form schemas or mapping changed after review"
+            }
+            val newAssessment = CrossVersionAssessmentEngine.assess(
+                workId = previouslyPrepared.workId,
+                sourceSubmissionId = previouslyPrepared.sourceSubmissionId,
+                targetFormVersionId = previouslyPrepared.targetFormVersionId,
+                workType = previouslyPrepared.type,
+                sourceXml = sourceXml,
+                targetXFormXml = targetXml,
+                expectedTargetFormId = json.getString("targetFormId"),
+                expectedTargetVersion = json.getString("targetFormVersion")
+            )
+            require(newAssessment.sourceSha256 == previousAssessment.sourceSha256 &&
+                newAssessment.targetXFormSha256 == previousAssessment.targetXFormSha256) {
+                "Original submitted answers changed after review"
+            }
+            val serverInstanceId = work.getString("sourceInstanceId")
+            val checked = validator(
+                newPlan, review, sourceXml, newAssessment.sourceSha256,
+                serverInstanceId, sourceForm, targetXml
+            )
+            require(checked.workId == previouslyPrepared.workId &&
+                checked.sourceSubmissionId == previouslyPrepared.sourceSubmissionId &&
+                checked.targetFormVersionId == previouslyPrepared.targetFormVersionId &&
+                checked.sourceXmlSha256 == previousAssessment.sourceSha256 &&
+                checked.sourceInstanceId == serverInstanceId &&
+                checked.pathsReviewed == newPlan.candidates.size &&
+                !checked.canSaveDraft && !checked.canSubmit) {
+                "Transfer validation is not bound to the exact server work item"
+            }
+            checked
         }
     }
 

@@ -17,8 +17,8 @@ import java.util.UUID
 import java.util.concurrent.Executors
 
 /**
- * M4B-2: server-owned work selection and read-only preparation. No form editor,
- * no instance import, no answer mapping, no attachment download and no upload.
+ * M4C-2B-2: server-owned work preparation with reviewed JavaRosa text
+ * transfers into a disposable in-memory model. No editor/draft/upload.
  *
  * Source/project/work target are bound to the active ODK project and checked by
  * M3 each time. This screen cannot generate an editable ODK draft.
@@ -224,6 +224,11 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
         nativeProbe = { plan, targetXForm, originalXForm ->
             JavaRosaStagingProbe(cacheDir)
                 .inspect(plan, targetXForm, originalXForm)
+        },
+        transferProbe = { plan, review, sourceXml, sourceSha, instanceId, historical, target ->
+            ReviewedScalarTransferProbe(cacheDir).validate(
+                plan, review, sourceXml, sourceSha, instanceId, historical, target
+            )
         }
     )
 
@@ -284,6 +289,38 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
         if (plan == null || plan.candidates.isEmpty()) return
         val review = HistoricalMappingReview(plan)
         pathReview = review
+        val mayCheckTransfers =
+            prepared.type == RecordWorkType.AMENDMENT &&
+            prepared.nativeStaging?.targetJavaRosaInitialized == true &&
+            prepared.nativeStaging?.historicalJavaRosaInitialized == true &&
+            plan.candidates.size <= MAX_VISIBLE_REVIEW_FIELDS
+        val validationButton = Button(this).apply {
+            isAllCaps = false
+            setText(R.string.mapping_validate_reviewed_transfers)
+            isEnabled = false
+            setOnClickListener {
+                val snapshot = review.snapshot()
+                if (!snapshot.reviewedEveryTargetPath) {
+                    status.setText(R.string.mapping_review_unavailable)
+                    return@setOnClickListener
+                }
+                isEnabled = false
+                runOnline({
+                    nativeValidatedClient().validateReviewedTransfer(
+                        projectId, prepared, snapshot
+                    )
+                }) { evidence ->
+                    status.text = getString(
+                        R.string.mapping_transfer_verified,
+                        evidence.pathsTransferred, evidence.pathsReviewed,
+                        evidence.pathsToReenter, evidence.pathsLeftEmpty
+                    )
+                    // An in-memory transfer validation does not make the
+                    // survey editable or permit a new upload.
+                    isEnabled = false
+                }
+            }
+        }
         val prompt = TextView(this).apply {
             setText(R.string.mapping_review_path_prompt)
             setPadding(0, 16, 0, 8)
@@ -317,6 +354,8 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
                             review.decide(candidate.targetPath, action)
                             button.text = candidate.targetPath + "\n" + action.name
                             val snapshot = review.snapshot()
+                            validationButton.isEnabled =
+                                mayCheckTransfers && snapshot.reviewedEveryTargetPath
                             // This status never claims the record is editable or
                             // that mapping approval passed JavaRosa validation.
                             status.text = getString(
@@ -333,6 +372,12 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
         if (plan.candidates.size > MAX_VISIBLE_REVIEW_FIELDS) {
             versions.addView(TextView(this).apply {
                 setText(R.string.mapping_review_unavailable)
+            })
+        }
+        if (mayCheckTransfers) {
+            versions.addView(validationButton)
+            versions.addView(TextView(this).apply {
+                setText(R.string.mapping_transfer_no_editor)
             })
         }
     }

@@ -49,7 +49,9 @@ data class PreparedRecordPreview(
     // M4C-1: risk metadata only, NEVER raw answers or a form instance.
     val assessment: CrossVersionAssessment? = null,
     // M4C-2A: versioned path proposals, no source answers and no edit authority.
-    val mappingPlan: HistoricalMappingPlan? = null
+    val mappingPlan: HistoricalMappingPlan? = null,
+    // M4C-2B-1: real JavaRosa blank form initialized but no editable draft.
+    val nativeStaging: NativeStagingEvidence? = null
 )
 
 enum class PreparationError {
@@ -69,6 +71,11 @@ class PreparationException(val reason: PreparationError) : IOException(reason.na
  */
 class RecordWorkPreparationClient(
     private val settings: SettingsProvider,
+    // Optional per-request native check, with no network access or answers.
+    // Keep openConnection last to preserve existing mocked transport tests.
+    private val nativeProbe: ((
+        HistoricalMappingPlan, String, String?
+    ) -> NativeStagingEvidence)? = null,
     private val openConnection: (URL) -> HttpURLConnection = {
         it.openConnection() as HttpsURLConnection
     }
@@ -165,7 +172,7 @@ class RecordWorkPreparationClient(
             }
             // The next milestone must parse these XML documents under their
             // respective versions, with explicit field/repeat/choice/media review.
-            PreparedRecordPreview(
+            val preview = PreparedRecordPreview(
                 workId = workId,
                 sourceSubmissionId = expectedSource,
                 targetFormVersionId = expectedTargetVersion,
@@ -202,6 +209,22 @@ class RecordWorkPreparationClient(
                     )
                 } else null
             )
+            if (assessCrossVersion && nativeProbe != null) {
+                val exactSourceForm = if (json.isNull("sourceXFormXml")) null
+                    else json.getString("sourceXFormXml")
+                val native = nativeProbe.invoke(
+                    requireNotNull(preview.mappingPlan),
+                    json.getString("targetXFormXml"),
+                    exactSourceForm
+                )
+                require(native.workId == preview.workId &&
+                    native.targetFormVersionId == preview.targetFormVersionId &&
+                    native.targetXFormSha256 == preview.mappingPlan.targetXFormSha256 &&
+                    native.targetJavaRosaInitialized) {
+                    "Native validation must match the exact prepared target"
+                }
+                preview.copy(nativeStaging = native)
+            } else preview
         }
     }
 

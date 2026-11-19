@@ -68,8 +68,8 @@ class RecordWorkReadOnlyClient(
         if (username.isBlank() || password.isBlank()) {
             throw ReadOnlyRecordException(ReadOnlyRequestFailure.NO_CREDENTIALS)
         }
-        if (username.any { it == ':' || it == '\\n' || it == '\\r' } ||
-            password.any { it == '\\n' || it == '\\r' }) {
+        if (username.any { it == ':' || it == '\n' || it == '\r' } ||
+            password.any { it == '\n' || it == '\r' }) {
             throw ReadOnlyRecordException(ReadOnlyRequestFailure.NO_CREDENTIALS)
         }
 

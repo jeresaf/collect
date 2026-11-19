@@ -226,6 +226,20 @@ object CrossVersionAssessmentEngine {
             setEntityResolver { _, _ -> throw IllegalArgumentException("External entities forbidden") }
         }.parse(InputSource(StringReader(xml))).also {
             require(it.documentElement != null) { "Missing root" }
+            // Bound *all* parsed XForm nodes, not just nodes inside its
+            // primary instance. Deep body/model/choice hierarchies otherwise
+            // could exhaust the recursive inspection and UI task thread.
+            val pending = java.util.ArrayDeque<Pair<Element, Int>>()
+            pending.add(it.documentElement to 0)
+            var visited = 0
+            while (pending.isNotEmpty()) {
+                val (element, depth) = pending.removeLast()
+                require(depth <= MAX_DEPTH) { "XML DOM nesting too deep" }
+                require(++visited <= MAX_FIELDS * 8) { "XML DOM too complex" }
+                children(element).forEach { child ->
+                    pending.add(child to depth + 1)
+                }
+            }
         }
     }
 

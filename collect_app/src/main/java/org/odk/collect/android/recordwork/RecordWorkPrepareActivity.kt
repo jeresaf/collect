@@ -124,8 +124,9 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
         }
         chosenType = type
         chosenTarget = null
-        attemptId = null
-        attemptSpec = null
+        // Preserve the previous attempt key across rotation/reselection. If
+        // source, type, version or visitKey differs, confirmCreate() generates
+        // a new key only after comparing the complete immutable request spec.
         create.visibility = View.GONE
         visitKey.visibility = View.GONE
         versions.removeAllViews()
@@ -146,8 +147,6 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
                         if (candidate.latest) " (latest)" else ""
                     setOnClickListener {
                         chosenTarget = candidate
-                        attemptId = null
-                        attemptSpec = null
                         status.text = getString(R.string.work_selected, candidate.version)
                         create.visibility = View.VISIBLE
                         visitKey.visibility =

@@ -22,6 +22,7 @@
     <string name="remote_records_server_error">The record service is unavailable.</string>
     <string name="remote_records_network_error">Unable to retrieve server records. Check the network and try again.</string>
     <string name="remote_records_choose_record">Choose a record or pending work item to review. Editing is not yet available.</string>
+    <string name="work_source_label">Source record: %1$s</string>
     <string name="work_title">Prepare record work</string>
     <string name="work_readonly_notice">This creates a server work item and previews its form version. It DOES NOT populate, edit, or submit a form. The original record remains unchanged.</string>
     <string name="work_amend">Amend existing record</string>

@@ -197,7 +197,7 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
                     return@setPositiveButton
                 }
                 runOnline({
-                    val client = RecordWorkPreparationClient(provider)
+                    val client = nativeValidatedClient()
                     val created = client.create(projectId, work)
                     client.prepare(
                         projectId, created.id, sourceId, target.targetFormVersionId, type,
@@ -214,10 +214,18 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
 
     private fun previewExisting(id: String, targetId: String, type: RecordWorkType) {
         runOnline({
-            RecordWorkPreparationClient(provider)
+            nativeValidatedClient()
                 .prepare(projectId, id, sourceId, targetId, type, assessCrossVersion = true)
         }) { prepared -> showPreview(prepared) }
     }
+
+    private fun nativeValidatedClient() = RecordWorkPreparationClient(
+        provider,
+        nativeProbe = { plan, targetXForm, originalXForm ->
+            JavaRosaStagingProbe(cacheDir)
+                .inspect(plan, targetXForm, originalXForm)
+        }
+    )
 
     private fun showPreview(prepared: PreparedRecordPreview) {
         status.setText(R.string.work_created)
@@ -257,7 +265,18 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
                         "\n" + plan.removedSourcePaths.take(12).joinToString("\n")
                 } else ""
         }
+        val native = prepared.nativeStaging
+        val nativeStatus = if (native != null && native.targetJavaRosaInitialized) {
+            getString(
+                R.string.mapping_native_ready,
+                native.targetFormVersionId,
+                if (native.historicalJavaRosaInitialized) "YES" else "NO"
+            )
+        } else {
+            getString(R.string.mapping_native_unavailable)
+        }
         preview.text = base + "\n\n" + prior + "\n\n" + planSummary +
+            "\n\n" + nativeStatus +
             "\n\n" + getString(R.string.mapping_assessment_blocked)
 
         versions.removeAllViews()

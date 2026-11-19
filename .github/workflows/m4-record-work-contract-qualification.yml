@@ -1,0 +1,50 @@
+name: M4 Android Record Work Contract Qualification
+
+on:
+  push:
+    branches:
+      - codex/m4-record-work-contract
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  m4a-contract:
+    name: M4A isolated Android contract tests and debug compilation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+      - name: Install Android SDK 37.0
+        run: |
+          sdkmanager --install 'platforms;android-37.0' 'build-tools;36.0.0'
+          if [ -d "$ANDROID_HOME/platforms/android-37.0" ] && [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Guarded longitudinal workflow unit tests
+        run: |
+          chmod +x gradlew
+          ./gradlew :collect_app:testDebug \
+            --tests org.odk.collect.android.recordwork.RecordWorkContractsTest \
+            --no-daemon --stacktrace
+      - name: Verify branded app still compiles
+        run: |
+          ./gradlew :collect_app:assembleDebug \
+            -PCOLLECT_SERVER_URL=https://collector.example.org/v1/projects/00000000-0000-0000-0000-000000000000 \
+            --no-daemon --stacktrace
+      - if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: m4a-unit-test-reports
+          path: |
+            collect_app/build/test-results
+            collect_app/build/reports/tests
+          if-no-files-found: ignore
+          retention-days: 14

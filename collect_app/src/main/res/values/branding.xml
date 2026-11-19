@@ -48,4 +48,13 @@
     <string name="mapping_assessment_summary">Version impact assessment: %1$d source fields, %2$d target fields, %3$d matching paths, %4$d flagged paths.</string>
     <string name="mapping_assessment_blocked">Review only. Automatic prefill, answer migration, editing, and submission remain BLOCKED until full JavaRosa validation and approved field/repeat/media mapping are implemented.</string>
     <string name="mapping_assessment_unavailable">Mapping assessment unavailable. Editing and submission remain disabled.</string>
+    <string name="mapping_review_summary">Historical version %1$s → target version %2$s. %3$d target fields; %4$d unchanged scalar candidates for later JavaRosa validation. No answers have been transferred.</string>
+    <string name="mapping_review_removed">Removed source questions:</string>
+    <string name="mapping_review_path_prompt">Review target fields individually. Decisions remain in memory only; no form editing or submission is enabled.</string>
+    <string name="mapping_review_candidate">Unchanged scalar path (not yet JavaRosa validated)</string>
+    <string name="mapping_review_reenter">Re-enter answer manually when the editor is ready</string>
+    <string name="mapping_review_leave_empty">Leave answer empty when the editor is ready</string>
+    <string name="mapping_review_request_copy">Propose copying this path — requires full JavaRosa validation</string>
+    <string name="mapping_review_progress">Reviewed %1$d of %2$d target paths. Editing remains disabled.</string>
+    <string name="mapping_review_unavailable">Some fields require advanced JavaRosa review. No automatic mapping can proceed.</string>
 </resources>

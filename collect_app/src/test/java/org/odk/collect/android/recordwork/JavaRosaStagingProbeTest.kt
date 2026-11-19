@@ -145,7 +145,7 @@ class JavaRosaStagingProbeTest {
 
     @Test fun unsupportedExternalXFormSourceFailsClosedAndCleansScratch() {
         val external = selected.replace(
-            "<model>", "<model><instance id=\"external\" src=\"https://evil.example/x.xml\"/>"
+            "</instance>", "</instance><instance id=\"external\" src=\"https://evil.example/x.xml\"/>"
         )
         val p = plan(targetXForm = external)
         rejects { JavaRosaStagingProbe(scratch).inspect(p, external, original) }

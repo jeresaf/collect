@@ -59,4 +59,7 @@
     <string name="mapping_review_unavailable">Some fields require advanced JavaRosa review. No automatic mapping can proceed.</string>
     <string name="mapping_native_ready">Native JavaRosa target form initialization: PASS (target version ID %1$s). Historical JavaRosa model available: %2$s. This is a blank, transient model only.</string>
     <string name="mapping_native_unavailable">Native JavaRosa initialization was not verified. No transfer or editable draft is permitted.</string>
+    <string name="mapping_validate_reviewed_transfers">Validate reviewed text transfers with JavaRosa (no save)</string>
+    <string name="mapping_transfer_verified">Native transfer validation passed: %1$d of %2$d reviewed paths transferred to an ephemeral model; %3$d re-entry, %4$d empty. No editable draft or submission was created.</string>
+    <string name="mapping_transfer_no_editor">Preview-only: the validation model is discarded. No answers are saved, no draft is opened, and no record is submitted.</string>
 </resources>

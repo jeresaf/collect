@@ -1,24 +1,22 @@
 package org.odk.collect.android.recordwork
 
-import okhttp3.Interceptor
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Protocol
-import okhttp3.Request
-import okhttp3.Response
-import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.ArgumentMatchers.startsWith
+import org.mockito.Mockito.verify
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import org.odk.collect.settings.SettingsProvider
 import org.odk.collect.settings.keys.ProjectKeys
 import org.odk.collect.shared.settings.Settings
 import org.robolectric.RobolectricTestRunner
+import java.io.ByteArrayInputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.nio.charset.StandardCharsets
 
 @RunWith(RobolectricTestRunner::class)
 class RecordWorkReadOnlyClientTest {
@@ -29,67 +27,61 @@ class RecordWorkReadOnlyClientTest {
     private val url = "https://collect.example.org/v1/projects/$projectId"
 
     @Test
-    fun `uses project credentials on just the two scoped endpoints`() {
-        val seen = mutableListOf<Request>()
+    fun `reads the exact project URLs with existing ODK credentials and no redirects`() {
         val (provider, _) = settings()
-        val snapshot = RecordWorkReadOnlyClient(provider, fakeHttp { request ->
-            seen.add(request)
-            if (request.url.encodedPath.endsWith("/record-work-items")) {
-                response(request, 200, """[{
-                    "id":"$workId", "sourceSubmissionId":"$submissionId",
-                    "targetFormVersionId":"$targetId","workType":"FOLLOW_UP",
-                    "state":"READY","visitKey":"2027-Q1-visit-2"
-                }]""")
-            } else {
-                response(request, 200, """[{
-                    "submissionId":"$submissionId",
-                    "instanceId":"uuid:9e1e9e90-5cc8-4e65-a5d0-acb5bdc1500d",
-                    "formId":"$submissionId", "formVersionId":"$targetId",
-                    "submittedAt":"2026-11-20T11:00:00Z"
-                }]""")
-            }
-        }).load(projectId)
+        val requested = mutableListOf<URL>()
+        val connections = mutableListOf<HttpURLConnection>()
+        val snapshot = RecordWorkReadOnlyClient(provider) { destination ->
+            requested += destination
+            val response = if (requested.size == 1) recordsJson() else workJson()
+            fakeConnection(200, response).also { connections += it }
+        }.load(projectId)
 
         assertEquals(1, snapshot.records.size)
         assertEquals(1, snapshot.pendingWork.size)
         assertEquals(RecordWorkType.FOLLOW_UP, snapshot.pendingWork.single().type)
         assertEquals(
             listOf("$url/records", "$url/record-work-items"),
-            seen.map { it.url.toString() }
+            requested.map { it.toString() }
         )
-        seen.forEach {
-            assertTrue(it.header("Authorization")!!.startsWith("Basic "))
-            assertEquals("application/json", it.header("Accept"))
-            assertEquals("no-store", it.header("Cache-Control"))
-            assertEquals("https", it.url.scheme)
+        requested.forEach { assertEquals("https", it.protocol) }
+        connections.forEach { connection ->
+            verify(connection).setInstanceFollowRedirects(false)
+            verify(connection).setUseCaches(false)
+            verify(connection).setRequestProperty("Accept", "application/json")
+            verify(connection).setRequestProperty("Cache-Control", "no-store")
+            verify(connection).setRequestProperty(
+                org.mockito.ArgumentMatchers.eq("Authorization"), startsWith("Basic ")
+            )
+            verify(connection).disconnect()
         }
     }
 
     @Test
-    fun `missing credentials fail without making a network request`() {
+    fun `missing credentials fail without a network request`() {
         val (provider, settings) = settings()
         whenever(settings.getString(ProjectKeys.KEY_PASSWORD)).thenReturn("")
-        val client = RecordWorkReadOnlyClient(provider, fakeHttp {
+        val client = RecordWorkReadOnlyClient(provider) {
             fail("Network request must not occur without credentials")
             throw IllegalStateException()
-        })
+        }
         assertReason(ReadOnlyRequestFailure.NO_CREDENTIALS) { client.load(projectId) }
     }
 
     @Test
-    fun `rejects unscoped server configuration`() {
+    fun `unscoped project URLs fail before a network request`() {
         val (provider, settings) = settings()
         whenever(settings.getString(ProjectKeys.KEY_SERVER_URL))
             .thenReturn("https://collect.example.org/other-path")
-        val client = RecordWorkReadOnlyClient(provider, fakeHttp {
+        val client = RecordWorkReadOnlyClient(provider) {
             fail("Invalid project URL must not reach network")
             throw IllegalStateException()
-        })
+        }
         assertReason(ReadOnlyRequestFailure.INVALID_PROJECT) { client.load(projectId) }
     }
 
     @Test
-    fun `401 403 and redirects never expose a cached record list`() {
+    fun `status denials and redirects fail closed`() {
         val (provider, _) = settings()
         listOf(
             401 to ReadOnlyRequestFailure.AUTH_REQUIRED,
@@ -97,79 +89,78 @@ class RecordWorkReadOnlyClientTest {
             302 to ReadOnlyRequestFailure.REDIRECT_REFUSED,
             503 to ReadOnlyRequestFailure.SERVER_ERROR
         ).forEach { (code, reason) ->
-            val client = RecordWorkReadOnlyClient(provider, fakeHttp { req ->
-                response(req, code, "[]")
-            })
+            val client = RecordWorkReadOnlyClient(provider) {
+                fakeConnection(code, "[]")
+            }
             assertReason(reason) { client.load(projectId) }
         }
     }
 
     @Test
-    fun `rejects malformed and overlength record bodies`() {
+    fun `malformed or oversized JSON is refused`() {
         val (provider, _) = settings()
-        val badJson = RecordWorkReadOnlyClient(provider, fakeHttp { req ->
-            response(req, 200, "{ malformed json }")
-        })
+        val badJson = RecordWorkReadOnlyClient(provider) {
+            fakeConnection(200, "{ malformed }")
+        }
         assertReason(ReadOnlyRequestFailure.INVALID_RESPONSE) { badJson.load(projectId) }
-
-        val tooLarge = RecordWorkReadOnlyClient(provider, fakeHttp { req ->
-            response(req, 200, " ".repeat(1_048_577))
-        })
+        val tooLarge = RecordWorkReadOnlyClient(provider) {
+            fakeConnection(200, " ".repeat(1_048_577))
+        }
         assertReason(ReadOnlyRequestFailure.INVALID_RESPONSE) { tooLarge.load(projectId) }
     }
 
     @Test
-    fun `parser rejects completed work and requires visitKey on follow ups`() {
-        val ready = """[{
-            "id":"$workId", "sourceSubmissionId":"$submissionId",
-            "targetFormVersionId":"$targetId", "workType":"FOLLOW_UP",
-            "state":"READY", "visitKey":"2027-Q1-visit-2"
-        }]"""
-        assertEquals(1, RecordWorkJsonParser.pending(ready).size)
-        try {
-            RecordWorkJsonParser.pending(ready.replace("\"READY\"", "\"COMPLETED\""))
-            fail("Completed work must not be presented as pending")
-        } catch (_: IllegalArgumentException) { }
-
-        try {
-            RecordWorkJsonParser.pending(ready.replace("2027-Q1-visit-2", ""))
-            fail("Follow-up visit without key must fail")
-        } catch (_: IllegalArgumentException) { }
+    fun `parser distinguishes pending follow ups from completed work`() {
+        assertEquals(1, RecordWorkJsonParser.pending(workJson()).size)
+        assertRejects { RecordWorkJsonParser.pending(workJson().replace("READY", "COMPLETED")) }
+        assertRejects { RecordWorkJsonParser.pending(workJson().replace("2027-Q1-visit-2", "")) }
     }
+
+    private fun recordsJson() = """[{
+        "submissionId":"$submissionId",
+        "instanceId":"uuid:9e1e9e90-5cc8-4e65-a5d0-acb5bdc1500d",
+        "formId":"$submissionId","formVersionId":"$targetId",
+        "submittedAt":"2026-11-20T11:00:00Z"
+    }]"""
+
+    private fun workJson() = """[{
+        "id":"$workId","sourceSubmissionId":"$submissionId",
+        "targetFormVersionId":"$targetId","workType":"FOLLOW_UP",
+        "state":"READY","visitKey":"2027-Q1-visit-2"
+    }]"""
+
+    private fun fakeConnection(code: Int, text: String): HttpURLConnection =
+        mock<HttpURLConnection>().also { c ->
+            whenever(c.responseCode).thenReturn(code)
+            whenever(c.contentType).thenReturn("application/json")
+            whenever(c.inputStream).thenReturn(
+                ByteArrayInputStream(text.toByteArray(StandardCharsets.UTF_8))
+            )
+        }
 
     private fun settings(): Pair<SettingsProvider, Settings> {
         val provider = mock<SettingsProvider>()
-        val settings = mock<Settings>()
-        whenever(provider.getUnprotectedSettings(projectId)).thenReturn(settings)
-        whenever(settings.getString(ProjectKeys.KEY_SERVER_URL)).thenReturn(url)
-        whenever(settings.getString(ProjectKeys.KEY_USERNAME)).thenReturn("enumerator")
-        whenever(settings.getString(ProjectKeys.KEY_PASSWORD)).thenReturn("demo_password")
-        return provider to settings
+        val values = mock<Settings>()
+        whenever(provider.getUnprotectedSettings(projectId)).thenReturn(values)
+        whenever(values.getString(ProjectKeys.KEY_SERVER_URL)).thenReturn(url)
+        whenever(values.getString(ProjectKeys.KEY_USERNAME)).thenReturn("enumerator")
+        whenever(values.getString(ProjectKeys.KEY_PASSWORD)).thenReturn("demo_password")
+        return provider to values
     }
 
-    private fun fakeHttp(responder: (Request) -> Response): OkHttpClient =
-        OkHttpClient.Builder()
-            .followRedirects(false)
-            .followSslRedirects(false)
-            .cache(null)
-            .addInterceptor(Interceptor { chain -> responder(chain.request()) })
-            .build()
-
-    private fun response(request: Request, code: Int, text: String) =
-        Response.Builder()
-            .request(request)
-            .protocol(Protocol.HTTP_1_1)
-            .code(code)
-            .message("Synthetic test")
-            .body(text.toResponseBody("application/json".toMediaType()))
-            .build()
-
-    private fun assertReason(expected: ReadOnlyRequestFailure, execute: () -> Unit) {
+    private fun assertReason(reason: ReadOnlyRequestFailure, block: () -> Unit) {
         try {
-            execute()
-            fail("Expected $expected")
+            block()
+            fail("Expected $reason")
         } catch (ex: ReadOnlyRecordException) {
-            assertEquals(expected, ex.reason)
+            assertEquals(reason, ex.reason)
         }
+    }
+
+    private fun assertRejects(block: () -> Unit) {
+        try {
+            block()
+            fail("Expected validation failure")
+        } catch (_: IllegalArgumentException) { }
     }
 }

@@ -8,7 +8,7 @@
 
 ## Verified results
 
-- Historical change set: **187** files across **66** commits (**0** added, **0** modified).
+- Historical change set: **187** files across **66** commits (**71** added, **116** modified).
 - **70** historical file paths exist unchanged as *paths* in upstream 2026. This does **not** imply matching contents.
 - **4** historical file paths no longer exist; another file has the same basename at a different path. These are *unverified* rename candidates only.
 - **113** historical paths have no exact match and no same-basename candidate in the modern tree. Many belong to custom server-remote record editing; others disappeared because upstream's modules and Gradle structure changed.

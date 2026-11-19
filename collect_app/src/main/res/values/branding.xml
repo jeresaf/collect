@@ -2,4 +2,23 @@
 <resources>
     <!-- App-module override; do not modify upstream's reusable strings module. -->
     <string name="collect_app_name" translatable="false">Data Collector</string>
+    <string name="remote_records_menu">Server records and visits</string>
+    <string name="remote_records_title">Records and scheduled visits</string>
+    <string name="remote_records_read_only">Read-only preview. Updated-form editing and offline visits are not yet enabled.</string>
+    <string name="remote_records_refresh">Refresh records</string>
+    <string name="remote_records_section">My server records</string>
+    <string name="remote_work_section">My pending amendments and visits</string>
+    <string name="remote_records_loading">Retrieving assigned records…</string>
+    <string name="remote_records_empty">No records available for the current account.</string>
+    <string name="remote_work_empty">No scheduled amendments or visits.</string>
+    <string name="remote_records_changed_project">Project or account changed; refresh the list.</string>
+    <string name="remote_records_invalid_project">Configure a valid Data Collector HTTPS project URL in project settings.</string>
+    <string name="remote_records_missing_credentials">Set your project username and password in ODK project settings.</string>
+    <string name="remote_records_auth_required">The saved login was rejected. Update credentials in project settings and refresh.</string>
+    <string name="remote_records_forbidden">Your account is not permitted to see these records.</string>
+    <string name="remote_records_not_supported">This project does not support the server record API.</string>
+    <string name="remote_records_redirect_refused">The server attempted a redirect. For your security, this request was stopped.</string>
+    <string name="remote_records_invalid_response">The server returned an unexpected records response.</string>
+    <string name="remote_records_server_error">The record service is unavailable.</string>
+    <string name="remote_records_network_error">Unable to retrieve server records. Check the network and try again.</string>
 </resources>

@@ -44,6 +44,23 @@ def entitiesFilterSearchProjectUrl = secrets.getProperty('ENTITIES_FILTER_SEARCH
 def thousandMediaFileProjectUrl = secrets.getProperty('THOUSAND_MEDIA_FILE_PROJECT_URL', '')
 def thousandMediaFileEntityListProjectUrl = secrets.getProperty('THOUSAND_MEDIA_FILE_ENTITY_LIST_PROJECT_URL', '')
 def cartoApiKey = secrets.getProperty('CARTO_API_KEY', null)
+
+// Optional single-URL deployment configuration. Never include credentials in this value.
+// Example: ./gradlew :collect_app:assembleDebug -PCOLLECT_SERVER_URL=https://server.example/v1/projects/<id>
+def collectServerUrl = (project.findProperty('COLLECT_SERVER_URL') ?: '').toString().trim()
+if (collectServerUrl) {
+    java.net.URI parsedCollectServerUrl
+    try {
+        parsedCollectServerUrl = new java.net.URI(collectServerUrl)
+    } catch (java.net.URISyntaxException ex) {
+        throw new GradleException('COLLECT_SERVER_URL must be a valid HTTPS URL without credentials', ex)
+    }
+
+    if (parsedCollectServerUrl.scheme != 'https' || !parsedCollectServerUrl.host ||
+        parsedCollectServerUrl.rawUserInfo || parsedCollectServerUrl.rawQuery || parsedCollectServerUrl.rawFragment) {
+        throw new GradleException('COLLECT_SERVER_URL must be an HTTPS URL with a hostname, without credentials, query or fragment')
+    }
+}
 android {
     compileSdk libs.versions.compileSdk.get().toInteger()
 
@@ -60,6 +77,7 @@ android {
         targetSdkVersion libs.versions.targetSdk.get().toInteger()
         versionCode project.hasProperty('versionCode') ? project.getProperties()['versionCode'].toInteger() : 5112
         versionName getVersionName()
+        buildConfigField('String', 'COLLECT_SERVER_URL', groovy.json.JsonOutput.toJson(collectServerUrl))
         testInstrumentationRunner('androidx.test.runner.AndroidJUnitRunner')
         vectorDrawables.useSupportLibrary = true
     }

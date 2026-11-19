@@ -1,0 +1,67 @@
+name: ODK 2026 URL Bootstrap Qualification
+
+on:
+  push:
+    branches:
+      - codex/odk-2026-url-bootstrap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: odk-2026-url-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-qualification:
+    name: Android URL bootstrap tests and debug compile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up modern Android SDK command-line tools
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android API 37.0
+        run: |
+          sdkmanager --version
+          sdkmanager --install 'platforms;android-37.0' 'build-tools;36.0.0'
+          if [ -d "$ANDROID_HOME/platforms/android-37.0" ] && [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"
+          fi
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Test project provisioning
+        run: |
+          chmod +x gradlew
+          ./gradlew :collect_app:testDebug \
+            --tests org.odk.collect.android.projects.PreconfiguredProjectInitializerTest \
+            --no-daemon --stacktrace
+
+      - name: Compile debug APK with configured server
+        run: |
+          ./gradlew :collect_app:assembleDebug \
+            -PCOLLECT_SERVER_URL=https://collector.example.org/v1/projects/00000000-0000-0000-0000-000000000000 \
+            --no-daemon --stacktrace
+
+      - name: Publish test reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: odk-2026-url-bootstrap-test-reports
+          path: |
+            collect_app/build/test-results
+            collect_app/build/reports/tests
+          if-no-files-found: ignore
+          retention-days: 14

@@ -11,11 +11,14 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.asLiveData
 import org.odk.collect.analytics.Analytics
 import org.odk.collect.android.analytics.AnalyticsEvents
+import org.odk.collect.android.BuildConfig
+import org.odk.collect.android.configure.qr.AppConfigurationGenerator
 import org.odk.collect.android.application.CollectComposeThemeProvider
 import org.odk.collect.android.databinding.FirstLaunchLayoutBinding
 import org.odk.collect.android.injection.DaggerUtils
 import org.odk.collect.android.mainmenu.MainMenuActivity
 import org.odk.collect.android.projects.ManualProjectCreatorDialog
+import org.odk.collect.android.projects.PreconfiguredProjectInitializer
 import org.odk.collect.android.projects.ProjectsDataService
 import org.odk.collect.android.projects.QrCodeProjectCreatorDialog
 import org.odk.collect.android.version.VersionInformation
@@ -26,10 +29,12 @@ import org.odk.collect.async.Scheduler
 import org.odk.collect.material.MaterialProgressDialogFragment
 import org.odk.collect.mobiledevicemanagement.MDMConfigObserver
 import org.odk.collect.projects.Project
+import org.odk.collect.projects.ProjectCreator
 import org.odk.collect.projects.ProjectsRepository
 import org.odk.collect.settings.SettingsProvider
 import org.odk.collect.strings.R
 import org.odk.collect.strings.localization.LocalizedActivity
+import timber.log.Timber
 import javax.inject.Inject
 
 class FirstLaunchActivity : LocalizedActivity(), CollectComposeThemeProvider {
@@ -52,10 +57,21 @@ class FirstLaunchActivity : LocalizedActivity(), CollectComposeThemeProvider {
     @Inject
     lateinit var mdmConfigObserver: MDMConfigObserver
 
+    @Inject
+    lateinit var projectCreator: ProjectCreator
+
+    @Inject
+    lateinit var appConfigurationGenerator: AppConfigurationGenerator
+
     private val viewModel: FirstLaunchViewModel by viewModels {
         object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return FirstLaunchViewModel(scheduler, projectsRepository, projectsDataService) as T
+                return FirstLaunchViewModel(
+                    scheduler,
+                    projectsRepository,
+                    projectsDataService,
+                    PreconfiguredProjectInitializer(projectsRepository, projectCreator, appConfigurationGenerator)
+                ) as T
             }
         }
     }
@@ -87,7 +103,7 @@ class FirstLaunchActivity : LocalizedActivity(), CollectComposeThemeProvider {
             }
 
             viewModel.isLoading.observe(this@FirstLaunchActivity) { isLoading ->
-                if (!isLoading) {
+                if (!isLoading && viewModel.currentProject.value != null) {
                     ActivityUtils.startActivityAndCloseAllOthers(
                         this@FirstLaunchActivity,
                         MainMenuActivity::class.java
@@ -134,18 +150,44 @@ class FirstLaunchActivity : LocalizedActivity(), CollectComposeThemeProvider {
             }
         }
         lifecycle.addObserver(mdmConfigObserver)
+
+        // A build-supplied URL provisions only an empty installation. Existing projects,
+        // stored instances, and manual/QR-based project setup remain unchanged.
+        viewModel.configurePreconfiguredProject(BuildConfig.COLLECT_SERVER_URL)
     }
 }
 
 private class FirstLaunchViewModel(
     private val scheduler: Scheduler,
     private val projectsRepository: ProjectsRepository,
-    private val projectsDataService: ProjectsDataService
+    private val projectsDataService: ProjectsDataService,
+    private val preconfiguredProjectInitializer: PreconfiguredProjectInitializer
 ) : ViewModel() {
     private val _isLoading = MutableLiveData<Boolean>()
     val isLoading: LiveData<Boolean> = _isLoading
 
     val currentProject = projectsDataService.getCurrentProject().asLiveData()
+
+    fun configurePreconfiguredProject(serverUrl: String) {
+        if (serverUrl.isBlank() || _isLoading.value == true || projectsRepository.getAll().isNotEmpty()) {
+            return
+        }
+
+        _isLoading.value = true
+        scheduler.immediate(
+            background = {
+                try {
+                    preconfiguredProjectInitializer.configureIfNeeded(serverUrl)
+                } catch (ex: Exception) {
+                    // Leave manual/QR setup available rather than looping on failed provisioning.
+                    Timber.e(ex, "Could not initialize preconfigured Collect project")
+                }
+            },
+            foreground = {
+                _isLoading.value = false
+            }
+        )
+    }
 
     fun tryDemo() {
         Analytics.log(AnalyticsEvents.TRY_DEMO)

@@ -45,4 +45,7 @@
     <string name="work_failed_network">Network unavailable. Refresh pending work before retrying to avoid duplicates.</string>
     <string name="work_failed_server">Unable to prepare this record. No editing has taken place.</string>
     <string name="work_failed_changed_project">Project or account changed. Return to the record list.</string>
+    <string name="mapping_assessment_summary">Version impact assessment: %1$d source fields, %2$d target fields, %3$d matching paths, %4$d flagged paths.</string>
+    <string name="mapping_assessment_blocked">Review only. Automatic prefill, answer migration, editing, and submission remain BLOCKED until full JavaRosa validation and approved field/repeat/media mapping are implemented.</string>
+    <string name="mapping_assessment_unavailable">Mapping assessment unavailable. Editing and submission remain disabled.</string>
 </resources>

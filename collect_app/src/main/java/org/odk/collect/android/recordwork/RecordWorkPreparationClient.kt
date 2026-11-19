@@ -45,7 +45,9 @@ data class PreparedRecordPreview(
     val targetFormId: String,
     val targetFormVersion: String,
     val type: RecordWorkType,
-    val mappingApprovalRequired: Boolean
+    val mappingApprovalRequired: Boolean,
+    // M4C-1: risk metadata only, NEVER raw answers or a form instance.
+    val assessment: CrossVersionAssessment? = null
 )
 
 enum class PreparationError {
@@ -133,7 +135,8 @@ class RecordWorkPreparationClient(
 
     fun prepare(
         projectId: String, workId: String, expectedSource: String,
-        expectedTargetVersion: String, expectedType: RecordWorkType
+        expectedTargetVersion: String, expectedType: RecordWorkType,
+        assessCrossVersion: Boolean = false
     ): PreparedRecordPreview {
         val session = session(projectId)
         val response = request(
@@ -167,7 +170,19 @@ class RecordWorkPreparationClient(
                 targetFormId = json.getString("targetFormId"),
                 targetFormVersion = json.getString("targetFormVersion"),
                 type = actualType,
-                mappingApprovalRequired = true
+                mappingApprovalRequired = true,
+                assessment = if (assessCrossVersion) {
+                    CrossVersionAssessmentEngine.assess(
+                        workId = workId,
+                        sourceSubmissionId = expectedSource,
+                        targetFormVersionId = expectedTargetVersion,
+                        workType = actualType,
+                        sourceXml = json.getString("sourceXml"),
+                        targetXFormXml = json.getString("targetXFormXml"),
+                        expectedTargetFormId = json.getString("targetFormId"),
+                        expectedTargetVersion = json.getString("targetFormVersion")
+                    )
+                } else null
             )
         }
     }

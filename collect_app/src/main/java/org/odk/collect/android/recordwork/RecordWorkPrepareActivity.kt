@@ -197,7 +197,8 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
                     val client = RecordWorkPreparationClient(provider)
                     val created = client.create(projectId, work)
                     client.prepare(
-                        projectId, created.id, sourceId, target.targetFormVersionId, type
+                        projectId, created.id, sourceId, target.targetFormVersionId, type,
+                        assessCrossVersion = true
                     )
                 }) { prepared ->
                     disableActions()
@@ -211,17 +212,35 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
     private fun previewExisting(id: String, targetId: String, type: RecordWorkType) {
         runOnline({
             RecordWorkPreparationClient(provider)
-                .prepare(projectId, id, sourceId, targetId, type)
+                .prepare(projectId, id, sourceId, targetId, type, assessCrossVersion = true)
         }) { prepared -> showPreview(prepared) }
     }
 
     private fun showPreview(prepared: PreparedRecordPreview) {
         status.setText(R.string.work_created)
-        preview.text = getString(
+        val base = getString(
             R.string.work_preview_summary,
             prepared.workId, prepared.sourceSubmissionId, prepared.targetFormId,
             prepared.targetFormVersion, prepared.type.name
         )
+        val assessment = prepared.assessment
+        preview.text = if (assessment == null) {
+            // M4C-1 must fail closed: absence of assessed mapping is not approval.
+            base + "\n\n" + getString(R.string.mapping_assessment_unavailable)
+        } else {
+            val findings = assessment.findings.take(25).joinToString("\n") { finding ->
+                "${finding.path}: ${finding.issues.joinToString(", ") { it.name }}"
+            }
+            base + "\n\n" + getString(
+                R.string.mapping_assessment_summary,
+                assessment.sourceFieldCount,
+                assessment.targetFieldCount,
+                assessment.unchangedPathCount,
+                assessment.findings.size
+            ) + "\n" + getString(R.string.mapping_assessment_blocked) +
+                "\n" + assessment.globalIssues.joinToString(", ") { it.name } +
+                if (findings.isNotEmpty()) "\n\n" + findings else ""
+        }
     }
 
     private data class Session(val project: String, val server: String, val username: String)

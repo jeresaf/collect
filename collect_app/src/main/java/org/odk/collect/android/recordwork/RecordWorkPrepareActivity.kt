@@ -1,6 +1,5 @@
 package org.odk.collect.android.recordwork
 
-import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -63,7 +62,7 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
         attemptId = savedInstanceState?.getString(SAVED_ID)
         attemptSpec = savedInstanceState?.getString(SAVED_SPEC)
 
-        if (!canonicalUuid(projectId) || !canonicalUuid(sourceId) || session() == null) {
+        if (projectId.isBlank() || !canonicalUuid(sourceId) || session() == null) {
             disableActions()
             status.setText(R.string.work_failed_changed_project)
             return

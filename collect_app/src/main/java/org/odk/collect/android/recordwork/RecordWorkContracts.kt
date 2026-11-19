@@ -14,6 +14,8 @@ class RecordWorkApiPaths private constructor(private val projectBase: String) {
     fun records(): String = "$projectBase/records"
     fun timeline(sourceSubmissionId: String): String =
         "$projectBase/records/${checkedId(sourceSubmissionId)}/timeline"
+    fun targetVersions(sourceSubmissionId: String, workType: RecordWorkType): String =
+        "$projectBase/records/${checkedId(sourceSubmissionId)}/target-versions?workType=${workType.name}"
     fun workItems(): String = "$projectBase/record-work-items"
     fun prepare(workItemId: String): String =
         "$projectBase/record-work-items/${checkedId(workItemId)}/prepare"

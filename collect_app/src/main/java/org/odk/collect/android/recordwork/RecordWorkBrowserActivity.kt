@@ -1,8 +1,10 @@
 package org.odk.collect.android.recordwork
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import org.odk.collect.android.R
@@ -24,8 +26,8 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
     private lateinit var settingsProvider: SettingsProvider
     private lateinit var progress: ProgressBar
     private lateinit var status: TextView
-    private lateinit var records: TextView
-    private lateinit var pending: TextView
+    private lateinit var records: LinearLayout
+    private lateinit var pending: LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -122,26 +124,57 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
     }
 
     private fun show(snapshot: RemoteRecordSnapshot) {
-        status.setText(R.string.remote_records_read_only)
-        records.text = if (snapshot.records.isEmpty()) {
-            getString(R.string.remote_records_empty)
+        status.setText(R.string.remote_records_choose_record)
+        clearResults()
+        if (snapshot.records.isEmpty()) {
+            records.addView(text(getString(R.string.remote_records_empty)))
         } else {
-            snapshot.records.joinToString("\n\n") {
-                "${it.submittedAt}\n${it.submissionId}\nForm: ${it.formId} (${it.formVersionId})"
+            snapshot.records.forEach { record ->
+                records.addView(Button(this).apply {
+                    text = "${record.submittedAt}\n${record.submissionId}\nForm: ${record.formId}"
+                    isAllCaps = false
+                    setOnClickListener {
+                        val session = activeSession() ?: return@setOnClickListener
+                        startActivity(Intent(this@RecordWorkBrowserActivity,
+                            RecordWorkPrepareActivity::class.java).apply {
+                            putExtra(RecordWorkPrepareActivity.EXTRA_PROJECT, session.projectId)
+                            putExtra(RecordWorkPrepareActivity.EXTRA_SOURCE, record.submissionId)
+                        })
+                    }
+                })
             }
         }
-        pending.text = if (snapshot.pendingWork.isEmpty()) {
-            getString(R.string.remote_work_empty)
+        if (snapshot.pendingWork.isEmpty()) {
+            pending.addView(text(getString(R.string.remote_work_empty)))
         } else {
-            snapshot.pendingWork.joinToString("\n\n") {
-                "${it.type} ${it.visitKey.orEmpty()}\n${it.id}\nSource: ${it.sourceSubmissionId}"
+            snapshot.pendingWork.forEach { task ->
+                pending.addView(Button(this).apply {
+                    text = "${task.type} ${task.visitKey.orEmpty()}\n${task.id}"
+                    isAllCaps = false
+                    setOnClickListener {
+                        val session = activeSession() ?: return@setOnClickListener
+                        startActivity(Intent(this@RecordWorkBrowserActivity,
+                            RecordWorkPrepareActivity::class.java).apply {
+                            putExtra(RecordWorkPrepareActivity.EXTRA_PROJECT, session.projectId)
+                            putExtra(RecordWorkPrepareActivity.EXTRA_SOURCE, task.sourceSubmissionId)
+                            putExtra(RecordWorkPrepareActivity.EXTRA_WORK, task.id)
+                            putExtra(RecordWorkPrepareActivity.EXTRA_TARGET, task.targetFormVersionId)
+                            putExtra(RecordWorkPrepareActivity.EXTRA_TYPE, task.type.name)
+                        })
+                    }
+                })
             }
         }
     }
 
+    private fun text(value: String) = TextView(this).apply {
+        text = value
+        setPadding(0, 8, 0, 16)
+    }
+
     private fun clearResults() {
-        records.text = ""
-        pending.text = ""
+        records.removeAllViews()
+        pending.removeAllViews()
     }
 
     private data class Session(

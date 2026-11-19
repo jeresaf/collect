@@ -16,7 +16,7 @@ data class RemoteRecord(
     val submissionId: String,
     val instanceId: String,
     val formId: String,
-    val formVersionId: String,
+    val formVersionId: String?,
     val submittedAt: String
 )
 
@@ -154,7 +154,7 @@ object RecordWorkJsonParser {
                 submissionId = safeUuid(item.getString("submissionId")),
                 instanceId = item.getString("instanceId").also { require(it.isNotBlank()) },
                 formId = safeUuid(item.getString("formId")),
-                formVersionId = safeUuid(item.getString("formVersionId")),
+                formVersionId = if (item.isNull("formVersionId")) null else safeUuid(item.getString("formVersionId")),
                 submittedAt = item.optString("submittedAt")
             )
         }

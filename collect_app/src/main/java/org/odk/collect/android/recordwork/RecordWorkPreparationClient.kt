@@ -47,7 +47,9 @@ data class PreparedRecordPreview(
     val type: RecordWorkType,
     val mappingApprovalRequired: Boolean,
     // M4C-1: risk metadata only, NEVER raw answers or a form instance.
-    val assessment: CrossVersionAssessment? = null
+    val assessment: CrossVersionAssessment? = null,
+    // M4C-2A: versioned path proposals, no source answers and no edit authority.
+    val mappingPlan: HistoricalMappingPlan? = null
 )
 
 enum class PreparationError {
@@ -181,6 +183,22 @@ class RecordWorkPreparationClient(
                         targetXFormXml = json.getString("targetXFormXml"),
                         expectedTargetFormId = json.getString("targetFormId"),
                         expectedTargetVersion = json.getString("targetFormVersion")
+                    )
+                } else null,
+                mappingPlan = if (assessCrossVersion) {
+                    HistoricalSchemaMappingEngine.plan(
+                        workId = workId,
+                        sourceSubmissionId = expectedSource,
+                        targetFormVersionId = expectedTargetVersion,
+                        workType = actualType,
+                        sourceXml = json.getString("sourceXml"),
+                        // Earlier M3 versions legitimately return no historical
+                        // definition. Never substitute the current target form.
+                        sourceXFormXml = if (json.isNull("sourceXFormXml")) null
+                            else json.getString("sourceXFormXml"),
+                        targetXFormXml = json.getString("targetXFormXml"),
+                        targetFormId = json.getString("targetFormId"),
+                        targetFormVersion = json.getString("targetFormVersion")
                     )
                 } else null
             )

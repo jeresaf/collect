@@ -17,7 +17,7 @@ This is **not** a record editor, offline visit downloader or a replacement for O
 
 - Reuses **ODK project settings** `KEY_SERVER_URL`, `KEY_USERNAME`, and `KEY_PASSWORD`, resolved with an explicit project ID. It has no second credential store, and does not access temporary host-wide credentials belonging to another project.
 - Requires `https://<host>/v1/projects/<UUID>`, without URL-embedded credentials, query or fragment. Endpoint routes are built only from the validated project base.
-- Uses a dedicated cache-free, redirect-disabled OkHttp client. This prevents forwarding Basic credentials to a redirected origin and avoids storing raw record responses in the HTTP cache.
+- Uses Android's built-in `HttpsURLConnection`, with redirects and caching explicitly disabled. This prevents forwarding Basic credentials to a redirected origin, avoids storing raw record responses in the HTTP cache, and preserves the project's locked dependency graph.
 - Retrieves `GET /records` and `GET /record-work-items`. Uses only explicit 200 + JSON; 301/302/303/307/308 are refused, 401 prompts updating project credentials, 403 is access denied, and other codes fail closed.
 - Limits JSON response bodies to 1 MiB and each array to 100 entries, matching the M3 API bounds. Unknown/malformed work types, completed work, missing visit keys and invalid identifiers are rejected.
 - No request data or server response body is logged by M4B.
@@ -33,14 +33,14 @@ M4A's approval gate remains in place, but the M4B screen **cannot execute either
 
 ## Automated coverage
 
-`RecordWorkReadOnlyClientTest` supplies synthetic OkHttp responses and checks:
+`RecordWorkReadOnlyClientTest` supplies synthetic HTTPS-connection responses and checks:
 - Exact active-project paths with Basic credentials from the current project's ODK settings.
 - No network call when the URL or credentials are invalid.
 - 401, 403, 302 and 503 errors; no partial list exposure.
 - Malformed JSON and oversized bodies fail closed.
 - READY and visit-key parsing.
 
-`RecordWorkContractsTest` is retained from M4A. GitHub Actions runs both tests and compiles the branded debug APK. HTTP tests are interceptor-based **synthetic tests**, not evidence that an Android device connected to a real M3 backend.
+`RecordWorkContractsTest` is retained from M4A. GitHub Actions runs both tests and compiles the branded debug APK. HTTP tests use mocked connections and are **synthetic tests**, not evidence that an Android device connected to a real M3 backend.
 
 ## Still blocked
 

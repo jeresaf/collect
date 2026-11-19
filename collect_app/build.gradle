@@ -327,8 +327,6 @@ dependencies {
         exclude group: 'org.hamcrest', module: 'hamcrest-all'
     }
     implementation libs.gson
-    // M4B: read-only authenticated server records with redirects and cache disabled.
-    implementation libs.okHttp
     implementation libs.timber
     implementation libs.slf4jApi
     implementation libs.slf4jTimber

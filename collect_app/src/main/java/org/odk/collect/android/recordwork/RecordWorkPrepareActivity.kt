@@ -37,6 +37,8 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
     private var generation = 0
     private var chosenType: RecordWorkType? = null
     private var chosenTarget: RecordTargetVersion? = null
+    // Review choices live only in this activity; never used to create a draft.
+    private var pathReview: HistoricalMappingReview? = null
     private var attemptSpec: String? = null
     private var attemptId: String? = null
 
@@ -101,6 +103,7 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
         generation++
         preview.text = ""
         versions.removeAllViews()
+        pathReview = null
         progress.visibility = View.GONE
         super.onStop()
     }
@@ -224,22 +227,94 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
             prepared.targetFormVersion, prepared.type.name
         )
         val assessment = prepared.assessment
-        preview.text = if (assessment == null) {
-            // M4C-1 must fail closed: absence of assessed mapping is not approval.
-            base + "\n\n" + getString(R.string.mapping_assessment_unavailable)
+        val prior = if (assessment == null) {
+            getString(R.string.mapping_assessment_unavailable)
         } else {
-            val findings = assessment.findings.take(25).joinToString("\n") { finding ->
-                "${finding.path}: ${finding.issues.joinToString(", ") { it.name }}"
+            val findings = assessment.findings.take(20).joinToString("\n") { f ->
+                f.path + ": " + f.issues.joinToString(", ") { it.name }
             }
-            base + "\n\n" + getString(
+            getString(
                 R.string.mapping_assessment_summary,
-                assessment.sourceFieldCount,
-                assessment.targetFieldCount,
-                assessment.unchangedPathCount,
-                assessment.findings.size
-            ) + "\n" + getString(R.string.mapping_assessment_blocked) +
-                "\n" + assessment.globalIssues.joinToString(", ") { it.name } +
-                if (findings.isNotEmpty()) "\n\n" + findings else ""
+                assessment.sourceFieldCount, assessment.targetFieldCount,
+                assessment.unchangedPathCount, assessment.findings.size
+            ) + "\n" + assessment.globalIssues.joinToString(", ") { it.name } +
+                if (findings.isNotBlank()) "\n" + findings else ""
+        }
+        val plan = prepared.mappingPlan
+        val planSummary = if (plan == null) {
+            getString(R.string.mapping_assessment_unavailable)
+        } else {
+            val candidateCount = plan.candidates.count { it.safeScalarProposal }
+            getString(
+                R.string.mapping_review_summary,
+                plan.sourceVersion ?: "unknown",
+                plan.targetVersion,
+                plan.candidates.size,
+                candidateCount
+            ) + "\n" + plan.globalRisks.joinToString(", ") { it.name } +
+                if (plan.removedSourcePaths.isNotEmpty()) {
+                    "\n" + getString(R.string.mapping_review_removed) +
+                        "\n" + plan.removedSourcePaths.take(12).joinToString("\n")
+                } else ""
+        }
+        preview.text = base + "\n\n" + prior + "\n\n" + planSummary +
+            "\n\n" + getString(R.string.mapping_assessment_blocked)
+
+        versions.removeAllViews()
+        pathReview = null
+        if (plan == null || plan.candidates.isEmpty()) return
+        val review = HistoricalMappingReview(plan)
+        pathReview = review
+        val prompt = TextView(this).apply {
+            setText(R.string.mapping_review_path_prompt)
+            setPadding(0, 16, 0, 8)
+        }
+        versions.addView(prompt)
+        // Present a bounded preview rather than rendering thousands of buttons
+        // on the Android main thread. Unseen fields cannot be marked reviewed.
+        plan.candidates.take(MAX_VISIBLE_REVIEW_FIELDS).forEach { candidate ->
+            val button = Button(this)
+            button.isAllCaps = false
+            val riskText = candidate.risks.joinToString(", ") { it.name }
+                .ifBlank { getString(R.string.mapping_review_candidate) }
+            button.text = candidate.targetPath + "\n" + riskText
+            button.setOnClickListener {
+                val options = mutableListOf(
+                    getString(R.string.mapping_review_reenter),
+                    getString(R.string.mapping_review_leave_empty)
+                )
+                if (candidate.safeScalarProposal) {
+                    options += getString(R.string.mapping_review_request_copy)
+                }
+                MaterialAlertDialogBuilder(this)
+                    .setTitle(candidate.targetPath)
+                    .setItems(options.toTypedArray()) { _, which ->
+                        val action = when (which) {
+                            0 -> MappingDecision.REENTER
+                            1 -> MappingDecision.LEAVE_EMPTY
+                            else -> MappingDecision.REQUEST_REVIEWED_TRANSFER
+                        }
+                        try {
+                            review.decide(candidate.targetPath, action)
+                            button.text = candidate.targetPath + "\n" + action.name
+                            val snapshot = review.snapshot()
+                            // This status never claims the record is editable or
+                            // that mapping approval passed JavaRosa validation.
+                            status.text = getString(
+                                R.string.mapping_review_progress,
+                                snapshot.decisions.size, plan.candidates.size
+                            )
+                        } catch (_: IllegalArgumentException) {
+                            status.setText(R.string.mapping_review_unavailable)
+                        }
+                    }.show()
+            }
+            versions.addView(button)
+        }
+        if (plan.candidates.size > MAX_VISIBLE_REVIEW_FIELDS) {
+            versions.addView(TextView(this).apply {
+                setText(R.string.mapping_review_unavailable)
+            })
         }
     }
 
@@ -312,6 +387,7 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
     }
 
     companion object {
+        private const val MAX_VISIBLE_REVIEW_FIELDS = 30
         const val EXTRA_PROJECT = "recordwork.project"
         const val EXTRA_SOURCE = "recordwork.source"
         const val EXTRA_WORK = "recordwork.work"

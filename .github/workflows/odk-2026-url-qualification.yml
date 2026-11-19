@@ -28,15 +28,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android API 37 using runner's SDK tools
+      - name: Set up modern Android SDK command-line tools
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android API 37.0
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
           sdkmanager --version
-          set +o pipefail
-          yes | sdkmanager --licenses >/dev/null
-          set -o pipefail
-          sdkmanager --install 'platforms;android-37' 'build-tools;36.0.0'
+          sdkmanager --install 'platforms;android-37.0' 'build-tools;36.0.0'
+          if [ -d "$ANDROID_HOME/platforms/android-37.0" ] && [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"
+          fi
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

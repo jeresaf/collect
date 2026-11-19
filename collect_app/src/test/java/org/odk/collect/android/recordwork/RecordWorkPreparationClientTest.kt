@@ -252,6 +252,114 @@ class RecordWorkPreparationClientTest {
     }
 
     @Test
+    fun freshServerPrepareRevalidatesSchemaHashAndWorkBeforeReviewedTransfer() {
+        val (settings, _) = projectSettings()
+        val response = verifiedTransferResponse()
+        var validatorCalls = 0
+        val urls = mutableListOf<String>()
+        val client = RecordWorkPreparationClient(
+            settings,
+            transferProbe = { plan, review, sourceXml, sourceSha, sourceInstanceId, _, _ ->
+                validatorCalls++
+                assertEquals(workId, plan.workId)
+                assertEquals("uuid:9e1e9e90-5cc8-4e65-a5d0-acb5bdc1500d", sourceInstanceId)
+                assertEquals(ReviewedScalarTransferProbe.sha256(sourceXml), sourceSha)
+                assertTrue(review.reviewedEveryTargetPath)
+                ReviewedTransferEvidence(
+                    plan.workId, plan.sourceSubmissionId, plan.targetFormVersionId,
+                    plan.workType, sourceInstanceId, sourceSha,
+                    requireNotNull(plan.sourceXFormSha256), plan.targetXFormSha256,
+                    review.decisions.size, 1, 0, 0
+                )
+            }
+        ) { url ->
+            urls += url.toString()
+            connection(200, response).first
+        }
+        val prepared = client.prepare(
+            project, workId, source, target, RecordWorkType.AMENDMENT,
+            assessCrossVersion = true
+        )
+        val plan = requireNotNull(prepared.mappingPlan)
+        val review = HistoricalMappingReview(plan).apply {
+            plan.candidates.forEach {
+                decide(it.targetPath, MappingDecision.REQUEST_REVIEWED_TRANSFER)
+            }
+        }.snapshot()
+        val result = client.validateReviewedTransfer(project, prepared, review)
+        assertEquals(1, validatorCalls)
+        assertEquals(1, result.pathsTransferred)
+        assertFalse(result.canSaveDraft)
+        assertFalse(result.canSubmit)
+        assertEquals(2, urls.size)
+        assertTrue(urls.all { it == "$base/record-work-items/$workId/prepare" })
+    }
+
+    @Test
+    fun changedAnswersBetweenPreviewAndTransferBlockNativeInvocation() {
+        val (settings, _) = projectSettings()
+        var requests = 0
+        var called = 0
+        val client = RecordWorkPreparationClient(
+            settings,
+            transferProbe = { _, _, _, _, _, _, _ ->
+                called++
+                error("Validator must never be called after source changes")
+            }
+        ) {
+            requests++
+            val response = if (requests == 1) verifiedTransferResponse()
+                else org.json.JSONObject(verifiedTransferResponse()).put(
+                    "sourceXml", org.json.JSONObject(verifiedTransferResponse())
+                        .getString("sourceXml").replace("SENSITIVE_PERSONAL_VALUE", "changed")
+                ).toString()
+            connection(200, response).first
+        }
+        val prepared = client.prepare(
+            project, workId, source, target, RecordWorkType.AMENDMENT,
+            assessCrossVersion = true
+        )
+        val plan = requireNotNull(prepared.mappingPlan)
+        val review = HistoricalMappingReview(plan).apply {
+            plan.candidates.forEach {
+                decide(it.targetPath, MappingDecision.REQUEST_REVIEWED_TRANSFER)
+            }
+        }.snapshot()
+        assertError(PreparationError.BAD_RESPONSE) {
+            client.validateReviewedTransfer(project, prepared, review)
+        }
+        assertEquals(0, called)
+    }
+
+    private fun verifiedTransferResponse(): String {
+        fun formXml(version: String) = """
+            <h:html xmlns:h="http://www.w3.org/1999/xhtml"
+                    xmlns="http://www.w3.org/2002/xforms">
+              <h:head><h:title>Synthetic Household</h:title>
+                <model><instance><data id="household" version="$version"><name/></data></instance>
+                  <bind nodeset="/data/name" type="string"/>
+                </model>
+              </h:head><h:body>
+                <input ref="/data/name"><label>Name</label></input>
+              </h:body>
+            </h:html>
+        """.trimIndent()
+        val response = org.json.JSONObject(prepareJson(required = true))
+        response.getJSONObject("work").put(
+            "sourceInstanceId", "uuid:9e1e9e90-5cc8-4e65-a5d0-acb5bdc1500d"
+        )
+        return response.put(
+            "sourceXml",
+            """<data id="household" version="1">
+              <name>SENSITIVE_PERSONAL_VALUE</name>
+              <meta><instanceID>uuid:9e1e9e90-5cc8-4e65-a5d0-acb5bdc1500d</instanceID></meta>
+            </data>"""
+        ).put("sourceXFormXml", formXml("1"))
+            .put("targetXFormXml", formXml("2"))
+            .toString()
+    }
+
+    @Test
     fun `assessed prepare fails on invalid target version and does not create a draft`() {
         val (settings, _) = projectSettings()
         val spoofed = org.json.JSONObject(validAssessedPreparation())

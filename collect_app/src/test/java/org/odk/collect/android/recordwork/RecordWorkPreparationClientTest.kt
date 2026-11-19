@@ -192,6 +192,66 @@ class RecordWorkPreparationClientTest {
     }
 
     @Test
+    fun nativeStagingIsBoundToAuthenticatedPreparedTarget() {
+        val (settings, _) = projectSettings()
+        var invoked = 0
+        val client = RecordWorkPreparationClient(
+            settings,
+            nativeProbe = { plan, targetXml, historicalXml ->
+                invoked++
+                assertEquals(target, plan.targetFormVersionId)
+                assertTrue(targetXml.contains("version=\"2\""))
+                assertEquals(null, historicalXml)
+                NativeStagingEvidence(
+                    workId = plan.workId,
+                    sourceSubmissionId = plan.sourceSubmissionId,
+                    targetFormVersionId = plan.targetFormVersionId,
+                    workType = plan.workType,
+                    sourceXFormSha256 = plan.sourceXFormSha256,
+                    targetXFormSha256 = plan.targetXFormSha256,
+                    targetJavaRosaInitialized = true,
+                    historicalJavaRosaInitialized = false,
+                    compatibleScalarCandidates = 0,
+                    operatorPathsReviewed = false
+                )
+            }
+        ) { connection(200, validAssessedPreparation()).first }
+
+        val preview = client.prepare(project, workId, source, target,
+            RecordWorkType.AMENDMENT, assessCrossVersion = true)
+        assertEquals(1, invoked)
+        assertTrue(requireNotNull(preview.nativeStaging).targetJavaRosaInitialized)
+        assertFalse(requireNotNull(preview.nativeStaging).canCreateDraft)
+        assertFalse(requireNotNull(preview.nativeStaging).canSubmit)
+    }
+
+    @Test
+    fun nativeEvidenceForDifferentFormVersionIsRejected() {
+        val (settings, _) = projectSettings()
+        val client = RecordWorkPreparationClient(
+            settings,
+            nativeProbe = { plan, _, _ ->
+                NativeStagingEvidence(
+                    workId = plan.workId,
+                    sourceSubmissionId = plan.sourceSubmissionId,
+                    targetFormVersionId = source,
+                    workType = plan.workType,
+                    sourceXFormSha256 = plan.sourceXFormSha256,
+                    targetXFormSha256 = plan.targetXFormSha256,
+                    targetJavaRosaInitialized = true,
+                    historicalJavaRosaInitialized = false,
+                    compatibleScalarCandidates = 0,
+                    operatorPathsReviewed = false
+                )
+            }
+        ) { connection(200, validAssessedPreparation()).first }
+        assertError(PreparationError.BAD_RESPONSE) {
+            client.prepare(project, workId, source, target,
+                RecordWorkType.AMENDMENT, assessCrossVersion = true)
+        }
+    }
+
+    @Test
     fun `assessed prepare fails on invalid target version and does not create a draft`() {
         val (settings, _) = projectSettings()
         val spoofed = org.json.JSONObject(validAssessedPreparation())

@@ -21,4 +21,27 @@
     <string name="remote_records_invalid_response">The server returned an unexpected records response.</string>
     <string name="remote_records_server_error">The record service is unavailable.</string>
     <string name="remote_records_network_error">Unable to retrieve server records. Check the network and try again.</string>
+    <string name="remote_records_choose_record">Choose a record or pending work item to review. Editing is not yet available.</string>
+    <string name="work_title">Prepare record work</string>
+    <string name="work_readonly_notice">This creates a server work item and previews its form version. It DOES NOT populate, edit, or submit a form. The original record remains unchanged.</string>
+    <string name="work_amend">Amend existing record</string>
+    <string name="work_followup">Schedule independent follow-up visit</string>
+    <string name="work_visit_key">Unique visit key, e.g. 2027-Q1-visit-2</string>
+    <string name="work_create">Create work and preview (no editing)</string>
+    <string name="work_loading">Loading eligible published forms…</string>
+    <string name="work_no_targets">No eligible published forms were returned.</string>
+    <string name="work_pick_version">Select one form version:</string>
+    <string name="work_selected">Selected target version: %1$s</string>
+    <string name="work_created">Work prepared. Editing remains disabled until mapping validation is implemented.</string>
+    <string name="work_pending">Loading existing pending work preview…</string>
+    <string name="work_require_visit_key">Enter a unique visit key using letters, numbers, . _ : or - (maximum 128 characters).</string>
+    <string name="work_confirm_title">Create server work item?</string>
+    <string name="work_confirm_message">This creates a READY work item on the server. No record will be edited, but the work will appear in your pending list.</string>
+    <string name="work_preview_summary">Work ID: %1$s\nSource record: %2$s\nTarget form: %3$s\nVersion: %4$s\nOperation: %5$s\nMapping approval required: YES\nThis is a read-only preview. You cannot edit or submit this record yet.</string>
+    <string name="work_failed_auth">Sign in again using the active ODK project settings.</string>
+    <string name="work_failed_access">The record or form is no longer assigned to your account.</string>
+    <string name="work_failed_conflict">Work is already completed or conflicted. Refresh the pending list.</string>
+    <string name="work_failed_network">Network unavailable. Refresh pending work before retrying to avoid duplicates.</string>
+    <string name="work_failed_server">Unable to prepare this record. No editing has taken place.</string>
+    <string name="work_failed_changed_project">Project or account changed. Return to the record list.</string>
 </resources>

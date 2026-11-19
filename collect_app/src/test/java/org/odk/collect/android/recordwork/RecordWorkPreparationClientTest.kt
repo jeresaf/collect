@@ -174,7 +174,7 @@ class RecordWorkPreparationClientTest {
         """.trimIndent()
         return org.json.JSONObject(prepareJson(required = true))
             .put("sourceXml",
-                "<data id=\\"household\\" version=\\"1\\"><name>SENSITIVE_PERSONAL_VALUE</name></data>")
+                """<data id="household" version="1"><name>SENSITIVE_PERSONAL_VALUE</name></data>""")
             .put("targetXFormXml", xform)
             .toString()
     }

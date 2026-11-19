@@ -112,8 +112,7 @@ class RecordWorkPreparationClientTest {
         for (body in listOf(
             prepareJson(required = false),
             prepareJson(required = true).replace(target, source),
-            prepareJson(required = true).replace("targetXFormXml\\\":\\\"<h:html/>",
-                "targetXFormXml\\\":\\\"")
+            prepareJson(required = true).replace("<h:html/>", "")
         )) {
             val client = RecordWorkPreparationClient(settings) {
                 connection(200, body).first

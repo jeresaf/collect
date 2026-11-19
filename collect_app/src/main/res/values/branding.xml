@@ -57,4 +57,6 @@
     <string name="mapping_review_request_copy">Propose copying this path — requires full JavaRosa validation</string>
     <string name="mapping_review_progress">Reviewed %1$d of %2$d target paths. Editing remains disabled.</string>
     <string name="mapping_review_unavailable">Some fields require advanced JavaRosa review. No automatic mapping can proceed.</string>
+    <string name="mapping_native_ready">Native JavaRosa target form initialization: PASS (target version ID %1$s). Historical JavaRosa model available: %2$s. This is a blank, transient model only.</string>
+    <string name="mapping_native_unavailable">Native JavaRosa initialization was not verified. No transfer or editable draft is permitted.</string>
 </resources>

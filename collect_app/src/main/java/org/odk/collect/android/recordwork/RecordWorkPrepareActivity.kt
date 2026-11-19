@@ -292,7 +292,7 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
         val mayCheckTransfers =
             prepared.type == RecordWorkType.AMENDMENT &&
             prepared.nativeStaging?.targetJavaRosaInitialized == true &&
-            prepared.nativeStaging.historicalJavaRosaInitialized &&
+            prepared.nativeStaging?.historicalJavaRosaInitialized == true &&
             plan.candidates.size <= MAX_VISIBLE_REVIEW_FIELDS
         val validationButton = Button(this).apply {
             isAllCaps = false

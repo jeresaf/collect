@@ -124,6 +124,62 @@ class RecordWorkPreparationClientTest {
     }
 
     @Test
+    fun `assessed prepare reports changes without disclosing raw answers`() {
+        val (settings, _) = projectSettings()
+        val client = RecordWorkPreparationClient(settings) {
+            connection(200, validAssessedPreparation()).first
+        }
+        val preview = client.prepare(
+            project, workId, source, target, RecordWorkType.AMENDMENT,
+            assessCrossVersion = true
+        )
+        val assessment = requireNotNull(preview.assessment)
+        assertEquals(workId, assessment.workId)
+        assertEquals(target, assessment.targetFormVersionId)
+        assertEquals("2", assessment.targetVersion)
+        assertFalse(assessment.canEdit)
+        assertFalse(assessment.canSubmit)
+        assertFalse(preview.toString().contains("SENSITIVE_PERSONAL_VALUE"))
+    }
+
+    @Test
+    fun `assessed prepare fails on invalid target version and does not create a draft`() {
+        val (settings, _) = projectSettings()
+        val spoofed = org.json.JSONObject(validAssessedPreparation())
+            .put("targetFormVersion", "999")
+            .toString()
+        val client = RecordWorkPreparationClient(settings) {
+            connection(200, spoofed).first
+        }
+        assertError(PreparationError.BAD_RESPONSE) {
+            client.prepare(
+                project, workId, source, target, RecordWorkType.AMENDMENT,
+                assessCrossVersion = true
+            )
+        }
+    }
+
+    private fun validAssessedPreparation(): String {
+        val xform = """
+            <h:html xmlns:h="http://www.w3.org/1999/xhtml"
+                    xmlns="http://www.w3.org/2002/xforms">
+              <h:head>
+                <h:title>Synthetic Household Test</h:title>
+                <model><instance>
+                  <data id="household" version="2"><name/><newQuestion/></data>
+                </instance></model>
+              </h:head>
+              <h:body><input ref="/data/name"><label>Name</label></input></h:body>
+            </h:html>
+        """.trimIndent()
+        return org.json.JSONObject(prepareJson(required = true))
+            .put("sourceXml",
+                "<data id=\\"household\\" version=\\"1\\"><name>SENSITIVE_PERSONAL_VALUE</name></data>")
+            .put("targetXFormXml", xform)
+            .toString()
+    }
+
+    @Test
     fun `401 403 404 409 and redirects are never accepted`() {
         val (settings, _) = projectSettings()
         listOf(

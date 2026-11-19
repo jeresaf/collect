@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App-module override; do not modify upstream's reusable strings module. -->
+    <string name="collect_app_name" translatable="false">Data Collector</string>
+</resources>

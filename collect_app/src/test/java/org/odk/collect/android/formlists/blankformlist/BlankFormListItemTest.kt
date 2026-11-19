@@ -5,6 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.hamcrest.CoreMatchers.`is`
 import org.hamcrest.MatcherAssert.assertThat
 import org.junit.Test
+import org.robolectric.annotation.Config
 import org.junit.runner.RunWith
 import org.odk.collect.forms.Form
 import org.odk.collect.forms.instances.Instance
@@ -12,6 +13,7 @@ import org.odk.collect.formstest.InMemInstancesRepository
 import org.odk.collect.projects.Project
 
 @RunWith(AndroidJUnit4::class)
+@Config(sdk = [35])
 class BlankFormListItemTest {
     private val instancesRepository = InMemInstancesRepository()
 
@@ -43,7 +45,7 @@ class BlankFormListItemTest {
         assertThat(blankFormListItem.geometryPath, `is`(form.geometryXpath))
         assertThat(blankFormListItem.dateOfCreation, `is`(form.date))
         assertThat(blankFormListItem.dateOfLastUsage, `is`(3L))
-        assertThat(blankFormListItem.contentUri, `is`(Uri.parse("content://org.odk.collect.android.provider.odk.forms/forms/1?projectId=DEMO")))
+        assertThat(blankFormListItem.contentUri, `is`(Uri.parse("content://${org.odk.collect.android.BuildConfig.APPLICATION_ID}.provider.odk.forms/forms/1?projectId=DEMO")))
     }
 
     @Test

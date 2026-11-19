@@ -31,6 +31,7 @@ jobs:
       - name: Install Android API 37 using runner's SDK tools
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
           sdkmanager --version
           set +o pipefail
           yes | sdkmanager --licenses >/dev/null

@@ -143,6 +143,55 @@ class RecordWorkPreparationClientTest {
     }
 
     @Test
+    fun historicalPrepareBindsTwoExactDefinitionsAndDoesNotCopyAnswers() {
+        val (settings, _) = projectSettings()
+        val sourceForm = """
+            <h:html xmlns:h="http://www.w3.org/1999/xhtml"
+                    xmlns="http://www.w3.org/2002/xforms">
+              <h:head><h:title>Original household form</h:title>
+              <model><instance>
+                <data id="household" version="1"><name/></data>
+              </instance><bind nodeset="/data/name" type="string"/></model></h:head>
+              <h:body><input ref="/data/name"><label>Name</label></input></h:body>
+            </h:html>
+        """.trimIndent()
+        val response = org.json.JSONObject(validAssessedPreparation())
+            .put("sourceXFormXml", sourceForm)
+            .toString()
+        val client = RecordWorkPreparationClient(settings) {
+            connection(200, response).first
+        }
+        val preview = client.prepare(
+            project, workId, source, target, RecordWorkType.AMENDMENT,
+            assessCrossVersion = true
+        )
+        val plan = requireNotNull(preview.mappingPlan)
+        assertEquals("1", plan.sourceVersion)
+        assertEquals("2", plan.targetVersion)
+        assertTrue(plan.sourceXFormSha256 != null)
+        assertFalse(plan.canPrefill)
+        assertFalse(plan.canEdit)
+        assertFalse(plan.canSubmit)
+        assertFalse(plan.toString().contains("SENSITIVE_PERSONAL_VALUE"))
+    }
+
+    @Test
+    fun prepareWithoutLegacySourceDefinitionStillBlocksTransfers() {
+        val (settings, _) = projectSettings()
+        val client = RecordWorkPreparationClient(settings) {
+            connection(200, validAssessedPreparation()).first
+        }
+        val preview = client.prepare(
+            project, workId, source, target, RecordWorkType.AMENDMENT,
+            assessCrossVersion = true
+        )
+        val plan = requireNotNull(preview.mappingPlan)
+        assertTrue(MappingRisk.NO_HISTORICAL_SCHEMA in plan.globalRisks)
+        assertTrue(plan.candidates.none { it.safeScalarProposal })
+        assertFalse(plan.canEdit)
+    }
+
+    @Test
     fun `assessed prepare fails on invalid target version and does not create a draft`() {
         val (settings, _) = projectSettings()
         val spoofed = org.json.JSONObject(validAssessedPreparation())

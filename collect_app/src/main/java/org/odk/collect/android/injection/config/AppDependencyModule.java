@@ -207,6 +207,11 @@ public class AppDependencyModule {
     @Provides
     @Singleton
     public Analytics providesAnalytics(Application application) {
+        if (BuildConfig.CUSTOM_DISTRIBUTION) {
+            // The upstream Firebase config belongs to official ODK. Never upload our data there.
+            return new NoopAnalytics();
+        }
+
         try {
             boolean isTampered = TamperDetector.isTampered(application, BuildConfig.SIGNATURE);
             return new BlockableFirebaseAnalytics(application, !isTampered);

@@ -179,6 +179,15 @@ class CrossVersionAssessmentTest {
     }
 
     @Test
+    fun `deep source XML is refused before recursive model traversal`() {
+        val manyGroups = "<g>".repeat(90) + "<name>value</name>" + "</g>".repeat(90)
+        reject {
+            assess(sourceXml = "<data id=\"household\" version=\"1\">" +
+                manyGroups + "</data>")
+        }
+    }
+
+    @Test
     fun `a read-only report cannot be forged into editing authorization`() {
         val before = assess()
         try {

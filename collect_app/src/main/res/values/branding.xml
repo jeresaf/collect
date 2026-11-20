@@ -66,4 +66,17 @@
     <string name="mapping_quarantine_title">Reserve work identity in private storage?</string>
     <string name="mapping_quarantine_warning">This stores only a protected project/work-item binding and a reserved new instance ID. No questionnaire or answers are saved, and this is NOT an editable draft. This record cannot be submitted until the work-aware editor and uploader are qualified.</string>
     <string name="mapping_quarantine_saved">Protected work binding saved for %1$s. Reserved new instanceID: %2$s. No form was edited, saved, finalized or submitted.</string>
+    <string name="private_text_editor_title">Protected text draft — Data Collector</string>
+    <string name="private_text_editor_loading">Checking work assignment and exact form version…</string>
+    <string name="private_text_editor_save">Save protected draft</string>
+    <string name="private_text_editor_saving">Validating target form and encrypting saved answers…</string>
+    <string name="private_text_editor_saved">Protected draft saved and verified. It cannot be finalized or sent from this screen.</string>
+    <string name="private_text_editor_save_failed">Save blocked. The work, account or questionnaire may have changed, or validation failed. No new answers were saved.</string>
+    <string name="private_text_editor_denied">This form is not eligible for the protected text editor, or its authorization cannot be verified. Complex forms require a dedicated native widget editor.</string>
+    <string name="private_text_editor_ready">Target version %1$s. %2$s. This is a protected draft, not an ODK submission.</string>
+    <string name="private_text_editor_recovered">Encrypted saved answers were recovered</string>
+    <string name="private_text_editor_new">No saved answers yet</string>
+    <string name="private_text_editor_manual">Enter text manually. Reviewed source-answer transfer suggestions are NOT automatically prefilled here. Text-only forms are supported; required-field completion and final submission remain disabled.</string>
+    <string name="private_text_editor_never_submit">Security: This editor saves only encrypted values in a private no-backup vault. It does not create an ODK instance, finalize, submit or replace the original record. Online permission is required every time you open or save.</string>
+    <string name="mapping_open_private_editor">Open protected text-only editor (online; no sending)</string>
 </resources>

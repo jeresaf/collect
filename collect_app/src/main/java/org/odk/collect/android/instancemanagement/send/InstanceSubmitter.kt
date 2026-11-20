@@ -1,6 +1,7 @@
 package org.odk.collect.android.instancemanagement.send
 
 import org.odk.collect.android.instancemanagement.InstanceDeleter
+import org.odk.collect.android.recordwork.QuarantinedUploadBoundary
 import org.odk.collect.android.projects.ProjectDependencyModule
 import org.odk.collect.android.utilities.InstanceAutoDeleteChecker
 import org.odk.collect.forms.FormsRepository
@@ -43,6 +44,7 @@ class InstanceSubmitter(
             onProgress(index + 1, sortedInstances.size)
 
             try {
+                QuarantinedUploadBoundary.ensureOrdinaryUploadAllowed(instance.instanceFilePath)
                 val resultMessage = instanceUploader.uploadOneSubmission(projectId, instance, deviceId, overrideURL, referrer, isCancelled)
                 uploadResults.add(InstanceUploadResult.Success(instance, resultMessage ?: defaultSuccessMessage))
                 deleteInstance(instance, formsRepository, instancesRepository, generalSettings, externalDeleteAfterUpload)

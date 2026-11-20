@@ -387,6 +387,21 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
                                         )
                                     }
                                 })
+                                // The repeat inventory is separately scoped
+                                // to the exact JavaRosa repeat structure. It
+                                // records stable IDs only, no answer migration.
+                                versions.addView(Button(this@RecordWorkPrepareActivity).apply {
+                                    isAllCaps = false
+                                    setText(R.string.mapping_open_private_repeats)
+                                    setOnClickListener {
+                                        startActivity(
+                                            QuarantinedRepeatRowsActivity.intentFor(
+                                                this@RecordWorkPrepareActivity,
+                                                projectId, binding.workId
+                                            )
+                                        )
+                                    }
+                                })
                             }
                         }
                     }.show()

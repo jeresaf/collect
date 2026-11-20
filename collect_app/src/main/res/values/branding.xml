@@ -92,4 +92,17 @@
     <string name="private_image_staged">Encrypted image staged: %1$d bytes. Not attached to a completed submission.</string>
     <string name="private_image_no_submission">Security: only explicitly chosen JPEG, PNG or WebP files up to 1.5 MB can be staged. Images are encrypted in the work-item vault. Repeat/media answers, source-image migration, finalization and uploading remain disabled.</string>
     <string name="mapping_open_private_image_intake">Stage protected images (online; no sending)</string>
+    <string name="private_repeat_title">Protected repeat row identities — Data Collector</string>
+    <string name="private_repeat_loading">Rechecking server assignment and target repeat structure&#8230;</string>
+    <string name="private_repeat_ready">These are stable protected repeat row IDs. Repeated answers and uploads are not yet enabled.</string>
+    <string name="private_repeat_denied">Repeat group access denied or the form/work identity changed. No existing record was changed.</string>
+    <string name="private_repeat_group_status">%1$s — %2$d of %3$d active rows</string>
+    <string name="private_repeat_row_label">Row position %1$d — permanent ID %2$s</string>
+    <string name="private_repeat_add">Reserve new repeat row</string>
+    <string name="private_repeat_archive">Archive repeat row</string>
+    <string name="private_repeat_archive_warning">Archive this protected row ID? This preserves a permanent tombstone, so future rows will never reuse its ID. Repeated answers cannot yet be edited or submitted.</string>
+    <string name="private_repeat_archived_count">%1$d archived row IDs retained</string>
+    <string name="private_repeat_saving">Reauthorizing work and encrypting repeat identity change&#8230;</string>
+    <string name="private_repeat_non_submittable">Security: repeat row IDs are encrypted metadata only. Their order may change after archiving, but identities never do. No old repeat answers, attachments, native ODK instances, finalization or uploads are created.</string>
+    <string name="mapping_open_private_repeats">Manage protected repeat row IDs (online; no sending)</string>
 </resources>

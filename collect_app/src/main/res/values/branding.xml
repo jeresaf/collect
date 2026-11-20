@@ -117,4 +117,16 @@
     <string name="private_repeat_answer_denied">Repeat row access denied or unavailable. It may have been archived or its work, account or target form changed.</string>
     <string name="private_repeat_answer_no_upload">Security: repeat answers are stored encrypted by permanent row UUID. Adding or archiving another row does not move these answers. Previous visit answers and attachments are never copied. Native ODK finalization and upload remain disabled.</string>
     <string name="private_repeat_edit_answers">Edit protected row answers</string>
+    <string name="private_repeat_image_title">Protected repeat-row images — Data Collector</string>
+    <string name="private_repeat_image_checking">Checking online work assignment, native image paths and active repeat-row identity&#8230;</string>
+    <string name="private_repeat_image_ready">Images for permanent repeat row %1$s. These are private encrypted assets, not a submitted record.</string>
+    <string name="private_repeat_image_denied">Image access denied. The repeat row may be archived, the target form may have changed, or the server assignment cannot be verified.</string>
+    <string name="private_repeat_image_missing">No new image staged for this repeat question.</string>
+    <string name="private_repeat_image_staged">Encrypted image staged: %1$d bytes; SHA-256 %2$s&#8230;</string>
+    <string name="private_repeat_image_choose">Choose image for this row</string>
+    <string name="private_repeat_image_replace">Replace this row image</string>
+    <string name="private_repeat_image_clear">Remove this row image</string>
+    <string name="private_repeat_image_saving">Rechecking row ownership and encrypting image&#8230;</string>
+    <string name="private_repeat_image_no_submit">Images are protected by permanent row UUID and target question, not by the displayed row number. Archived rows remain inaccessible. No old images are copied. Native binary-answer XML, upload, finalization and cross-device synchronization remain disabled.</string>
+    <string name="private_repeat_image_open">Manage protected row images (no sending)</string>
 </resources>

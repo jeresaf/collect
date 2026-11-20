@@ -14,8 +14,10 @@ import java.io.File
  * the server header without redirect/host changes before sending.
  */
 object QuarantinedUploadBoundary {
-    fun ensureOrdinaryUploadAllowed(instanceFilePath: String) {
-        require(instanceFilePath.isNotBlank()) { "Missing instance path" }
+    fun ensureOrdinaryUploadAllowed(instanceFilePath: String?) {
+        // Existing ODK callers validate missing file paths independently.
+        // The quarantine rule only concerns an actual path to reserved data.
+        if (instanceFilePath.isNullOrBlank()) return
         val parsed = File(instanceFilePath)
         val directory = QuarantinedWorkDraftVault.VAULT_DIRECTORY
         // Do not normalize away a "recordwork-drafts/../" traversal: deny

@@ -79,6 +79,11 @@ data class AuthorizedReviewedSource(
     val targetXFormXml: String
 )
 
+data class AuthorizedTypedReview(
+    val plan: HistoricalMappingPlan,
+    val findings: List<TypedMappingFinding>
+)
+
 enum class PreparationError {
     INVALID_PROJECT, MISSING_CREDENTIALS, LOGIN_REQUIRED, ACCESS_DENIED, NOT_FOUND,
     CONFLICT, REDIRECT_BLOCKED, BAD_RESPONSE, SERVER_ERROR, NETWORK
@@ -535,6 +540,71 @@ class RecordWorkPreparationClient(
                 "Exact original answers or source/target schemas changed"
             }
             AuthorizedReviewedSource(fresh, sourceXml, originalXForm, target)
+        }
+    }
+
+    /**
+     * 3B-2: refresh READY authority, independently check the two exact native
+     * XForms and return SCHEMA FINDINGS ONLY to the operator review UI.
+     * Source answers and raw XML never escape this method.
+     */
+    fun authorizeTypedReview(
+        projectId: String,
+        binding: QuarantinedWorkDraft,
+        privateCacheDirectory: java.io.File
+    ): AuthorizedTypedReview {
+        require(binding.workType == RecordWorkType.AMENDMENT &&
+            binding.sourceXFormSha256 != null) {
+            "Typed historical review is available only for amendments"
+        }
+        val confirmed = authorizePrivateTextForm(projectId, binding)
+        val auth = session(projectId)
+        return parseOrReject {
+            val actorScope = QuarantinedWorkDraftVault.sha256(
+                projectId + "\n" + auth.paths.records() + "\n" + auth.username
+            )
+            require(actorScope == binding.actorContextSha256)
+            val response = request(
+                auth, auth.paths.prepare(binding.workId), "GET", 200, MAX_PREPARE
+            )
+            val json = JSONObject(response)
+            val work = json.getJSONObject("work")
+            require(json.getBoolean("mappingApprovalRequired") &&
+                work.getString("state") == "READY" &&
+                uuid(work.getString("id")) == binding.workId &&
+                uuid(work.getString("sourceSubmissionId")) == binding.sourceSubmissionId &&
+                uuid(work.getString("targetFormVersionId")) == binding.targetFormVersionId &&
+                work.getString("sourceInstanceId") == binding.sourceInstanceId &&
+                RecordWorkType.valueOf(work.getString("workType")) ==
+                    RecordWorkType.AMENDMENT &&
+                work.optString("visitKey").let { it.isBlank() || it == "null" }) {
+                "Server work ownership or identity changed"
+            }
+            val sourceXml = json.getString("sourceXml")
+            val historical = requireNotNull(
+                json.optString("sourceXFormXml").takeIf {
+                    it.isNotBlank() && it != "null"
+                }
+            ) { "Historical form version is unavailable" }
+            val target = json.getString("targetXFormXml")
+            val current = HistoricalSchemaMappingEngine.plan(
+                binding.workId, binding.sourceSubmissionId,
+                binding.targetFormVersionId, RecordWorkType.AMENDMENT,
+                sourceXml, historical, target,
+                json.getString("targetFormId"),
+                json.getString("targetFormVersion")
+            )
+            require(current == confirmed.plan &&
+                target == confirmed.targetXFormXml &&
+                current.sourceXFormSha256 == binding.sourceXFormSha256 &&
+                current.targetXFormSha256 == binding.targetXFormSha256 &&
+                ReviewedScalarTransferProbe.sha256(sourceXml) ==
+                    binding.sourceXmlSha256) {
+                "Historical source, target or record changed after authorization"
+            }
+            val findings = NativeTypedMappingProbe(privateCacheDirectory)
+                .inspect(current, historical, target)
+            AuthorizedTypedReview(current, findings)
         }
     }
 

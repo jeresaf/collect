@@ -71,6 +71,9 @@ class QuarantinedRepeatRowVault(
             }
             return@synchronized it
         }
+        require(existing.rows.none { it.archiveRequestId == requestId }) {
+            "Row creation request conflicts with an earlier archive"
+        }
         require(existing.active(groupPath).size < MAX_ACTIVE_PER_GROUP &&
             existing.rows.size < MAX_STORED_ROWS) {
             "Private repeat row limit reached"
@@ -109,8 +112,10 @@ class QuarantinedRepeatRowVault(
             }
             return@synchronized target
         }
-        require(existing.rows.none { it.archiveRequestId == requestId }) {
-            "Archive idempotency key belongs to a different row"
+        require(existing.rows.none {
+            it.archiveRequestId == requestId || it.creationRequestId == requestId
+        }) {
+            "Archive idempotency key belongs to a different row or creation"
         }
         val archived = target.copy(
             isArchived = true, archiveRequestId = requestId

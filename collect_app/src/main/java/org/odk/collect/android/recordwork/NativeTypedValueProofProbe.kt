@@ -89,8 +89,8 @@ class NativeTypedValueProofProbe(private val privateCache: File) {
         ).root
         val originalInstanceId = exactLeaf(root,
             "/" + root.name + "/meta/instanceID")?.value?.value as? String
-        require(root.name == binding.targetFormId.takeIf { it == root.name }
-            ?: plan.candidates.first().targetPath.removePrefix("/").substringBefore("/") &&
+        require(root.name == plan.candidates.first().targetPath
+                .removePrefix("/").substringBefore("/") &&
             originalInstanceId == binding.sourceInstanceId) {
             "Original instance ID or root differs from the protected work"
         }

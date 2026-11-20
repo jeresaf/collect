@@ -80,8 +80,11 @@ M4C-2B-3C-2B-2A: up to three flat top-level repeat groups with up to
 twelve directly bound **text/integer/decimal/date** questions each,
 no mixed unsupported group structure, no calculations, conditional
 relevance/constraints, selects, media, nested repeats or external data.
-A group with pre-populated native repeat instances is refused rather
-than reconciled by guessing.
+JavaRosa may initialize exactly one *blank* native repeat at ordinal
+zero. This is reused for the first active UUID row only after checking its
+entire child inventory, exact native types, and that every answer is null.
+Multiple initial rows, unknown fields or populated/default answers are
+refused rather than silently imported.
 
 A repeat-row editor **does not render full native ODK widgets**. It
 uses separate text/number/ISO-date inputs plus strict native validation.

@@ -15,6 +15,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import org.odk.collect.android.R
 import org.odk.collect.android.injection.DaggerUtils
 import org.odk.collect.settings.SettingsProvider
@@ -38,6 +39,7 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
     private lateinit var status: TextView
     private lateinit var formRows: LinearLayout
     private lateinit var saveButton: Button
+    private lateinit var approvedImportButton: Button
     private lateinit var progress: ProgressBar
     private lateinit var settings: SettingsProvider
     private var activeBinding: QuarantinedWorkDraft? = null
@@ -80,6 +82,23 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
         content.addView(scroll, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
         ))
+        approvedImportButton = Button(this).apply {
+            setText(R.string.mapping_approved_import_action)
+            isAllCaps = false
+            visibility = View.GONE
+            isEnabled = false
+            setOnClickListener {
+                AlertDialog.Builder(this@QuarantinedTextDraftActivity)
+                    .setTitle(R.string.mapping_approved_import_title)
+                    .setMessage(R.string.mapping_approved_import_warning)
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        applyApprovedHistoricalText()
+                    }
+                    .show()
+            }
+        }
+        content.addView(approvedImportButton)
         content.addView(saveButton)
         content.addView(TextView(this).apply {
             setText(R.string.private_text_editor_never_submit)
@@ -119,7 +138,8 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
         val binding: QuarantinedWorkDraft,
         val fields: List<PrivateScalarField>,
         val answers: Map<String, String>,
-        val previouslySaved: Boolean
+        val previouslySaved: Boolean,
+        val canImportApprovedOriginal: Boolean
     )
 
     private fun open() {
@@ -140,8 +160,20 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
                 val stored = EncryptedPrivateTextDraftStore(
                     noBackupFilesDir, AndroidKeyStorePrivateDraftCipher()
                 ).read(binding, native.fields)
-                OpenResult(binding, native.questions,
-                    native.validateForPrivateSave(stored.answers), stored.hasSavedDraft)
+                val approved = if (
+                    binding.workType == RecordWorkType.AMENDMENT &&
+                    binding.validationTransfers > 0 && !stored.hasSavedDraft
+                ) {
+                    ProtectedMappingApprovalStore(
+                        noBackupFilesDir, AndroidKeyStorePrivateDraftCipher()
+                    ).read(binding, authorized.plan)
+                } else null
+                OpenResult(
+                    binding, native.questions,
+                    native.validateForPrivateSave(stored.answers), stored.hasSavedDraft,
+                    approved?.approvedTransferPaths?.size == binding.validationTransfers &&
+                        binding.validationTransfers > 0
+                )
             }
             runOnUiThread {
                 if (request != generation || isFinishing || isDestroyed) return@runOnUiThread
@@ -241,7 +273,73 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
                 }
             }
         }
+        approvedImportButton.visibility =
+            if (result.canImportApprovedOriginal) View.VISIBLE else View.GONE
+        approvedImportButton.isEnabled = result.canImportApprovedOriginal
         saveButton.isEnabled = true
+    }
+
+    /**
+     * Opt-in only. Never prefill on open, never copy changed types/repeats,
+     * and never overwrite a manually saved encrypted draft. Source XML
+     * exists in RAM during this operation only, not in Intent or a file.
+     */
+    private fun applyApprovedHistoricalText() {
+        val originalBinding = activeBinding ?: return reject()
+        if (!activeProjectMatches() || formPaths.isEmpty()) return reject()
+        approvedImportButton.isEnabled = false
+        saveButton.isEnabled = false
+        progress.visibility = View.VISIBLE
+        status.setText(R.string.mapping_approved_import_checking)
+        val request = ++generation
+        executor.execute {
+            val result = runCatching {
+                require(activeProjectMatches()) { "Active project changed" }
+                val binding = requireNotNull(
+                    vault().read(projectId, workId, actorHash())
+                ) { "Protected work binding missing" }
+                require(binding == originalBinding &&
+                    binding.workType == RecordWorkType.AMENDMENT &&
+                    binding.validationTransfers > 0) {
+                    "Historical transfer scope changed"
+                }
+                val source = client().authorizeReviewedSource(projectId, binding)
+                val approval = requireNotNull(
+                    ProtectedMappingApprovalStore(
+                        noBackupFilesDir, AndroidKeyStorePrivateDraftCipher()
+                    ).read(binding, source.plan)
+                ) { "Durable per-field operator approval is missing" }
+                require(approval.approvedTransferPaths.isNotEmpty())
+                val native = JavaRosaPrivateScalarSession(
+                    cacheDir, binding, source.plan, source.targetXFormXml
+                )
+                require(native.fields == formPaths &&
+                    native.questions == formFields) {
+                    "Target native scalar inventory or choices changed"
+                }
+                val candidate = ApprovedHistoricalTextImporter(cacheDir)
+                    .validateAndPropose(binding, approval, source, native)
+                val store = EncryptedPrivateTextDraftStore(
+                    noBackupFilesDir, AndroidKeyStorePrivateDraftCipher()
+                )
+                store.saveIfAbsent(binding, candidate, native.fields)
+                val recovered = store.read(binding, native.fields)
+                require(recovered.hasSavedDraft && recovered.answers == candidate) {
+                    "Approved transfer encrypted readback differs"
+                }
+                true
+            }
+            runOnUiThread {
+                if (request != generation || isFinishing || isDestroyed)
+                    return@runOnUiThread
+                progress.visibility = View.GONE
+                result.onSuccess { open() }.onFailure {
+                    status.setText(R.string.mapping_approved_import_denied)
+                    saveButton.isEnabled = false
+                    approvedImportButton.isEnabled = false
+                }
+            }
+        }
     }
 
     private fun save() {
@@ -301,6 +399,8 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
         formPaths = emptyList()
         formFields = emptyList()
         saveButton.isEnabled = false
+        approvedImportButton.isEnabled = false
+        approvedImportButton.visibility = View.GONE
         formRows.removeAllViews()
         inputs.clear()
         progress.visibility = View.GONE

@@ -45,7 +45,7 @@ class QuarantinedPrivateImageStore(
      * Existing ciphertext remains untouched when any check fails.
      */
     @Synchronized
-    fun import(
+    fun importSelectedImage(
         binding: QuarantinedWorkDraft,
         fieldPath: String,
         permittedFields: List<String>,
@@ -64,8 +64,8 @@ class QuarantinedPrivateImageStore(
             )
             val bytes = serialize(receipt, clear)
             try {
-                val protected = cipher.seal(bytes, aad(binding, fieldPath))
-                require(protected.size in 30..MAX_CIPHER_FILE) {
+                val ciphertext = cipher.seal(bytes, aad(binding, fieldPath))
+                require(ciphertext.size in 30..MAX_CIPHER_FILE) {
                     "Encrypted private image is oversized"
                 }
                 val target = slot(binding, fieldPath)
@@ -78,7 +78,7 @@ class QuarantinedPrivateImageStore(
                     ".private-image-" + java.util.UUID.randomUUID())
                 try {
                     FileOutputStream(pending).use { out ->
-                        out.write(protected)
+                        out.write(ciphertext)
                         out.fd.sync()
                     }
                     // A failed atomic replacement cannot delete the prior

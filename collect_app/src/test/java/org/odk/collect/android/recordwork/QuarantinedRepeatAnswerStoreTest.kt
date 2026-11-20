@@ -237,6 +237,22 @@ class QuarantinedRepeatAnswerStoreTest {
         assertTrue(file.isFile)
     }
 
+    @Test fun initializedNativeRepeatMustBeBlankBeforeReusingItsFirstOrdinal() {
+        val unsafe = form().replace(
+            "<members><name/>",
+            "<members><name>UNAPPROVED_FORM_DEFAULT</name>"
+        )
+        val (binding, session) = fixture(targetForm = unsafe)
+        val row = rows().addRow(binding, session.schema, group, uuid())
+        rejects {
+            store().save(binding, session, row.rowId,
+                mapOf(namePath to "Never import a populated repeat"))
+        }
+        assertFalse(
+            File(folder(), "repeat-answer-" + row.rowId + ".aesgcm").exists()
+        )
+    }
+
     @Test fun rowIdAndNativeMultiplicityMustNeverBeConfused() {
         val (binding, session) = fixture()
         val a = rows().addRow(binding, session.schema, group, uuid())

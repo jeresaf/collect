@@ -32,6 +32,22 @@ jobs:
             ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"
           fi
       - uses: gradle/actions/setup-gradle@v4
+      # Maven Central's repo.maven.apache.org has returned sustained HTTP 429
+      # to ephemeral runners. Use its official repo1.maven.org endpoint only
+      # inside this disposable CI checkout; keep all project source and
+      # dependency coordinates unchanged and fail if upstream repo layout drifts.
+      - name: Route Maven Central to its official alternate endpoint (CI only)
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("build.gradle.kts")
+          original = path.read_text()
+          assert original.count("mavenCentral()") == 2, "Unknown Maven repository topology"
+          path.write_text(original.replace(
+              "mavenCentral()",
+              'maven { url = uri("https://repo1.maven.org/maven2/") }'
+          ))
+          PY
       - name: M4A-M4C2B3C2A preservation plus M4C2B3C2B1 image regressions
         run: |
           chmod +x gradlew

@@ -330,6 +330,53 @@ class RecordWorkPreparationClient(
         }
     }
 
+    /**
+     * Stores only an INERT work-item binding under Android no-backup private
+     * storage. It is deliberately not an ODK draft and cannot be uploaded.
+     *
+     * Authentication and READY state are rechecked before staging. The actual
+     * editor will have to reauthenticate again on resume/save/finalize/send.
+     */
+    fun stageQuarantinedWork(
+        projectId: String,
+        previouslyPrepared: PreparedRecordPreview,
+        review: MappingReviewSnapshot,
+        vault: QuarantinedWorkDraftVault
+    ): QuarantinedWorkDraft {
+        val auth = session(projectId)
+        val latest = prepare(
+            projectId, previouslyPrepared.workId,
+            previouslyPrepared.sourceSubmissionId,
+            previouslyPrepared.targetFormVersionId,
+            previouslyPrepared.type, assessCrossVersion = true
+        )
+        return parseOrReject {
+            require(latest.mappingPlan == previouslyPrepared.mappingPlan &&
+                latest.assessment?.sourceSha256 ==
+                    previouslyPrepared.assessment?.sourceSha256 &&
+                latest.assessment?.targetXFormSha256 ==
+                    previouslyPrepared.assessment?.targetXFormSha256 &&
+                latest.sourceInstanceId != null &&
+                latest.sourceInstanceId == previouslyPrepared.sourceInstanceId &&
+                latest.visitKey == previouslyPrepared.visitKey &&
+                latest.nativeStaging?.targetJavaRosaInitialized == true) {
+                "Source, target, or work identity changed after review"
+            }
+            val proof = if (latest.type == RecordWorkType.AMENDMENT) {
+                validateReviewedTransfer(projectId, latest, review)
+            } else {
+                require(review.decisions.values.none {
+                    it == MappingDecision.REQUEST_REVIEWED_TRANSFER
+                }) { "Independent follow-up may not transfer prior answers" }
+                null
+            }
+            val actorScope = QuarantinedWorkDraftVault.sha256(
+                projectId + "\n" + auth.paths.records() + "\n" + auth.username
+            )
+            vault.stage(projectId, actorScope, latest, review, proof)
+        }
+    }
+
     private data class Session(
         val paths: RecordWorkApiPaths, val username: String, val password: String
     )

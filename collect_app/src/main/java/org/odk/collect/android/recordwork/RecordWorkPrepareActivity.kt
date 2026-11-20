@@ -356,6 +356,22 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
                                 R.string.mapping_quarantine_saved,
                                 binding.workId, binding.reservedInstanceId
                             )
+                            // The private editor independently reauthorizes.
+                            // Never pass XML or household answers via Intent.
+                            if (binding.projectId == projectId) {
+                                versions.addView(Button(this).apply {
+                                    isAllCaps = false
+                                    setText(R.string.mapping_open_private_editor)
+                                    setOnClickListener {
+                                        startActivity(
+                                            QuarantinedTextDraftActivity.intentFor(
+                                                this@RecordWorkPrepareActivity,
+                                                projectId, binding.workId
+                                            )
+                                        )
+                                    }
+                                })
+                            }
                         }
                     }.show()
             }

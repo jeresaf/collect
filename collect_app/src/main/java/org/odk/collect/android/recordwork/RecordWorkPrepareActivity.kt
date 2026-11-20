@@ -378,6 +378,22 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
                                         )
                                     }
                                 })
+                                // Native historical typed mapping review is
+                                // separately guarded, encrypted and inert.
+                                if (binding.workType == RecordWorkType.AMENDMENT) {
+                                    versions.addView(Button(this@RecordWorkPrepareActivity).apply {
+                                        isAllCaps = false
+                                        text = "Review typed historical field mappings (no transfer)"
+                                        setOnClickListener {
+                                            startActivity(
+                                                QuarantinedTypedReviewActivity.intentFor(
+                                                    this@RecordWorkPrepareActivity,
+                                                    projectId, binding.workId
+                                                )
+                                            )
+                                        }
+                                    })
+                                }
                                 // Independent image-only intake for exact
                                 // target-version upload questions. The native
                                 // image probe rechecks all fields online.

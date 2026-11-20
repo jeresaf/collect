@@ -51,7 +51,11 @@ data class PreparedRecordPreview(
     // M4C-2A: versioned path proposals, no source answers and no edit authority.
     val mappingPlan: HistoricalMappingPlan? = null,
     // M4C-2B-1: real JavaRosa blank form initialized but no editable draft.
-    val nativeStaging: NativeStagingEvidence? = null
+    val nativeStaging: NativeStagingEvidence? = null,
+    // M4C-2B-3: verified server identifiers for quarantined draft bindings.
+    // Null for older synthetic fixture responses; staging fails closed.
+    val sourceInstanceId: String? = null,
+    val visitKey: String? = null
 )
 
 enum class PreparationError {
@@ -184,6 +188,10 @@ class RecordWorkPreparationClient(
                 targetFormVersion = json.getString("targetFormVersion"),
                 type = actualType,
                 mappingApprovalRequired = true,
+                sourceInstanceId = work.optString("sourceInstanceId").takeIf(String::isNotBlank),
+                visitKey = work.optString("visitKey").takeIf {
+                    it.isNotBlank() && it != "null"
+                },
                 assessment = if (assessCrossVersion) {
                     CrossVersionAssessmentEngine.assess(
                         workId = workId,

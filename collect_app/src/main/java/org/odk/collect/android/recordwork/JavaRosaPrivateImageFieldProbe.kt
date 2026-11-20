@@ -17,7 +17,7 @@ import java.util.UUID
  * Checks an exact authorized target-version XForm using actual JavaRosa
  * upload controls, not the source submission, media filenames or UI guesses.
  *
- * Supports ONLY non-repeating image/* controls with a native binary leaf.
+ * Supports ONLY non-repeating image-upload controls with a native binary leaf.
  * Refuses repeat groups and external instance resources globally because
  * media nodes in those structures need a separate identity/ownership model.
  */

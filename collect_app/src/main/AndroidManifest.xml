@@ -142,6 +142,9 @@ the specific language governing permissions and limitations under the License.
         <activity
             android:name=".recordwork.RecordWorkPrepareActivity"
             android:exported="false" />
+        <activity
+            android:name=".recordwork.QuarantinedTextDraftActivity"
+            android:exported="false" />
         <activity android:name=".activities.DeleteFormsActivity" />
         <activity
             android:name=".instancemanagement.send.InstanceUploaderListActivity"

@@ -58,6 +58,16 @@ data class PreparedRecordPreview(
     val visitKey: String? = null
 )
 
+/**
+ * Raw target XForm is held in memory for this authorized text-only editor
+ * session. Never serialize to Intent, ODK instance directory or application
+ * logs. Original submitted answers never leave the parsing function.
+ */
+data class AuthorizedPrivateTextForm(
+    val plan: HistoricalMappingPlan,
+    val targetXFormXml: String
+)
+
 enum class PreparationError {
     INVALID_PROJECT, MISSING_CREDENTIALS, LOGIN_REQUIRED, ACCESS_DENIED, NOT_FOUND,
     CONFLICT, REDIRECT_BLOCKED, BAD_RESPONSE, SERVER_ERROR, NETWORK
@@ -374,6 +384,76 @@ class RecordWorkPreparationClient(
                 projectId + "\n" + auth.paths.records() + "\n" + auth.username
             )
             vault.stage(projectId, actorScope, latest, review, proof)
+        }
+    }
+
+    /**
+     * Online-only authorization for reopening or saving a protected text
+     * draft. Requires that the same account, active project, READY server work,
+     * original submitted instance and exact target XForm remain unchanged.
+     * Returns only the target XForm in RAM; does NOT return source answers.
+     */
+    fun authorizePrivateTextForm(
+        projectId: String,
+        binding: QuarantinedWorkDraft
+    ): AuthorizedPrivateTextForm {
+        val auth = session(projectId)
+        return parseOrReject {
+            val actorScope = QuarantinedWorkDraftVault.sha256(
+                projectId + "\n" + auth.paths.records() + "\n" + auth.username
+            )
+            require(binding.projectId == projectId &&
+                binding.actorContextSha256 == actorScope &&
+                binding.state == QuarantinedWorkDraft.STATE_QUARANTINED &&
+                !binding.canFinalize && !binding.canUpload) {
+                "Active account or project differs from the protected draft"
+            }
+            val response = request(
+                auth, auth.paths.prepare(binding.workId), "GET", 200, MAX_PREPARE
+            )
+            val json = JSONObject(response)
+            val work = json.getJSONObject("work")
+            require(json.getBoolean("mappingApprovalRequired") &&
+                work.getString("state") == "READY" &&
+                uuid(work.getString("id")) == binding.workId &&
+                uuid(work.getString("sourceSubmissionId")) == binding.sourceSubmissionId &&
+                uuid(work.getString("targetFormVersionId")) == binding.targetFormVersionId &&
+                work.getString("sourceInstanceId") == binding.sourceInstanceId &&
+                RecordWorkType.valueOf(work.getString("workType")) == binding.workType) {
+                "Server revoked or changed the protected work item"
+            }
+            val visit = work.optString("visitKey").takeIf {
+                it.isNotBlank() && it != "null"
+            }
+            require(visit == binding.visitKey) { "Visit identity changed" }
+            val sourceXml = json.getString("sourceXml")
+            val targetXForm = json.getString("targetXFormXml")
+            val sourceForm = if (json.isNull("sourceXFormXml")) null
+                else json.getString("sourceXFormXml")
+            val plan = HistoricalSchemaMappingEngine.plan(
+                workId = binding.workId,
+                sourceSubmissionId = binding.sourceSubmissionId,
+                targetFormVersionId = binding.targetFormVersionId,
+                workType = binding.workType,
+                sourceXml = sourceXml,
+                sourceXFormXml = sourceForm,
+                targetXFormXml = targetXForm,
+                targetFormId = json.getString("targetFormId"),
+                targetFormVersion = json.getString("targetFormVersion")
+            )
+            require(plan.targetFormId == binding.targetFormId &&
+                plan.targetVersion == binding.targetVersion &&
+                plan.targetXFormSha256 == binding.targetXFormSha256 &&
+                plan.sourceXFormSha256 == binding.sourceXFormSha256 &&
+                plan.candidates.size == binding.reviewedPaths &&
+                JavaRosaPrivateTextSession.sha256(sourceXml) ==
+                    binding.sourceXmlSha256 &&
+                (binding.workType != RecordWorkType.AMENDMENT ||
+                    (sourceForm != null && plan.sourceFormId == binding.targetFormId &&
+                        MappingRisk.SOURCE_SCHEMA_MISMATCH !in plan.globalRisks))) {
+                "Original record, form schema or operator review is now stale"
+            }
+            AuthorizedPrivateTextForm(plan, targetXForm)
         }
     }
 

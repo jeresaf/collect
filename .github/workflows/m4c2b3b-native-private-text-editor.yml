@@ -1,0 +1,73 @@
+name: M4C2B3B Native Private Text Draft Qualification
+
+on:
+  push:
+    branches:
+      - codex/m4c2b3b-native-private-text-editor
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m4c2b3b-text-editor-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  m4c2b3b-android:
+    name: M4C2B3B JavaRosa private text edit and encrypted save
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+      - name: Install Android SDK
+        run: |
+          sdkmanager --install 'platforms;android-37.0' 'build-tools;36.0.0'
+          if [ -d "$ANDROID_HOME/platforms/android-37.0" ] && [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+      - name: M4A-M4C2B3A preservation plus M4C2B3B private editor regressions
+        run: |
+          chmod +x gradlew
+          ./gradlew :collect_app:testDebug \
+            --tests org.odk.collect.android.recordwork.RecordWorkContractsTest \
+            --tests org.odk.collect.android.recordwork.RecordWorkReadOnlyClientTest \
+            --tests org.odk.collect.android.recordwork.RecordWorkPreparationClientTest \
+            --tests org.odk.collect.android.recordwork.CrossVersionAssessmentTest \
+            --tests org.odk.collect.android.recordwork.HistoricalSchemaMappingTest \
+            --tests org.odk.collect.android.recordwork.JavaRosaStagingProbeTest \
+            --tests org.odk.collect.android.recordwork.ReviewedScalarTransferProbeTest \
+            --tests org.odk.collect.android.recordwork.QuarantinedWorkDraftVaultTest \
+            --tests org.odk.collect.android.recordwork.QuarantinedUploadBoundaryTest \
+            --tests org.odk.collect.android.instancemanagement.send.InstanceSubmitterTest \
+            --tests org.odk.collect.android.recordwork.JavaRosaPrivateTextSessionTest \
+            --tests org.odk.collect.android.recordwork.EncryptedPrivateTextDraftStoreTest \
+            --no-daemon --stacktrace
+      - name: Compile branded APK
+        run: |
+          ./gradlew :collect_app:assembleDebug \
+            -PCOLLECT_SERVER_URL=https://collector.example.org/v1/projects/00000000-0000-0000-0000-000000000000 \
+            --no-daemon --stacktrace
+      - name: Verify app identity
+        run: |
+          set -euo pipefail
+          apk="$(find collect_app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
+          test -f "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" > /tmp/m4c2b3b-badging.txt
+          grep -Fq "package: name='org.jeresaf.datacollector.android'" /tmp/m4c2b3b-badging.txt
+          grep -Fq "application-label:'Data Collector'" /tmp/m4c2b3b-badging.txt
+      - if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: m4c2b3b-test-evidence
+          path: |
+            collect_app/build/test-results
+            collect_app/build/reports/tests
+          if-no-files-found: ignore
+          retention-days: 14

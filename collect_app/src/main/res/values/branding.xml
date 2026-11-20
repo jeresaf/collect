@@ -134,4 +134,5 @@
     <string name="mapping_approved_import_warning">This action will fetch the original record again and copy ONLY the unchanged, explicitly reviewed text fields approved for this amendment. Changed types, selects, repeats, media and follow-up visits are excluded. No existing saved answers will be overwritten. The original record remains unchanged, and submission stays disabled.</string>
     <string name="mapping_approved_import_checking">Reauthorizing the original submission and validating every approved source and target answer in JavaRosa&#8230;</string>
     <string name="mapping_approved_import_denied">Approved historical import was blocked. Check current assignment, original form, saved draft and mapping decisions. No new draft was submitted.</string>
+    <string name="mapping_approved_import_unsaved">You have unsaved answers on this screen. Save them or reopen a blank draft before considering an old-answer import; existing entered work will not be discarded.</string>
 </resources>

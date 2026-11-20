@@ -26,6 +26,7 @@ class JavaRosaPrivateTextSession(
     private val targetXFormXml: String
 ) {
     val fields: List<String>
+    private val instanceRootName: String
 
     init {
         require(binding.state == QuarantinedWorkDraft.STATE_QUARANTINED &&
@@ -47,11 +48,18 @@ class JavaRosaPrivateTextSession(
             plan.candidates.map { it.targetPath }.toSet().size == plan.candidates.size) {
             "Target questionnaire exceeds private text editor limits"
         }
+        instanceRootName = plan.candidates.first().targetPath
+            .removePrefix("/").substringBefore("/")
+        require(SAFE_NAME.matches(instanceRootName))
         require(plan.candidates.all { candidate ->
-            candidate.targetPath.startsWith("/" + binding.targetFormId + "/") &&
+            candidate.targetPath.startsWith("/" + instanceRootName + "/") &&
                 candidate.targetPath.removePrefix("/").split("/").all { SAFE_NAME.matches(it) } &&
                 candidate.risks.intersect(UNSUPPORTED).isEmpty()
         }) { "Questionnaire requires native ODK widgets; text-only editing denied" }
+        require(!UNSAFE_CONTROL.containsMatchIn(targetXFormXml) &&
+            !UNSAFE_BIND_ATTR.containsMatchIn(targetXFormXml)) {
+            "This form needs full native ODK question and calculation support"
+        }
         require(targetXFormXml.length <= MAX_FORM_XML &&
             !targetXFormXml.contains("<!DOCTYPE", ignoreCase = true) &&
             !targetXFormXml.contains("<!ENTITY", ignoreCase = true) &&
@@ -129,7 +137,7 @@ class JavaRosaPrivateTextSession(
                 ?: throw IllegalArgumentException("JavaRosa rejected target version")
             val controller = FormEntryController(FormEntryModel(def))
             controller.model.form.initialize(true, InstanceInitializationFactory())
-            require(def.instance.root.name == binding.targetFormId) {
+            require(def.instance.root.name == instanceRootName) {
                 "JavaRosa root differs from authorized server form"
             }
             return block(def)
@@ -140,7 +148,7 @@ class JavaRosaPrivateTextSession(
 
     private fun ref(path: String): TreeReference {
         val segments = path.removePrefix("/").split("/")
-        require(segments.size in 2..12 && segments.first() == binding.targetFormId &&
+        require(segments.size in 2..12 && segments.first() == instanceRootName &&
             segments.all { SAFE_NAME.matches(it) }) {
             "Unsafe target field reference"
         }
@@ -155,6 +163,16 @@ class JavaRosaPrivateTextSession(
         private const val MAX_FORM_XML = 8_388_608
         private val SAFE_NAME = Regex("[A-Za-z_][A-Za-z0-9_.-]*")
         private val EXTERNAL_SRC = Regex("""\bsrc\s*=\s*["']""", RegexOption.IGNORE_CASE)
+        // Unsupported UI structures/actions can exist on parent groups and
+        // otherwise escape a leaf-only field-risk inventory. Refuse them all.
+        private val UNSAFE_CONTROL = Regex(
+            """<\s*(?:[A-Za-z_][\w.-]*:)?(?:repeat|select|select1|upload|itemset|trigger|setvalue|setgeopoint|action|output|rank|range|secret|barcode|geopoint|geotrace|geoshape)\b""",
+            RegexOption.IGNORE_CASE
+        )
+        private val UNSAFE_BIND_ATTR = Regex(
+            """\b(?:relevant|constraint|calculate|readonly)\s*=""",
+            RegexOption.IGNORE_CASE
+        )
         private val UNSUPPORTED = setOf(
             MappingRisk.REPEAT, MappingRisk.MEDIA, MappingRisk.STATIC_SELECT,
             MappingRisk.DYNAMIC_SELECT, MappingRisk.CHOICE_LIST_CHANGED,

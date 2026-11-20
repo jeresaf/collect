@@ -452,6 +452,101 @@ class RecordWorkPreparationClientTest {
     }
 
     @Test
+    fun protectedEditorReauthorizesExactlyTheSameSourceFormAndAccount() {
+        val (settings, _) = projectSettings()
+        val workResponse = org.json.JSONObject(validAssessedPreparation()).apply {
+            getJSONObject("work").put("workType", "FOLLOW_UP")
+                .put("sourceInstanceId", "uuid:9e1e9e90-5cc8-4e65-a5d0-acb5bdc1500d")
+                .put("visitKey", "household-visit-2")
+        }.toString()
+        var requests = 0
+        val client = RecordWorkPreparationClient(
+            settings, nativeProbe = { plan, _, _ ->
+                NativeStagingEvidence(
+                    plan.workId, plan.sourceSubmissionId, plan.targetFormVersionId,
+                    plan.workType, plan.sourceXFormSha256, plan.targetXFormSha256,
+                    true, false, 0, false
+                )
+            }
+        ) {
+            requests++
+            connection(200, workResponse).first
+        }
+        val prepared = client.prepare(
+            project, workId, source, target, RecordWorkType.FOLLOW_UP,
+            assessCrossVersion = true
+        )
+        val mapping = requireNotNull(prepared.mappingPlan)
+        val review = HistoricalMappingReview(mapping).apply {
+            mapping.candidates.forEach {
+                decide(it.targetPath, MappingDecision.REENTER)
+            }
+        }.snapshot()
+        val vault = QuarantinedWorkDraftVault(
+            java.nio.file.Files.createTempDirectory("recordwork-editor-authorization").toFile()
+        )
+        val binding = client.stageQuarantinedWork(project, prepared, review, vault)
+        val session = client.authorizePrivateTextForm(project, binding)
+        assertEquals(3, requests)
+        assertEquals(binding.targetXFormSha256, session.plan.targetXFormSha256)
+        assertEquals(binding.targetFormVersionId, session.plan.targetFormVersionId)
+        assertFalse(session.targetXFormXml.contains("SENSITIVE_PERSONAL_VALUE"))
+        assertFalse(session.toString().contains("SENSITIVE_PERSONAL_VALUE"))
+    }
+
+    @Test
+    fun protectedEditorRejectsServerChangesAndForeignActorBeforeAnswerRendering() {
+        val (settings, _) = projectSettings()
+        val server = org.json.JSONObject(validAssessedPreparation()).apply {
+            getJSONObject("work").put("workType", "FOLLOW_UP")
+                .put("sourceInstanceId", "uuid:9e1e9e90-5cc8-4e65-a5d0-acb5bdc1500d")
+                .put("visitKey", "household-visit-2")
+        }
+        var response = server.toString()
+        val client = RecordWorkPreparationClient(
+            settings, nativeProbe = { plan, _, _ ->
+                NativeStagingEvidence(
+                    plan.workId, plan.sourceSubmissionId, plan.targetFormVersionId,
+                    plan.workType, plan.sourceXFormSha256, plan.targetXFormSha256,
+                    true, false, 0, false
+                )
+            }
+        ) { connection(200, response).first }
+        val preview = client.prepare(
+            project, workId, source, target, RecordWorkType.FOLLOW_UP,
+            assessCrossVersion = true
+        )
+        val plan = requireNotNull(preview.mappingPlan)
+        val review = HistoricalMappingReview(plan).apply {
+            plan.candidates.forEach { decide(it.targetPath, MappingDecision.REENTER) }
+        }.snapshot()
+        val binding = client.stageQuarantinedWork(
+            project, preview, review,
+            QuarantinedWorkDraftVault(
+                java.nio.file.Files.createTempDirectory("recordwork-stale-auth").toFile()
+            )
+        )
+        assertError(PreparationError.BAD_RESPONSE) {
+            client.authorizePrivateTextForm(project,
+                binding.copy(actorContextSha256 = "b".repeat(64)))
+        }
+        response = org.json.JSONObject(server.toString()).apply {
+            getJSONObject("work").put("state", "COMPLETED")
+        }.toString()
+        assertError(PreparationError.BAD_RESPONSE) {
+            client.authorizePrivateTextForm(project, binding)
+        }
+        response = org.json.JSONObject(server.toString()).apply {
+            put("sourceXml", getString("sourceXml").replace(
+                "SENSITIVE_PERSONAL_VALUE", "REPLACED_HOUSEHOLD_RECORD"
+            ))
+        }.toString()
+        assertError(PreparationError.BAD_RESPONSE) {
+            client.authorizePrivateTextForm(project, binding)
+        }
+    }
+
+    @Test
     fun `assessed prepare fails on invalid target version and does not create a draft`() {
         val (settings, _) = projectSettings()
         val spoofed = org.json.JSONObject(validAssessedPreparation())

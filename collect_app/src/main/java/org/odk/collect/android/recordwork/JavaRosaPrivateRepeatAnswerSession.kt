@@ -33,10 +33,15 @@ class JavaRosaPrivateRepeatAnswerSession(
     private val scratchRoot: File,
     private val binding: QuarantinedWorkDraft,
     private val plan: HistoricalMappingPlan,
-    private val targetXFormXml: String,
-    val schema: PrivateRepeatSchema =
-        JavaRosaPrivateRepeatStructureProbe(scratchRoot, binding, plan, targetXFormXml).schema
+    private val targetXFormXml: String
 ) {
+    // No caller-supplied schema shortcut. Every editor session derives its
+    // authorized repeat inventory from a fresh exact native JavaRosa probe.
+    val schema: PrivateRepeatSchema =
+        JavaRosaPrivateRepeatStructureProbe(
+            scratchRoot, binding, plan, targetXFormXml
+        ).schema
+
     init {
         require(schema.workId == binding.workId &&
             schema.targetXFormSha256 == binding.targetXFormSha256 &&

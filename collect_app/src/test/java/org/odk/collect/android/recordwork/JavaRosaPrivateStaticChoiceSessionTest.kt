@@ -162,9 +162,9 @@ class JavaRosaPrivateStaticChoiceSessionTest {
             <upload ref="/data/image" mediatype="image/*"><label>Image</label></upload>
         """.trimIndent())) }
         rejects { session(targetForm = form("2", colors =
-            listOf("green" to "Green", "green" to "Duplicate")) }
+            listOf("green" to "Green", "green" to "Duplicate"))) }
         rejects { session(targetForm = form("2", colors =
-            listOf("bad value" to "Illegal")) }
+            listOf("bad value" to "Illegal"))) }
     }
 
     @Test fun schemaDriftAndIndependentVisitDoNotReuseOldValues() {

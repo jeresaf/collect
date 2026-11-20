@@ -100,12 +100,15 @@ class JavaRosaPrivateRepeatAnswerSession(
                     "Unexpected pre-populated native repeat instances"
                 }
                 initialized.singleOrNull()?.let { blank ->
-                    require(blank.numChildren == group.fields.size) {
+                    require(blank.numChildren ==
+                        group.fields.size + group.imagePaths.size) {
                         "Blank native repeat contains unreviewed fields"
                     }
-                    val expected = group.fields.map {
+                    val expected = (group.fields.map {
                         it.path.substringAfterLast("/")
-                    }.toSet()
+                    } + group.imagePaths.map {
+                        it.substringAfterLast("/")
+                    }).toSet()
                     require(
                         (0 until blank.numChildren).map {
                             blank.getChildAt(it).name
@@ -119,6 +122,16 @@ class JavaRosaPrivateRepeatAnswerSession(
                             node.dataType == field.type.javaRosaType &&
                             node.value == null) {
                             "Native repeat has existing data or changed field type"
+                        }
+                    }
+                    for (path in group.imagePaths) {
+                        val node = requireNotNull(
+                            blank.getChild(path.substringAfterLast("/"), 0)
+                        ) { "Initial JavaRosa repeat missing native image field" }
+                        require(node.isLeaf &&
+                            node.dataType == org.javarosa.core.model.Constants.DATATYPE_BINARY &&
+                            node.value == null) {
+                            "Native repeat image has unexpected existing data"
                         }
                     }
                 }

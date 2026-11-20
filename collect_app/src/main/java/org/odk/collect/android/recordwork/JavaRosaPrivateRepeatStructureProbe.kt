@@ -21,7 +21,8 @@ import java.util.UUID
  */
 data class PrivateRepeatGroup(
     val path: String,
-    val fields: List<PrivateScalarField>
+    val fields: List<PrivateScalarField>,
+    val imagePaths: List<String> = emptyList()
 )
 
 data class PrivateRepeatSchema(
@@ -80,8 +81,7 @@ class JavaRosaPrivateRepeatStructureProbe(
         require(reviewed.isNotEmpty() && reviewed.size <= 30 &&
             reviewed.map { it.targetPath }.toSet().size == reviewed.size &&
             reviewed.all { candidate ->
-                MappingRisk.MEDIA !in candidate.risks &&
-                    MappingRisk.DYNAMIC_SELECT !in candidate.risks &&
+                MappingRisk.DYNAMIC_SELECT !in candidate.risks &&
                     MappingRisk.CALCULATION !in candidate.risks &&
                     MappingRisk.RELEVANCE_OR_CONSTRAINT !in candidate.risks &&
                     MappingRisk.UNBOUND_FIELD !in candidate.risks &&
@@ -128,11 +128,11 @@ class JavaRosaPrivateRepeatStructureProbe(
                 }
                 val template = def.instance.resolveReference(templateRef)
                     ?: throw IllegalArgumentException("Native repeat template is missing")
-                val fields = children.map { raw ->
+                val imagePaths = mutableListOf<String>()
+                val fields = children.mapNotNull { raw ->
                     val question = raw as QuestionDef
-                    require(question.controlType == Constants.CONTROL_INPUT &&
-                        question.dynamicChoices == null) {
-                        "Repeat needs unsupported choice, media or calculation widget"
+                    require(question.dynamicChoices == null) {
+                        "Dynamic repeat choice fields are not supported"
                     }
                     val fieldRef = question.bind?.reference as? TreeReference
                         ?: throw IllegalArgumentException("Repeat child has no native bind")
@@ -149,22 +149,49 @@ class JavaRosaPrivateRepeatStructureProbe(
                     val node = template.getChild(fieldRef.getName(2), 0)
                         ?: throw IllegalArgumentException("JavaRosa repeat template leaf is missing")
                     require(node.isLeaf)
-                    val type = PrivateScalarType.fromNative(node.dataType)
-                    require(type in setOf(
-                        PrivateScalarType.TEXT, PrivateScalarType.INTEGER,
-                        PrivateScalarType.DECIMAL, PrivateScalarType.DATE
-                    )) { "Repeat leaf has unsupported native answer type" }
-                    PrivateScalarField(fieldPath, requireNotNull(type))
+                    if (MappingRisk.MEDIA in candidate.risks) {
+                        require(question.controlType == Constants.CONTROL_IMAGE_CHOOSE &&
+                            node.dataType == Constants.DATATYPE_BINARY &&
+                            imagePaths.size < 2) {
+                            "Only two direct native image-upload fields per repeat are allowed"
+                        }
+                        imagePaths += fieldPath
+                        null
+                    } else {
+                        require(question.controlType == Constants.CONTROL_INPUT) {
+                            "Repeat needs unsupported choice, media or calculation widget"
+                        }
+                        val type = PrivateScalarType.fromNative(node.dataType)
+                        require(type in setOf(
+                            PrivateScalarType.TEXT, PrivateScalarType.INTEGER,
+                            PrivateScalarType.DECIMAL, PrivateScalarType.DATE
+                        )) { "Repeat leaf has unsupported native answer type" }
+                        PrivateScalarField(fieldPath, requireNotNull(type))
+                    }
                 }
-                require(fields.map { it.path }.toSet().size == fields.size)
+                require(fields.isNotEmpty() &&
+                    fields.size <= PrivateRepeatSchema.MAX_FIELDS_PER_GROUP &&
+                    fields.map { it.path }.toSet().size == fields.size &&
+                    imagePaths.toSet().size == imagePaths.size &&
+                    template.numChildren == children.size &&
+                    (0 until template.numChildren).map {
+                        template.getChildAt(it).name
+                    }.toSet() == children.map {
+                        (it as QuestionDef).bind!!.reference.let { ref ->
+                            (ref as TreeReference).getName(2)
+                        }
+                    }.toSet()) {
+                    "Repeat has hidden native fields or missing scalar child"
+                }
                 require(reviewed.filter { it.targetPath.startsWith(path + "/") }
-                    .map { it.targetPath }.toSet() == fields.map { it.path }.toSet()) {
+                    .map { it.targetPath }.toSet() ==
+                    (fields.map { it.path } + imagePaths).toSet()) {
                     "Repeat contains unreviewed or invisible instance fields"
                 }
-                PrivateRepeatGroup(path, fields)
+                PrivateRepeatGroup(path, fields, imagePaths)
             }.also { groups ->
                 require(reviewed.map { it.targetPath }.toSet() ==
-                    groups.flatMap { it.fields }.map { it.path }.toSet()) {
+                    groups.flatMap { g -> g.fields.map { it.path } + g.imagePaths }.toSet()) {
                     "Every reviewed repeat path must belong to one native group"
                 }
             }.let { groups ->
@@ -204,7 +231,7 @@ class JavaRosaPrivateRepeatStructureProbe(
         // Preserve correctness over breadth; richer logic needs a full
         // JavaRosa FormEntryController-backed repeat editor.
         private val UNSUPPORTED = Regex(
-            """<\s*(?:[A-Za-z_][\w.-]*:)?(?:itemset|upload|select|select1|setvalue|action|trigger|output)\b|\b(?:calculate|relevant|constraint|readonly|count|noAddRemove)\s*=""",
+            """<\s*(?:[A-Za-z_][\w.-]*:)?(?:itemset|select|select1|setvalue|action|trigger|output)\b|\b(?:calculate|relevant|constraint|readonly|count|noAddRemove)\s*=""",
             RegexOption.IGNORE_CASE
         )
     }

@@ -68,6 +68,17 @@ data class AuthorizedPrivateTextForm(
     val targetXFormXml: String
 )
 
+/**
+ * Source answers appear in RAM only during the operator-confirmed,
+ * reviewed unchanged-text transfer. Never persist or pass through Intents.
+ */
+data class AuthorizedReviewedSource(
+    val plan: HistoricalMappingPlan,
+    val sourceXml: String,
+    val sourceXFormXml: String,
+    val targetXFormXml: String
+)
+
 enum class PreparationError {
     INVALID_PROJECT, MISSING_CREDENTIALS, LOGIN_REQUIRED, ACCESS_DENIED, NOT_FOUND,
     CONFLICT, REDIRECT_BLOCKED, BAD_RESPONSE, SERVER_ERROR, NETWORK
@@ -454,6 +465,76 @@ class RecordWorkPreparationClient(
                 "Original record, form schema or operator review is now stale"
             }
             AuthorizedPrivateTextForm(plan, targetXForm)
+        }
+    }
+
+    /**
+     * Extra, explicit online source retrieval for a user-confirmed approved
+     * historical transfer. The normal editor authorization never returns
+     * old answers. Check READY status again on the actual source response.
+     */
+    fun authorizeReviewedSource(
+        projectId: String,
+        binding: QuarantinedWorkDraft
+    ): AuthorizedReviewedSource {
+        require(binding.workType == RecordWorkType.AMENDMENT &&
+            binding.validationTransfers > 0 &&
+            binding.sourceXFormSha256 != null) {
+            "Only same-form amendments can request approved source values"
+        }
+        val confirmed = authorizePrivateTextForm(projectId, binding)
+        val auth = session(projectId)
+        return parseOrReject {
+            val actorScope = QuarantinedWorkDraftVault.sha256(
+                projectId + "\n" + auth.paths.records() + "\n" + auth.username
+            )
+            require(actorScope == binding.actorContextSha256 &&
+                binding.projectId == projectId) {
+                "Server account changed before approved source retrieval"
+            }
+            val response = request(
+                auth, auth.paths.prepare(binding.workId), "GET", 200, MAX_PREPARE
+            )
+            val json = JSONObject(response)
+            val work = json.getJSONObject("work")
+            require(json.getBoolean("mappingApprovalRequired") &&
+                work.getString("state") == "READY" &&
+                uuid(work.getString("id")) == binding.workId &&
+                uuid(work.getString("sourceSubmissionId")) ==
+                    binding.sourceSubmissionId &&
+                uuid(work.getString("targetFormVersionId")) ==
+                    binding.targetFormVersionId &&
+                work.getString("sourceInstanceId") == binding.sourceInstanceId &&
+                RecordWorkType.valueOf(work.getString("workType")) ==
+                    RecordWorkType.AMENDMENT &&
+                work.optString("visitKey").let { it.isBlank() || it == "null" }) {
+                "Server revoked or changed reviewed amendment while fetching source"
+            }
+            val sourceXml = json.getString("sourceXml")
+            val originalXForm = requireNotNull(
+                json.optString("sourceXFormXml").takeIf {
+                    it.isNotBlank() && it != "null"
+                }
+            ) { "Exact historical XForm is required for approved transfer" }
+            val target = json.getString("targetXFormXml")
+            val fresh = HistoricalSchemaMappingEngine.plan(
+                binding.workId, binding.sourceSubmissionId,
+                binding.targetFormVersionId, RecordWorkType.AMENDMENT,
+                sourceXml, originalXForm, target,
+                json.getString("targetFormId"),
+                json.getString("targetFormVersion")
+            )
+            require(fresh == confirmed.plan &&
+                target == confirmed.targetXFormXml &&
+                fresh.sourceXFormSha256 == binding.sourceXFormSha256 &&
+                fresh.targetXFormSha256 == binding.targetXFormSha256 &&
+                ReviewedScalarTransferProbe.sha256(sourceXml) ==
+                    binding.sourceXmlSha256 &&
+                fresh.targetFormId == binding.targetFormId &&
+                fresh.targetVersion == binding.targetVersion) {
+                "Exact original answers or source/target schemas changed"
+            }
+            AuthorizedReviewedSource(fresh, sourceXml, originalXForm, target)
         }
     }
 

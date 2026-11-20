@@ -108,7 +108,7 @@ class EncryptedPrivateTextDraftStore(
         binding: QuarantinedWorkDraft,
         validated: Map<String, String>,
         allowedPaths: List<String>
-    ) {
+    ) = synchronized(GLOBAL_LOCK) {
         verifyBinding(binding)
         require(allowedPaths.isNotEmpty() &&
             allowedPaths.size <= JavaRosaPrivateTextSession.MAX_FIELDS &&
@@ -151,6 +151,24 @@ class EncryptedPrivateTextDraftStore(
         } finally {
             clear.fill(0)
         }
+    }
+
+    /**
+     * First-save only: an approved historical transfer must never replace
+     * values already entered and saved by an enumerator. Ordinary saves
+     * share the same in-process lock.
+     */
+    fun saveIfAbsent(
+        binding: QuarantinedWorkDraft,
+        validated: Map<String, String>,
+        allowedPaths: List<String>
+    ): Boolean = synchronized(GLOBAL_LOCK) {
+        verifyBinding(binding)
+        require(!answerFile(binding).exists()) {
+            "Existing private answers cannot be overwritten by old records"
+        }
+        save(binding, validated, allowedPaths)
+        true
     }
 
     @Synchronized
@@ -265,6 +283,7 @@ class EncryptedPrivateTextDraftStore(
     }
 
     companion object {
+        private val GLOBAL_LOCK = Any()
         private const val MAX_PLAINTEXT = 2_100_000
         private const val MAX_FILE = 2_200_000
     }

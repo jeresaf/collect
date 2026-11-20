@@ -129,4 +129,9 @@
     <string name="private_repeat_image_saving">Rechecking row ownership and encrypting image&#8230;</string>
     <string name="private_repeat_image_no_submit">Images are protected by permanent row UUID and target question, not by the displayed row number. Archived rows remain inaccessible. No old images are copied. Native binary-answer XML, upload, finalization and cross-device synchronization remain disabled.</string>
     <string name="private_repeat_image_open">Manage protected row images (no sending)</string>
+    <string name="mapping_approved_import_action">Apply individually approved unchanged old text answers (one time)</string>
+    <string name="mapping_approved_import_title">Confirm approved old-answer import</string>
+    <string name="mapping_approved_import_warning">This action will fetch the original record again and copy ONLY the unchanged, explicitly reviewed text fields approved for this amendment. Changed types, selects, repeats, media and follow-up visits are excluded. No existing saved answers will be overwritten. The original record remains unchanged, and submission stays disabled.</string>
+    <string name="mapping_approved_import_checking">Reauthorizing the original submission and validating every approved source and target answer in JavaRosa&#8230;</string>
+    <string name="mapping_approved_import_denied">Approved historical import was blocked. Check current assignment, original form, saved draft and mapping decisions. No new draft was submitted.</string>
 </resources>

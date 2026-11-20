@@ -5,6 +5,7 @@ import org.odk.collect.analytics.Analytics
 import org.odk.collect.android.analytics.AnalyticsEvents
 import org.odk.collect.android.application.Collect
 import org.odk.collect.android.projects.ProjectDependencyModule
+import org.odk.collect.android.recordwork.QuarantinedUploadBoundary
 import org.odk.collect.android.utilities.ResponseMessageParser
 import org.odk.collect.android.utilities.WebCredentialsUtils
 import org.odk.collect.entities.javarosa.parse.toUri
@@ -47,6 +48,8 @@ class OpenRosaServerInstanceUploader(
         if (isCancelled()) {
             throw FormUploadInterruptedException()
         }
+        // Reject before HTTP HEAD and before changing the instance DB status.
+        QuarantinedUploadBoundary.ensureOrdinaryUploadAllowed(instance.instanceFilePath)
 
         val projectDependencyModule = projectDependencyFactory.create(projectId)
         val unprotectedSettings = projectDependencyModule.generalSettings

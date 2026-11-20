@@ -6,6 +6,7 @@ import org.hamcrest.CoreMatchers.notNullValue
 import org.hamcrest.CoreMatchers.nullValue
 import org.hamcrest.MatcherAssert.assertThat
 import org.junit.Test
+import org.robolectric.annotation.Config
 import org.junit.runner.RunWith
 import org.mockito.kotlin.mock
 import org.odk.collect.android.instancemanagement.CachingProjectDependencyModuleFactory
@@ -20,6 +21,7 @@ import org.odk.collect.shared.locks.BooleanChangeLock
 import org.odk.collect.shared.settings.InMemSettings
 
 @RunWith(AndroidJUnit4::class)
+@Config(sdk = [35])
 class InstanceSubmitterTest {
     private val form = FormFixtures.form("1")
 
@@ -73,6 +75,29 @@ class InstanceSubmitterTest {
 
         assertThat(instancesRepository.get(instance1.dbId), nullValue())
         assertThat(instancesRepository.get(instance2.dbId), notNullValue())
+    }
+
+    @Test
+    fun `automatic and direct instance submission refuses quarantine before uploader`() {
+        val quarantined = instancesRepository.save(
+            Instance.Builder()
+                .formId(form.formId)
+                .formVersion(form.version)
+                .instanceFilePath(
+                    "/data/user/0/org.jeresaf.datacollector.android/no_backup/" +
+                        "recordwork-drafts/project/work/instance.xml"
+                )
+                .status(Instance.STATUS_COMPLETE)
+                .finalizationDate(12345)
+                .build()
+        )
+        val uploaded = mutableListOf<Long>()
+        val results = createSubmitter(-1, uploaded)
+            .submitInstances("projectId", listOf(quarantined))
+        assertThat(uploaded, equalTo(emptyList()))
+        assertThat(results.size, equalTo(1))
+        assertThat(results.single() is InstanceUploadResult.Error, equalTo(true))
+        assertThat(instancesRepository.get(quarantined.dbId), notNullValue())
     }
 
     private fun saveInstance(finalizationDate: Long): Instance {

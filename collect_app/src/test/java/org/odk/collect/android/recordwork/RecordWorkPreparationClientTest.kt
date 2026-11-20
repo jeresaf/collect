@@ -360,6 +360,98 @@ class RecordWorkPreparationClientTest {
     }
 
     @Test
+    fun followupInertBindingRefetchesReadyWorkAndNeverCopiesSourceAnswers() {
+        val (settings, _) = projectSettings()
+        val storage = QuarantinedWorkDraftVault(
+            java.nio.file.Files.createTempDirectory("recordwork-client-stage-").toFile()
+        )
+        var requestCount = 0
+        val response = org.json.JSONObject(validAssessedPreparation()).apply {
+            getJSONObject("work").put("workType", "FOLLOW_UP")
+                .put("sourceInstanceId", "uuid:9e1e9e90-5cc8-4e65-a5d0-acb5bdc1500d")
+                .put("visitKey", "household-visit-2")
+        }.toString()
+        val client = RecordWorkPreparationClient(
+            settings,
+            nativeProbe = { plan, _, historical ->
+                NativeStagingEvidence(
+                    plan.workId, plan.sourceSubmissionId, plan.targetFormVersionId,
+                    plan.workType, plan.sourceXFormSha256, plan.targetXFormSha256,
+                    true, historical != null, 0, false
+                )
+            }
+        ) {
+            requestCount++
+            connection(200, response).first
+        }
+        val preview = client.prepare(
+            project, workId, source, target, RecordWorkType.FOLLOW_UP,
+            assessCrossVersion = true
+        )
+        val plan = requireNotNull(preview.mappingPlan)
+        val review = HistoricalMappingReview(plan).apply {
+            plan.candidates.forEach {
+                decide(it.targetPath, MappingDecision.REENTER)
+            }
+        }.snapshot()
+        val saved = client.stageQuarantinedWork(project, preview, review, storage)
+        assertEquals(2, requestCount)
+        assertEquals(RecordWorkType.FOLLOW_UP, saved.workType)
+        assertEquals("household-visit-2", saved.visitKey)
+        assertEquals(0, saved.validationTransfers)
+        assertFalse(saved.canOpenEditor)
+        assertFalse(saved.canUpload)
+    }
+
+    @Test
+    fun changedSourceBetweenPreviewAndStageIsRejectedBeforeAnyWorkBinding() {
+        val (settings, _) = projectSettings()
+        val storageRoot = java.nio.file.Files.createTempDirectory(
+            "recordwork-stage-drift-"
+        ).toFile()
+        val storage = QuarantinedWorkDraftVault(storageRoot)
+        var requestCount = 0
+        fun response(newAnswer: Boolean) = org.json.JSONObject(
+            validAssessedPreparation()
+        ).apply {
+            getJSONObject("work").put("workType", "FOLLOW_UP")
+                .put("sourceInstanceId", "uuid:9e1e9e90-5cc8-4e65-a5d0-acb5bdc1500d")
+                .put("visitKey", "household-visit-2")
+            if (newAnswer) put("sourceXml",
+                getString("sourceXml").replace("SENSITIVE_PERSONAL_VALUE",
+                    "NEW_UNREVIEWED_VALUE"))
+        }.toString()
+        val client = RecordWorkPreparationClient(
+            settings,
+            nativeProbe = { plan, _, _ ->
+                NativeStagingEvidence(
+                    plan.workId, plan.sourceSubmissionId, plan.targetFormVersionId,
+                    plan.workType, plan.sourceXFormSha256, plan.targetXFormSha256,
+                    true, false, 0, false
+                )
+            }
+        ) {
+            requestCount++
+            connection(200, response(requestCount > 1)).first
+        }
+        val preview = client.prepare(
+            project, workId, source, target, RecordWorkType.FOLLOW_UP,
+            assessCrossVersion = true
+        )
+        val plan = requireNotNull(preview.mappingPlan)
+        val review = HistoricalMappingReview(plan).apply {
+            plan.candidates.forEach {
+                decide(it.targetPath, MappingDecision.REENTER)
+            }
+        }.snapshot()
+        assertError(PreparationError.BAD_RESPONSE) {
+            client.stageQuarantinedWork(project, preview, review, storage)
+        }
+        assertEquals(2, requestCount)
+        assertFalse(java.io.File(storageRoot, "recordwork-drafts").exists())
+    }
+
+    @Test
     fun `assessed prepare fails on invalid target version and does not create a draft`() {
         val (settings, _) = projectSettings()
         val spoofed = org.json.JSONObject(validAssessedPreparation())

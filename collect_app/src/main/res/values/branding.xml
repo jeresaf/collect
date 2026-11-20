@@ -62,4 +62,8 @@
     <string name="mapping_validate_reviewed_transfers">Validate reviewed text transfers with JavaRosa (no save)</string>
     <string name="mapping_transfer_verified">Native transfer validation passed: %1$d of %2$d reviewed paths transferred to an ephemeral model; %3$d re-entry, %4$d empty. No editable draft or submission was created.</string>
     <string name="mapping_transfer_no_editor">Preview-only: the validation model is discarded. No answers are saved, no draft is opened, and no record is submitted.</string>
+    <string name="mapping_quarantine_stage">Reserve a protected work draft binding (no answers saved)</string>
+    <string name="mapping_quarantine_title">Reserve work identity in private storage?</string>
+    <string name="mapping_quarantine_warning">This stores only a protected project/work-item binding and a reserved new instance ID. No questionnaire or answers are saved, and this is NOT an editable draft. This record cannot be submitted until the work-aware editor and uploader are qualified.</string>
+    <string name="mapping_quarantine_saved">Protected work binding saved for %1$s. Reserved new instanceID: %2$s. No form was edited, saved, finalized or submitted.</string>
 </resources>

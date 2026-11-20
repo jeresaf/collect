@@ -321,6 +321,45 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
                 }
             }
         }
+        // Only an inert work-item binding is staged. It cannot launch the
+        // ordinary ODK editor, register an Instance or authorize an upload.
+        val mayStage = prepared.nativeStaging?.targetJavaRosaInitialized == true &&
+            !prepared.sourceInstanceId.isNullOrBlank() &&
+            plan.candidates.size <= MAX_VISIBLE_REVIEW_FIELDS &&
+            (prepared.type == RecordWorkType.AMENDMENT &&
+                prepared.nativeStaging?.historicalJavaRosaInitialized == true ||
+                prepared.type == RecordWorkType.FOLLOW_UP &&
+                !prepared.visitKey.isNullOrBlank())
+        val stageButton = Button(this).apply {
+            isAllCaps = false
+            setText(R.string.mapping_quarantine_stage)
+            isEnabled = false
+            setOnClickListener {
+                val snapshot = review.snapshot()
+                if (!snapshot.reviewedEveryTargetPath) {
+                    status.setText(R.string.mapping_review_unavailable)
+                    return@setOnClickListener
+                }
+                MaterialAlertDialogBuilder(this@RecordWorkPrepareActivity)
+                    .setTitle(R.string.mapping_quarantine_title)
+                    .setMessage(R.string.mapping_quarantine_warning)
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        isEnabled = false
+                        runOnline({
+                            nativeValidatedClient().stageQuarantinedWork(
+                                projectId, prepared, snapshot,
+                                QuarantinedWorkDraftVault(noBackupFilesDir)
+                            )
+                        }) { binding ->
+                            status.text = getString(
+                                R.string.mapping_quarantine_saved,
+                                binding.workId, binding.reservedInstanceId
+                            )
+                        }
+                    }.show()
+            }
+        }
         val prompt = TextView(this).apply {
             setText(R.string.mapping_review_path_prompt)
             setPadding(0, 16, 0, 8)
@@ -356,6 +395,8 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
                             val snapshot = review.snapshot()
                             validationButton.isEnabled =
                                 mayCheckTransfers && snapshot.reviewedEveryTargetPath
+                            stageButton.isEnabled =
+                                mayStage && snapshot.reviewedEveryTargetPath
                             // This status never claims the record is editable or
                             // that mapping approval passed JavaRosa validation.
                             status.text = getString(
@@ -378,6 +419,12 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
             versions.addView(validationButton)
             versions.addView(TextView(this).apply {
                 setText(R.string.mapping_transfer_no_editor)
+            })
+        }
+        if (mayStage) {
+            versions.addView(stageButton)
+            versions.addView(TextView(this).apply {
+                setText(R.string.mapping_quarantine_warning)
             })
         }
     }

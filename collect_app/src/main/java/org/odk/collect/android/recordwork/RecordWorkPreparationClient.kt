@@ -51,7 +51,11 @@ data class PreparedRecordPreview(
     // M4C-2A: versioned path proposals, no source answers and no edit authority.
     val mappingPlan: HistoricalMappingPlan? = null,
     // M4C-2B-1: real JavaRosa blank form initialized but no editable draft.
-    val nativeStaging: NativeStagingEvidence? = null
+    val nativeStaging: NativeStagingEvidence? = null,
+    // M4C-2B-3: verified server identifiers for quarantined draft bindings.
+    // Null for older synthetic fixture responses; staging fails closed.
+    val sourceInstanceId: String? = null,
+    val visitKey: String? = null
 )
 
 enum class PreparationError {
@@ -184,6 +188,10 @@ class RecordWorkPreparationClient(
                 targetFormVersion = json.getString("targetFormVersion"),
                 type = actualType,
                 mappingApprovalRequired = true,
+                sourceInstanceId = work.optString("sourceInstanceId").takeIf(String::isNotBlank),
+                visitKey = work.optString("visitKey").takeIf {
+                    it.isNotBlank() && it != "null"
+                },
                 assessment = if (assessCrossVersion) {
                     CrossVersionAssessmentEngine.assess(
                         workId = workId,
@@ -319,6 +327,53 @@ class RecordWorkPreparationClient(
                 "Transfer validation is not bound to the exact server work item"
             }
             checked
+        }
+    }
+
+    /**
+     * Stores only an INERT work-item binding under Android no-backup private
+     * storage. It is deliberately not an ODK draft and cannot be uploaded.
+     *
+     * Authentication and READY state are rechecked before staging. The actual
+     * editor will have to reauthenticate again on resume/save/finalize/send.
+     */
+    fun stageQuarantinedWork(
+        projectId: String,
+        previouslyPrepared: PreparedRecordPreview,
+        review: MappingReviewSnapshot,
+        vault: QuarantinedWorkDraftVault
+    ): QuarantinedWorkDraft {
+        val auth = session(projectId)
+        val latest = prepare(
+            projectId, previouslyPrepared.workId,
+            previouslyPrepared.sourceSubmissionId,
+            previouslyPrepared.targetFormVersionId,
+            previouslyPrepared.type, assessCrossVersion = true
+        )
+        return parseOrReject {
+            require(latest.mappingPlan == previouslyPrepared.mappingPlan &&
+                latest.assessment?.sourceSha256 ==
+                    previouslyPrepared.assessment?.sourceSha256 &&
+                latest.assessment?.targetXFormSha256 ==
+                    previouslyPrepared.assessment?.targetXFormSha256 &&
+                latest.sourceInstanceId != null &&
+                latest.sourceInstanceId == previouslyPrepared.sourceInstanceId &&
+                latest.visitKey == previouslyPrepared.visitKey &&
+                latest.nativeStaging?.targetJavaRosaInitialized == true) {
+                "Source, target, or work identity changed after review"
+            }
+            val proof = if (latest.type == RecordWorkType.AMENDMENT) {
+                validateReviewedTransfer(projectId, latest, review)
+            } else {
+                require(review.decisions.values.none {
+                    it == MappingDecision.REQUEST_REVIEWED_TRANSFER
+                }) { "Independent follow-up may not transfer prior answers" }
+                null
+            }
+            val actorScope = QuarantinedWorkDraftVault.sha256(
+                projectId + "\n" + auth.paths.records() + "\n" + auth.username
+            )
+            vault.stage(projectId, actorScope, latest, review, proof)
         }
     }
 

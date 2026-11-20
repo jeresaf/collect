@@ -83,22 +83,54 @@ class JavaRosaPrivateRepeatAnswerSession(
                 val template = requireNotNull(form.instance.resolveReference(templateRef)) {
                     "Native repeat template missing"
                 }
-                // FormDef.initialize may instantiate required initial
-                // repeats. This restricted editor refuses such forms rather
-                // than guessing how to merge native defaults and UUID rows.
-                val existing = form.instance.root.getChildrenWithName(name)
-                    .orEmpty().count { it.mult != TreeReference.INDEX_TEMPLATE }
-                require(existing == 0) { "Pre-populated repeat instances are unsupported" }
+                // JavaRosa's blank-form initialization may create one
+                // *empty* repeat instance at ordinal zero. Reuse it only
+                // after verifying it matches every reviewed typed child and
+                // contains NO answers, defaults or extra hidden values.
+                // Never merge data from a prepopulated source instance.
+                val initialized = form.instance.root.getChildrenWithName(name)
+                    .orEmpty().filter { it.mult != TreeReference.INDEX_TEMPLATE }
+                require(initialized.size <= 1 &&
+                    (initialized.isEmpty() || initialized.single().mult == 0)) {
+                    "Unexpected pre-populated native repeat instances"
+                }
+                initialized.singleOrNull()?.let { blank ->
+                    require(blank.numChildren == group.fields.size) {
+                        "Blank native repeat contains unreviewed fields"
+                    }
+                    val expected = group.fields.map {
+                        it.path.substringAfterLast("/")
+                    }.toSet()
+                    require(
+                        (0 until blank.numChildren).map {
+                            blank.getChildAt(it).name
+                        }.toSet() == expected
+                    ) { "Native repeat contains unknown leaves" }
+                    for (field in group.fields) {
+                        val node = requireNotNull(
+                            blank.getChild(field.path.substringAfterLast("/"), 0)
+                        ) { "Initial JavaRosa repeat is missing a reviewed leaf" }
+                        require(node.isLeaf &&
+                            node.dataType == field.type.javaRosaType &&
+                            node.value == null) {
+                            "Native repeat has existing data or changed field type"
+                        }
+                    }
+                }
 
                 for ((index, row) in inventory.active(group.path).withIndex()) {
                     val target = TreeReference.rootRef().apply {
                         add(root, 0)
                         add(name, index)
                     }
-                    val newNode = form.instance.copyNode(template, target)
+                    val newNode = if (index == 0 && initialized.size == 1) {
+                        initialized.single()
+                    } else {
+                        form.instance.copyNode(template, target)
+                    }
                     require(newNode.mult == index &&
                         form.instance.resolveReference(target) != null) {
-                        "Failed to create unique native repeat instance"
+                        "Failed to create a unique native repeat instance"
                     }
                     val supplied = byRow[row.rowId].orEmpty()
                     require(supplied.keys.all { path -> group.fields.any { it.path == path } } &&

@@ -76,7 +76,8 @@
     <string name="private_text_editor_ready">Target version %1$s. %2$s. This is a protected draft, not an ODK submission.</string>
     <string name="private_text_editor_recovered">Encrypted saved answers were recovered</string>
     <string name="private_text_editor_new">No saved answers yet</string>
-    <string name="private_text_editor_manual">Enter answers manually: supported types are text, signed integers, bounded decimals and ISO dates (YYYY-MM-DD). Previous-record answers are NOT automatically prefilled. Choices, media, repeats, conditional forms and submission remain disabled.</string>
+    <string name="private_text_editor_manual">Enter answers manually: supported types are text, signed integers, bounded decimals, ISO dates, and static select-one/select-multiple questions. Previous-record answers are NOT automatically prefilled. Dynamic choice lists, media, repeats, conditional forms and submission remain disabled.</string>
     <string name="private_text_editor_never_submit">Security: This editor saves only encrypted typed answers in a private no-backup vault. It does not create an ODK instance, finalize, submit or replace the original record. Online permission is required every time you open or save.</string>
     <string name="mapping_open_private_editor">Open protected scalar editor (online; no sending)</string>
+    <string name="private_choice_none">— No answer (incomplete draft) —</string>
 </resources>

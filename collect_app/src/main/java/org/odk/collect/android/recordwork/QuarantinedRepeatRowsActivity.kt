@@ -180,6 +180,20 @@ class QuarantinedRepeatRowsActivity : LocalizedActivity() {
                         )
                     }
                 })
+                if (group.imagePaths.isNotEmpty()) {
+                    rows.addView(Button(this).apply {
+                        setText(R.string.private_repeat_image_open)
+                        isAllCaps = false
+                        setOnClickListener {
+                            startActivity(
+                                QuarantinedRepeatImageActivity.intentFor(
+                                    this@QuarantinedRepeatRowsActivity,
+                                    projectId, workId, repeatRow.rowId
+                                )
+                            )
+                        }
+                    })
+                }
                 rows.addView(Button(this).apply {
                     setText(R.string.private_repeat_archive)
                     isAllCaps = false

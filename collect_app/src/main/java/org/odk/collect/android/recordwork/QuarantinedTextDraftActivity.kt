@@ -6,7 +6,10 @@ import android.text.InputFilter
 import android.text.InputType
 import android.view.View
 import android.view.WindowManager
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.CheckBox
+import android.widget.Spinner
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -31,7 +34,7 @@ import java.util.concurrent.Executors
  */
 class QuarantinedTextDraftActivity : LocalizedActivity() {
     private val executor = Executors.newSingleThreadExecutor()
-    private val inputs = linkedMapOf<String, EditText>()
+    private val inputs = linkedMapOf<String, () -> String>()
     private lateinit var status: TextView
     private lateinit var formRows: LinearLayout
     private lateinit var saveButton: Button
@@ -168,31 +171,75 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
                 contentDescription = field.path + ", " + field.type.name.lowercase()
                 setPadding(0, 22, 0, 5)
             })
-            val input = EditText(this).apply {
-                inputType = when (field.type) {
-                    PrivateScalarType.TEXT ->
-                        InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                    PrivateScalarType.INTEGER ->
-                        InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
-                    PrivateScalarType.DECIMAL ->
-                        InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED or
-                            InputType.TYPE_NUMBER_FLAG_DECIMAL
-                    PrivateScalarType.DATE -> InputType.TYPE_CLASS_TEXT
+            when (field.type) {
+                PrivateScalarType.SELECT_ONE -> {
+                    val choiceLabels = listOf(getString(R.string.private_choice_none)) +
+                        field.choices.map { choice ->
+                            if (choice.label == choice.value) choice.value
+                            else choice.label + " (" + choice.value + ")"
+                        }
+                    val picker = Spinner(this).apply {
+                        adapter = ArrayAdapter(
+                            this@QuarantinedTextDraftActivity,
+                            android.R.layout.simple_spinner_dropdown_item, choiceLabels
+                        )
+                        contentDescription = field.path
+                        val selected = field.choices.indexOfFirst { it.value ==
+                            result.answers[field.path].orEmpty() }
+                        setSelection(if (selected < 0) 0 else selected + 1)
+                    }
+                    formRows.addView(picker)
+                    inputs[field.path] = {
+                        val selected = picker.selectedItemPosition
+                        if (selected <= 0) "" else field.choices[selected - 1].value
+                    }
                 }
-                hint = when (field.type) {
-                    PrivateScalarType.DATE -> "YYYY-MM-DD"
-                    PrivateScalarType.INTEGER -> "Integer"
-                    PrivateScalarType.DECIMAL -> "Decimal (period)"
-                    PrivateScalarType.TEXT -> ""
+                PrivateScalarType.SELECT_MULTI -> {
+                    val saved = result.answers[field.path].orEmpty()
+                        .split(" ").filter(String::isNotEmpty).toSet()
+                    val boxes = field.choices.map { choice ->
+                        CheckBox(this).apply {
+                            text = if (choice.label == choice.value) choice.value
+                                else choice.label + " (" + choice.value + ")"
+                            isChecked = choice.value in saved
+                            contentDescription = field.path + ": " + choice.value
+                            formRows.addView(this)
+                        } to choice.value
+                    }
+                    inputs[field.path] = {
+                        boxes.filter { (box, _) -> box.isChecked }
+                            .joinToString(" ") { (_, value) -> value }
+                    }
                 }
-                val maximum = if (field.type == PrivateScalarType.TEXT)
-                    JavaRosaPrivateScalarSession.MAX_TEXT else 40
-                filters = arrayOf(InputFilter.LengthFilter(maximum))
-                setText(result.answers[field.path].orEmpty())
-                setSingleLine(field.type != PrivateScalarType.TEXT)
+                else -> {
+                    val input = EditText(this).apply {
+                        inputType = when (field.type) {
+                            PrivateScalarType.TEXT ->
+                                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                            PrivateScalarType.INTEGER ->
+                                InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
+                            PrivateScalarType.DECIMAL ->
+                                InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED or
+                                    InputType.TYPE_NUMBER_FLAG_DECIMAL
+                            PrivateScalarType.DATE -> InputType.TYPE_CLASS_TEXT
+                            else -> error("Unexpected private answer type")
+                        }
+                        hint = when (field.type) {
+                            PrivateScalarType.DATE -> "YYYY-MM-DD"
+                            PrivateScalarType.INTEGER -> "Integer"
+                            PrivateScalarType.DECIMAL -> "Decimal (period)"
+                            else -> ""
+                        }
+                        val maximum = if (field.type == PrivateScalarType.TEXT)
+                            JavaRosaPrivateScalarSession.MAX_TEXT else 40
+                        filters = arrayOf(InputFilter.LengthFilter(maximum))
+                        setText(result.answers[field.path].orEmpty())
+                        setSingleLine(field.type != PrivateScalarType.TEXT)
+                    }
+                    formRows.addView(input)
+                    inputs[field.path] = { input.text.toString() }
+                }
             }
-            formRows.addView(input)
-            inputs[field.path] = input
         }
         saveButton.isEnabled = true
     }
@@ -200,7 +247,7 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
     private fun save() {
         val original = activeBinding ?: return reject()
         if (!activeProjectMatches() || inputs.size != formPaths.size) return reject()
-        val candidate = inputs.mapValues { (_, input) -> input.text.toString() }
+        val candidate = inputs.mapValues { (_, read) -> read() }
         saveButton.isEnabled = false
         progress.visibility = View.VISIBLE
         status.setText(R.string.private_text_editor_saving)

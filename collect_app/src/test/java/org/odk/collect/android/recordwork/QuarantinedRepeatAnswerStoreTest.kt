@@ -268,6 +268,130 @@ class QuarantinedRepeatAnswerStoreTest {
             mapOf(a.rowId to mapOf(namePath to "ARCHIVED"))) }
     }
 
+
+    private fun withNativeRepeatImage(): String = form()
+        .replace("<name/><age/><visitDate/>",
+            "<name/><age/><visitDate/><photo/>")
+        .replace(
+            """<bind nodeset="/data/members/visitDate" type="date"/>""",
+            """<bind nodeset="/data/members/visitDate" type="date"/>
+               <bind nodeset="/data/members/photo" type="binary"/>"""
+        )
+        .replace(
+            """</repeat>""",
+            """  <upload ref="/data/members/photo" mediatype="image/*">
+                   <label>New visit photo</label>
+                 </upload>
+               </repeat>"""
+        )
+
+    private fun repeatJpeg(marker: String) =
+        byteArrayOf(
+            0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xe0.toByte()
+        ) + marker.toByteArray()
+
+    @Test fun nativeRepeatMediaOwnedByUuidNotDisplayedRowIndex() {
+        val (binding, session) = fixture(withNativeRepeatImage())
+        assertEquals(listOf("$group/photo"),
+            session.schema.groups.single().imagePaths)
+        val rowA = rows().addRow(binding, session.schema, group, uuid())
+        val rowB = rows().addRow(binding, session.schema, group, uuid())
+        val privateMedia = QuarantinedRepeatImageStore(disk.root, cipher)
+        val first = privateMedia.importSelectedImage(
+            binding, session, rowA.rowId, "$group/photo", "image/jpeg",
+            java.io.ByteArrayInputStream(repeatJpeg("PERSON_A"))
+        )
+        val second = privateMedia.importSelectedImage(
+            binding, session, rowB.rowId, "$group/photo", "image/jpeg",
+            java.io.ByteArrayInputStream(repeatJpeg("PERSON_B"))
+        )
+        assertNotEquals(first.sha256, second.sha256)
+        rows().archiveRow(binding, session.schema, rowA.rowId, uuid())
+        rejects { privateMedia.receipt(binding, session, rowA.rowId, "$group/photo") }
+        val rowC = rows().addRow(binding, session.schema, group, uuid())
+        assertFalse(privateMedia.receipt(binding, session, rowC.rowId, "$group/photo") != null)
+        assertEquals(second, privateMedia.receipt(
+            binding, session, rowB.rowId, "$group/photo"
+        ))
+        assertEquals("PERSON_B", String(requireNotNull(
+            privateMedia.withVerifiedImage(
+                binding, session, rowB.rowId, "$group/photo"
+            ) { _, bytes -> bytes.copyOfRange(4, bytes.size) }
+        )))
+        assertFalse(first.canUpload)
+        assertFalse(first.canFinalize)
+        rejects { first.copy(canUpload = true) }
+    }
+
+    @Test fun repeatMediaMimeSizeAndUnreviewedPathsDoNotOverwritePriorAsset() {
+        val (binding, session) = fixture(withNativeRepeatImage())
+        val row = rows().addRow(binding, session.schema, group, uuid())
+        val media = QuarantinedRepeatImageStore(disk.root, cipher)
+        val prior = media.importSelectedImage(
+            binding, session, row.rowId, "$group/photo", "image/jpeg",
+            java.io.ByteArrayInputStream(repeatJpeg("PRESERVE"))
+        )
+        rejects { media.importSelectedImage(
+            binding, session, row.rowId, "$group/photo", "image/png",
+            java.io.ByteArrayInputStream(repeatJpeg("FALSE_MIME"))
+        ) }
+        rejects { media.importSelectedImage(
+            binding, session, row.rowId, "$group/photo", "image/jpeg",
+            java.io.ByteArrayInputStream(ByteArray(
+                QuarantinedRepeatImageStore.MAX_IMAGE_BYTES + 1
+            ) { 0x41.toByte() })
+        ) }
+        rejects { media.importSelectedImage(
+            binding, session, row.rowId, "$group/unknown", "image/jpeg",
+            java.io.ByteArrayInputStream(repeatJpeg("OTHER"))
+        ) }
+        assertEquals(prior, media.receipt(binding, session, row.rowId, "$group/photo"))
+    }
+
+    @Test fun repeatMediaEncryptedCiphertextTamperAndWrongAccountAreRejected() {
+        val (binding, session) = fixture(withNativeRepeatImage())
+        val row = rows().addRow(binding, session.schema, group, uuid())
+        val media = QuarantinedRepeatImageStore(disk.root, cipher)
+        media.importSelectedImage(
+            binding, session, row.rowId, "$group/photo", "image/jpeg",
+            java.io.ByteArrayInputStream(repeatJpeg("RESTRICTED"))
+        )
+        rejects { media.receipt(
+            binding.copy(actorContextSha256 = "b".repeat(64)),
+            session, row.rowId, "$group/photo"
+        ) }
+        rejects { media.receipt(
+            binding.copy(visitKey = "visit-3"), session, row.rowId, "$group/photo"
+        ) }
+        rejects { media.receipt(binding, session, uuid(), "$group/photo") }
+        val encrypted = folder().listFiles().orEmpty().single {
+            it.name.startsWith("repeat-image-")
+        }
+        val bytes = encrypted.readBytes()
+        bytes[bytes.lastIndex] = (bytes.last().toInt() xor 1).toByte()
+        encrypted.writeBytes(bytes)
+        rejects { media.receipt(binding, session, row.rowId, "$group/photo") }
+    }
+
+    @Test fun nativeRepeatImagesAndScalarAnswersRemainIndependentAndNonSubmittable() {
+        val (binding, session) = fixture(withNativeRepeatImage())
+        val row = rows().addRow(binding, session.schema, group, uuid())
+        val values = store().save(binding, session, row.rowId,
+            mapOf(namePath to "NEW_VISIT_MEMBER", agePath to "42"))
+        val media = QuarantinedRepeatImageStore(disk.root, cipher)
+        media.importSelectedImage(
+            binding, session, row.rowId, "$group/photo", "image/jpeg",
+            java.io.ByteArrayInputStream(repeatJpeg("NEW_PHOTO"))
+        )
+        assertEquals(values, store().read(binding, session, row.rowId))
+        assertEquals("image/jpeg", media.receipt(
+            binding, session, row.rowId, "$group/photo"
+        )?.mime)
+        assertFalse(folder().listFiles().orEmpty().any {
+            it.name.endsWith(".xml") || it.name.endsWith(".jpg")
+        })
+    }
+
     private fun rejects(block: () -> Unit) {
         var blocked = false
         try { block() } catch (_: Exception) { blocked = true }

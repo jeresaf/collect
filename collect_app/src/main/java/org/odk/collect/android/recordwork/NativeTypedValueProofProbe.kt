@@ -1,11 +1,8 @@
 package org.odk.collect.android.recordwork
 
 import org.javarosa.core.model.instance.TreeElement
-import org.javarosa.core.model.data.helper.Selection
 import org.javarosa.xform.parse.XFormParser
 import java.io.File
-import java.time.ZoneId
-import java.util.Date
 
 /**
  * 3B-3B — native historical typed-value qualification WITHOUT a transfer.
@@ -112,18 +109,12 @@ class NativeTypedValueProofProbe(private val privateCache: File) {
             val value = requireNotNull(element.value?.value) {
                 "Historical typed answer is missing"
             }
-            val canonical = when (kind) {
-                PrivateScalarType.TEXT -> value as? String
-                PrivateScalarType.INTEGER -> (value as? Int)?.toString()
-                PrivateScalarType.DECIMAL -> (value as? Double)?.toString()
-                PrivateScalarType.DATE -> (value as? Date)?.toInstant()
-                    ?.atZone(ZoneId.systemDefault())?.toLocalDate()?.toString()
-                PrivateScalarType.SELECT_ONE -> (value as? Selection)?.value
-                PrivateScalarType.SELECT_MULTI -> (value as? List<*>)
-                    ?.map { (it as? Selection)?.value ?: throw IllegalArgumentException(
-                        "Invalid historical multi-choice element"
-                    ) }?.joinToString(" ")
-            } ?: throw IllegalArgumentException("Historical JavaRosa type mismatch")
+            // restoreDataModel exposes lexical XML answers; it does NOT
+            // deserialize every numeric/date/choice node to a typed object.
+            // Source and target JavaRosa *schemas* already agree on type.
+            // The target JavaRosa form parses and validates this lexical value.
+            val canonical = value as? String
+                ?: throw IllegalArgumentException("Historical XML scalar is not text")
             require(canonical.isNotBlank() &&
                 canonical.length <= JavaRosaPrivateScalarSession.MAX_TEXT &&
                 '\u0000' !in canonical) { "Invalid historical canonical value" }

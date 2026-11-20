@@ -176,6 +176,13 @@ class QuarantinedRepeatRowVault(
                                 PrivateScalarType.TEXT, PrivateScalarType.INTEGER,
                                 PrivateScalarType.DECIMAL, PrivateScalarType.DATE
                             ) && field.choices.isEmpty()
+                    } &&
+                    group.imagePaths.size <= 2 &&
+                    group.imagePaths.toSet().size == group.imagePaths.size &&
+                    group.imagePaths.all { image ->
+                        image.startsWith(group.path + "/") &&
+                            image.removePrefix(group.path + "/").matches(LEAF_NAME) &&
+                            group.fields.none { it.path == image }
                     }
             }) {
             "Repeat inventory binding/schema is unrecognized or changed"
@@ -310,7 +317,8 @@ class QuarantinedRepeatRowVault(
         schema.groups.joinToString("|") { group ->
             group.path + "[" + group.fields.joinToString(",") {
                 it.path + ":" + it.type.name
-            } + "]"
+            } + "]" + if (group.imagePaths.isEmpty()) "" else
+                "{native-images:" + group.imagePaths.joinToString(",") + "}"
         }
     ).joinToString("\n").toByteArray(Charsets.UTF_8)
 

@@ -1,11 +1,16 @@
 package org.odk.collect.android.recordwork
 
 import org.javarosa.core.model.Constants
+import org.javarosa.core.model.IFormElement
+import org.javarosa.core.model.QuestionDef
 import org.javarosa.core.model.FormDef
 import org.javarosa.core.model.data.DateData
 import org.javarosa.core.model.data.DecimalData
 import org.javarosa.core.model.data.IAnswerData
 import org.javarosa.core.model.data.IntegerData
+import org.javarosa.core.model.data.SelectOneData
+import org.javarosa.core.model.data.SelectMultiData
+import org.javarosa.core.model.data.helper.Selection
 import org.javarosa.core.model.data.StringData
 import org.javarosa.core.model.instance.InstanceInitializationFactory
 import org.javarosa.core.model.instance.TreeReference
@@ -31,7 +36,9 @@ enum class PrivateScalarType(val javaRosaType: Int) {
     TEXT(Constants.DATATYPE_TEXT),
     INTEGER(Constants.DATATYPE_INTEGER),
     DECIMAL(Constants.DATATYPE_DECIMAL),
-    DATE(Constants.DATATYPE_DATE);
+    DATE(Constants.DATATYPE_DATE),
+    SELECT_ONE(Constants.DATATYPE_CHOICE),
+    SELECT_MULTI(Constants.DATATYPE_MULTIPLE_ITEMS);
 
     companion object {
         fun fromNative(type: Int): PrivateScalarType? =
@@ -39,7 +46,13 @@ enum class PrivateScalarType(val javaRosaType: Int) {
     }
 }
 
-data class PrivateScalarField(val path: String, val type: PrivateScalarType)
+data class PrivateStaticChoice(val value: String, val label: String)
+
+data class PrivateScalarField(
+    val path: String,
+    val type: PrivateScalarType,
+    val choices: List<PrivateStaticChoice> = emptyList()
+)
 
 /**
  * Creates a fresh exact target-version FormDef on each validation. Only the
@@ -103,6 +116,32 @@ class JavaRosaPrivateScalarSession(
         }
 
         questions = withNativeForm { def ->
+            // Static choices must come from the actual JavaRosa QuestionDef,
+            // not from an unverified label or a guessed historical list.
+            val controls = linkedMapOf<String, QuestionDef>()
+            fun collect(elements: List<IFormElement>?) {
+                elements.orEmpty().forEach { element ->
+                    if (element is QuestionDef) {
+                        val reference = element.bind?.reference as? TreeReference
+                            ?: throw IllegalArgumentException("Question has no absolute native bind")
+                        require(reference.size() in 2..12 &&
+                            (0 until reference.size()).all {
+                                reference.getMultiplicity(it) == 0 ||
+                                    reference.getMultiplicity(it) == TreeReference.INDEX_UNBOUND
+                            }) { "Repeated or complex questions are not eligible" }
+                        val path = "/" + (0 until reference.size())
+                            .joinToString("/") { reference.getName(it) }
+                        require(path !in controls) { "Ambiguous duplicate question bind" }
+                        controls[path] = element
+                    } else {
+                        collect(element.children)
+                    }
+                }
+            }
+            collect(def.children)
+            require(controls.keys == plan.candidates.map { it.targetPath }.toSet()) {
+                "Native form contains unreviewed or unsupported question controls"
+            }
             plan.candidates.map { candidate ->
                 val path = candidate.targetPath
                 val node = def.instance.resolveReference(ref(path))
@@ -111,7 +150,39 @@ class JavaRosaPrivateScalarSession(
                 val scalarType = requireNotNull(
                     PrivateScalarType.fromNative(node.dataType)
                 ) { "Unsupported JavaRosa target answer type" }
-                PrivateScalarField(path, scalarType)
+                val control = requireNotNull(controls[path])
+                val choices = if (scalarType == PrivateScalarType.SELECT_ONE ||
+                    scalarType == PrivateScalarType.SELECT_MULTI) {
+                    require(control.dynamicChoices == null &&
+                        control.controlType == if (
+                            scalarType == PrivateScalarType.SELECT_ONE
+                        ) Constants.CONTROL_SELECT_ONE else Constants.CONTROL_SELECT_MULTI
+                    ) { "Only native static choice widgets are supported" }
+                    val list = control.choices.orEmpty()
+                    require(list.isNotEmpty() && list.size <= MAX_CHOICES) {
+                        "Empty or oversized static choice list"
+                    }
+                    list.map { item ->
+                        val code = item.value
+                        require(CHOICE_TOKEN.matches(code)) {
+                            "Choice value cannot be represented safely in a draft"
+                        }
+                        val caption = item.labelInnerText
+                            ?.takeIf { it.isNotBlank() } ?: code
+                        PrivateStaticChoice(code, caption)
+                    }.also { prepared ->
+                        require(prepared.map { it.value }.toSet().size == prepared.size) {
+                            "Ambiguous duplicate static choice values"
+                        }
+                    }
+                } else {
+                    require(control.controlType != Constants.CONTROL_SELECT_ONE &&
+                        control.controlType != Constants.CONTROL_SELECT_MULTI) {
+                        "Choice control and underlying JavaRosa type disagree"
+                    }
+                    emptyList()
+                }
+                PrivateScalarField(path, scalarType, choices)
             }
         }
     }
@@ -148,7 +219,7 @@ class JavaRosaPrivateScalarSession(
                     validated[question.path] = ""
                     continue
                 }
-                val (answer, canonical) = parse(question.type, raw)
+                val (answer, canonical) = parse(question, raw)
                 require(def.evaluateConstraint(reference, answer)) {
                     "Selected target version rejected the answer"
                 }
@@ -166,8 +237,8 @@ class JavaRosaPrivateScalarSession(
         }
     }
 
-    private fun parse(type: PrivateScalarType, raw: String): Pair<IAnswerData, String> =
-        when (type) {
+    private fun parse(question: PrivateScalarField, raw: String): Pair<IAnswerData, String> =
+        when (question.type) {
             PrivateScalarType.TEXT -> StringData(raw) to raw
             PrivateScalarType.INTEGER -> {
                 require(INTEGER_PATTERN.matches(raw) && raw.length <= 11) {
@@ -205,10 +276,40 @@ class JavaRosaPrivateScalarSession(
                 )
                 DateData(date) to day.toString()
             }
+            PrivateScalarType.SELECT_ONE -> {
+                val choice = question.choices.singleOrNull { it.value == raw }
+                    ?: throw IllegalArgumentException("Choice is not in the authorized native list")
+                SelectOneData(Selection(choice.value)) to choice.value
+            }
+            PrivateScalarType.SELECT_MULTI -> {
+                require(raw == raw.trim() && "  " !in raw &&
+                    raw.split(" ").size <= question.choices.size) {
+                    "Multiple selections contain whitespace or excess items"
+                }
+                val selected = raw.split(" ")
+                require(selected.toSet().size == selected.size &&
+                    selected.all { token -> question.choices.any { it.value == token } }) {
+                    "Unknown or duplicate native selection"
+                }
+                val ordered = question.choices.filter { it.value in selected }
+                SelectMultiData(ordered.map { Selection(it.value) }) to
+                    ordered.joinToString(" ") { it.value }
+            }
         }
 
     private fun nativeMatches(type: PrivateScalarType, expected: Any, actual: Any): Boolean =
         when (type) {
+            PrivateScalarType.SELECT_ONE ->
+                (expected as? Selection)?.value == (actual as? Selection)?.value &&
+                    actual is Selection
+            PrivateScalarType.SELECT_MULTI -> {
+                val expectedValues = (expected as? List<*>)
+                    ?.mapNotNull { (it as? Selection)?.value }
+                val actualValues = (actual as? List<*>)
+                    ?.mapNotNull { (it as? Selection)?.value }
+                expectedValues != null && expectedValues.isNotEmpty() &&
+                    expectedValues == actualValues
+            }
             PrivateScalarType.DATE -> {
                 val a = (actual as? Date)?.toInstant()
                     ?.atZone(ZoneId.systemDefault())?.toLocalDate()
@@ -264,11 +365,13 @@ class JavaRosaPrivateScalarSession(
         private val DATE_PATTERN = Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}")
         private val ISO_DATE = DateTimeFormatter.ISO_LOCAL_DATE
             .withResolverStyle(ResolverStyle.STRICT)
+        private const val MAX_CHOICES = 40
+        private val CHOICE_TOKEN = Regex("[A-Za-z0-9_.:-]{1,128}")
         private val SAFE_NAME = Regex("[A-Za-z_][A-Za-z0-9_.-]*")
         private val EXTERNAL_SRC =
             Regex("""\bsrc\s*=\s*["']""", RegexOption.IGNORE_CASE)
         private val UNSAFE_CONTROL = Regex(
-            """<\s*(?:[A-Za-z_][\w.-]*:)?(?:repeat|select|select1|upload|itemset|trigger|setvalue|setgeopoint|action|output|rank|range|secret|barcode|geopoint|geotrace|geoshape)\b""",
+            """<\s*(?:[A-Za-z_][\w.-]*:)?(?:repeat|upload|itemset|trigger|setvalue|setgeopoint|action|output|rank|range|secret|barcode|geopoint|geotrace|geoshape)\b""",
             RegexOption.IGNORE_CASE
         )
         private val UNSAFE_BIND_ATTR = Regex(
@@ -276,8 +379,8 @@ class JavaRosaPrivateScalarSession(
             RegexOption.IGNORE_CASE
         )
         private val UNSUPPORTED = setOf(
-            MappingRisk.REPEAT, MappingRisk.MEDIA, MappingRisk.STATIC_SELECT,
-            MappingRisk.DYNAMIC_SELECT, MappingRisk.CHOICE_LIST_CHANGED,
+            MappingRisk.REPEAT, MappingRisk.MEDIA,
+            MappingRisk.DYNAMIC_SELECT,
             MappingRisk.CALCULATION, MappingRisk.RELEVANCE_OR_CONSTRAINT,
             MappingRisk.UNBOUND_FIELD
         )

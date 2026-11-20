@@ -39,6 +39,7 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
     private lateinit var settings: SettingsProvider
     private var activeBinding: QuarantinedWorkDraft? = null
     private var formPaths = emptyList<String>()
+    private var formFields = emptyList<PrivateScalarField>()
     private var generation = 0
 
     private val projectId get() = intent.getStringExtra(EXTRA_PROJECT).orEmpty()
@@ -113,7 +114,7 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
 
     private data class OpenResult(
         val binding: QuarantinedWorkDraft,
-        val fields: List<String>,
+        val fields: List<PrivateScalarField>,
         val answers: Map<String, String>,
         val previouslySaved: Boolean
     )
@@ -130,13 +131,13 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
                     vault().read(projectId, workId, actorHash())
                 ) { "Protected work draft is not staged" }
                 val authorized = client().authorizePrivateTextForm(projectId, binding)
-                val native = JavaRosaPrivateTextSession(
+                val native = JavaRosaPrivateScalarSession(
                     cacheDir, binding, authorized.plan, authorized.targetXFormXml
                 )
                 val stored = EncryptedPrivateTextDraftStore(
                     noBackupFilesDir, AndroidKeyStorePrivateDraftCipher()
                 ).read(binding, native.fields)
-                OpenResult(binding, native.fields,
+                OpenResult(binding, native.questions,
                     native.validateForPrivateSave(stored.answers), stored.hasSavedDraft)
             }
             runOnUiThread {
@@ -149,7 +150,8 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
 
     private fun render(result: OpenResult) {
         activeBinding = result.binding
-        formPaths = result.fields
+        formFields = result.fields
+        formPaths = result.fields.map { it.path }
         inputs.clear()
         formRows.removeAllViews()
         status.text = getString(
@@ -160,20 +162,37 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
         formRows.addView(TextView(this).apply {
             setText(R.string.private_text_editor_manual)
         })
-        result.fields.forEach { path ->
+        result.fields.forEach { field ->
             formRows.addView(TextView(this).apply {
-                text = path
-                contentDescription = path
+                text = field.path + " (" + field.type.name.lowercase() + ")"
+                contentDescription = field.path + ", " + field.type.name.lowercase()
                 setPadding(0, 22, 0, 5)
             })
             val input = EditText(this).apply {
-                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                filters = arrayOf(InputFilter.LengthFilter(JavaRosaPrivateTextSession.MAX_TEXT))
-                setText(result.answers[path].orEmpty())
-                setSingleLine(false)
+                inputType = when (field.type) {
+                    PrivateScalarType.TEXT ->
+                        InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                    PrivateScalarType.INTEGER ->
+                        InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
+                    PrivateScalarType.DECIMAL ->
+                        InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED or
+                            InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    PrivateScalarType.DATE -> InputType.TYPE_CLASS_TEXT
+                }
+                hint = when (field.type) {
+                    PrivateScalarType.DATE -> "YYYY-MM-DD"
+                    PrivateScalarType.INTEGER -> "Integer"
+                    PrivateScalarType.DECIMAL -> "Decimal (period)"
+                    PrivateScalarType.TEXT -> ""
+                }
+                val maximum = if (field.type == PrivateScalarType.TEXT)
+                    JavaRosaPrivateScalarSession.MAX_TEXT else 40
+                filters = arrayOf(InputFilter.LengthFilter(maximum))
+                setText(result.answers[field.path].orEmpty())
+                setSingleLine(field.type != PrivateScalarType.TEXT)
             }
             formRows.addView(input)
-            inputs[path] = input
+            inputs[field.path] = input
         }
         saveButton.isEnabled = true
     }
@@ -196,10 +215,12 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
                 ) { "Protected work draft missing" }
                 require(binding == original) { "Work identity changed during edit" }
                 val form = client().authorizePrivateTextForm(projectId, binding)
-                val native = JavaRosaPrivateTextSession(
+                val native = JavaRosaPrivateScalarSession(
                     cacheDir, binding, form.plan, form.targetXFormXml
                 )
-                require(native.fields == formPaths) { "Question inventory changed" }
+                require(native.fields == formPaths && native.questions == formFields) {
+                    "Question type or inventory changed"
+                }
                 val validated = native.validateForPrivateSave(candidate)
                 EncryptedPrivateTextDraftStore(
                     noBackupFilesDir, AndroidKeyStorePrivateDraftCipher()
@@ -231,6 +252,7 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
     private fun reject() {
         activeBinding = null
         formPaths = emptyList()
+        formFields = emptyList()
         saveButton.isEnabled = false
         formRows.removeAllViews()
         inputs.clear()
@@ -243,6 +265,7 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
         executor.shutdownNow()
         activeBinding = null
         formPaths = emptyList()
+        formFields = emptyList()
         inputs.clear()
         super.onDestroy()
     }

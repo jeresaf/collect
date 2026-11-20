@@ -347,10 +347,17 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
                     .setPositiveButton(android.R.string.ok) { _, _ ->
                         isEnabled = false
                         runOnline({
-                            nativeValidatedClient().stageQuarantinedWork(
+                            val binding = nativeValidatedClient().stageQuarantinedWork(
                                 projectId, prepared, snapshot,
                                 QuarantinedWorkDraftVault(noBackupFilesDir)
                             )
+                            // All explicitly selected decisions survive a
+                            // restart, under the same work/form/actor binding.
+                            // Never persist original XML or any old answers.
+                            ProtectedMappingApprovalStore(
+                                noBackupFilesDir, AndroidKeyStorePrivateDraftCipher()
+                            ).save(binding, requireNotNull(prepared.mappingPlan), snapshot)
+                            binding
                         }) { binding ->
                             status.text = getString(
                                 R.string.mapping_quarantine_saved,

@@ -6,7 +6,7 @@ on:
       - codex/m4c2b3c3b3a-transfer-preflight
   pull_request:
     branches:
-      - codex/m4c2b3c3b3a-typed-review-evidence
+      - codex/m4c2b3c3b2-typed-review-evidence
   workflow_dispatch:
 
 permissions:

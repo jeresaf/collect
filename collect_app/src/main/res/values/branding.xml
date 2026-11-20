@@ -80,4 +80,16 @@
     <string name="private_text_editor_never_submit">Security: This editor saves only encrypted typed answers in a private no-backup vault. It does not create an ODK instance, finalize, submit or replace the original record. Online permission is required every time you open or save.</string>
     <string name="mapping_open_private_editor">Open protected scalar editor (online; no sending)</string>
     <string name="private_choice_none">— No answer (incomplete draft) —</string>
+    <string name="private_image_title">Protected new-visit images — Data Collector</string>
+    <string name="private_image_loading">Rechecking assigned work and the exact target form&#8230;</string>
+    <string name="private_image_ready">Choose or replace new images for these target-form fields. Existing-record images are not copied.</string>
+    <string name="private_image_checking">Rechecking permission and image integrity before changing protected storage&#8230;</string>
+    <string name="private_image_denied">This work or target image field is unavailable, changed or cannot be verified. No image was submitted.</string>
+    <string name="private_image_choose">Choose image for this field</string>
+    <string name="private_image_replace">Replace protected image</string>
+    <string name="private_image_clear">Remove protected staged image</string>
+    <string name="private_image_missing">No image staged.</string>
+    <string name="private_image_staged">Encrypted image staged: %1$d bytes. Not attached to a completed submission.</string>
+    <string name="private_image_no_submission">Security: only explicitly chosen JPEG, PNG or WebP files up to 1.5 MB can be staged. Images are encrypted in the work-item vault. Repeat/media answers, source-image migration, finalization and uploading remain disabled.</string>
+    <string name="mapping_open_private_image_intake">Stage protected images (online; no sending)</string>
 </resources>

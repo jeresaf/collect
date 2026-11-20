@@ -153,11 +153,12 @@ class JavaRosaPrivateScalarSession(
                 val control = requireNotNull(controls[path])
                 val choices = if (scalarType == PrivateScalarType.SELECT_ONE ||
                     scalarType == PrivateScalarType.SELECT_MULTI) {
+                    val requiredControl = if (scalarType == PrivateScalarType.SELECT_ONE)
+                        Constants.CONTROL_SELECT_ONE else Constants.CONTROL_SELECT_MULTI
                     require(control.dynamicChoices == null &&
-                        control.controlType == if (
-                            scalarType == PrivateScalarType.SELECT_ONE
-                        ) Constants.CONTROL_SELECT_ONE else Constants.CONTROL_SELECT_MULTI
-                    ) { "Only native static choice widgets are supported" }
+                        control.controlType == requiredControl) {
+                        "Only native static choice widgets are supported"
+                    }
                     val list = control.choices.orEmpty()
                     require(list.isNotEmpty() && list.size <= MAX_CHOICES) {
                         "Empty or oversized static choice list"

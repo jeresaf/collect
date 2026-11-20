@@ -134,6 +134,20 @@ class QuarantinedRepeatRowVault(
         readInternal(binding, schema)
     }
 
+    /**
+     * Serializes each per-row answer save with identity create/archive within
+     * this app process. The callback must not make network requests: the
+     * caller must authorize the work before entering this guarded section.
+     */
+    fun <T> withLockedCurrentInventory(
+        binding: QuarantinedWorkDraft,
+        schema: PrivateRepeatSchema,
+        block: (ProtectedRepeatInventory) -> T
+    ): T = synchronized(GLOBAL_LOCK) {
+        verify(binding, schema)
+        block(readInternal(binding, schema))
+    }
+
     private fun verify(
         binding: QuarantinedWorkDraft,
         schema: PrivateRepeatSchema

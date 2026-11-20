@@ -507,7 +507,7 @@ class RecordWorkPreparationClient(
                 work.getString("sourceInstanceId") == binding.sourceInstanceId &&
                 RecordWorkType.valueOf(work.getString("workType")) ==
                     RecordWorkType.AMENDMENT &&
-                work.optString("visitKey").isBlank()) {
+                work.optString("visitKey").let { it.isBlank() || it == "null" }) {
                 "Server revoked or changed reviewed amendment while fetching source"
             }
             val sourceXml = json.getString("sourceXml")

@@ -359,7 +359,7 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
                             // The private editor independently reauthorizes.
                             // Never pass XML or household answers via Intent.
                             if (binding.projectId == projectId) {
-                                versions.addView(Button(this).apply {
+                                versions.addView(Button(this@RecordWorkPrepareActivity).apply {
                                     isAllCaps = false
                                     setText(R.string.mapping_open_private_editor)
                                     setOnClickListener {

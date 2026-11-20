@@ -140,10 +140,10 @@ class EncryptedPrivateTextDraftStore(
                 }
                 // Atomic replacement on Android's app-private filesystem.
                 // Never expose a half-written ciphertext as valid state.
-                if (!pending.renameTo(file)) {
-                    require(file.delete() && pending.renameTo(file)) {
-                        "Unable to atomically store protected answers"
-                    }
+                // Never delete the prior encrypted draft as a fallback:
+                // an unsuccessful replacement must preserve the last save.
+                require(pending.renameTo(file)) {
+                    "Atomic encrypted draft replacement was unavailable"
                 }
             } finally {
                 if (pending.exists()) pending.delete()

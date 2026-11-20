@@ -371,6 +371,22 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
                                         )
                                     }
                                 })
+                                // Independent image-only intake for exact
+                                // target-version upload questions. The native
+                                // image probe rechecks all fields online.
+                                // This does NOT register ODK media answers.
+                                versions.addView(Button(this@RecordWorkPrepareActivity).apply {
+                                    isAllCaps = false
+                                    setText(R.string.mapping_open_private_image_intake)
+                                    setOnClickListener {
+                                        startActivity(
+                                            QuarantinedImageIntakeActivity.intentFor(
+                                                this@RecordWorkPrepareActivity,
+                                                projectId, binding.workId
+                                            )
+                                        )
+                                    }
+                                })
                             }
                         }
                     }.show()

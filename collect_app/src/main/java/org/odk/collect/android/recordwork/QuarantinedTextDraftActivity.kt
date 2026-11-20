@@ -287,6 +287,12 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
     private fun applyApprovedHistoricalText() {
         val originalBinding = activeBinding ?: return reject()
         if (!activeProjectMatches() || formPaths.isEmpty()) return reject()
+        // A draft can be unsaved but already contain an enumerator's work.
+        // Never silently discard those answers by applying old values.
+        if (inputs.values.any { read -> read().isNotEmpty() }) {
+            status.setText(R.string.mapping_approved_import_unsaved)
+            return
+        }
         approvedImportButton.isEnabled = false
         saveButton.isEnabled = false
         progress.visibility = View.VISIBLE

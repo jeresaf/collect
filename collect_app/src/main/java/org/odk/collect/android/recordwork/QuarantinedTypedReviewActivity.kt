@@ -219,6 +219,11 @@ class QuarantinedTypedReviewActivity : LocalizedActivity() {
         super.onStop()
     }
 
+    override fun onRestart() {
+        super.onRestart()
+        if (activeProjectMatches()) open() else deny()
+    }
+
     override fun onDestroy() {
         generation++
         executor.shutdownNow()

@@ -105,4 +105,16 @@
     <string name="private_repeat_saving">Reauthorizing work and encrypting repeat identity change&#8230;</string>
     <string name="private_repeat_non_submittable">Security: repeat row IDs are encrypted metadata only. Their order may change after archiving, but identities never do. No old repeat answers, attachments, native ODK instances, finalization or uploads are created.</string>
     <string name="mapping_open_private_repeats">Manage protected repeat row IDs (online; no sending)</string>
+    <string name="private_repeat_answer_title">Protected repeat answers — Data Collector</string>
+    <string name="private_repeat_answer_loading">Rechecking the work assignment, active repeat row and exact target version&#8230;</string>
+    <string name="private_repeat_answer_ready">Permanent row %1$s — %2$s. You are editing a protected draft, not a submitted form.</string>
+    <string name="private_repeat_answer_new">No saved answers yet</string>
+    <string name="private_repeat_answer_restored">Encrypted row answers recovered</string>
+    <string name="private_repeat_answer_save">Save encrypted repeat answers</string>
+    <string name="private_repeat_answer_saving">Reauthorizing work, reconstructing native repeats and encrypting answers&#8230;</string>
+    <string name="private_repeat_answer_saved">Protected repeat answers saved and verified. Sending remains disabled.</string>
+    <string name="private_repeat_answer_failed">Repeat answer save blocked. Check the current assignment, target form, row state and entered values. No new values were saved.</string>
+    <string name="private_repeat_answer_denied">Repeat row access denied or unavailable. It may have been archived or its work, account or target form changed.</string>
+    <string name="private_repeat_answer_no_upload">Security: repeat answers are stored encrypted by permanent row UUID. Adding or archiving another row does not move these answers. Previous visit answers and attachments are never copied. Native ODK finalization and upload remain disabled.</string>
+    <string name="private_repeat_edit_answers">Edit protected row answers</string>
 </resources>

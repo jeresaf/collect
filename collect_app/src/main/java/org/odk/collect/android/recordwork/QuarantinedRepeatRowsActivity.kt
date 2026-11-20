@@ -169,6 +169,18 @@ class QuarantinedRepeatRowsActivity : LocalizedActivity() {
                     setPadding(0, 16, 0, 4)
                 })
                 rows.addView(Button(this).apply {
+                    setText(R.string.private_repeat_edit_answers)
+                    isAllCaps = false
+                    setOnClickListener {
+                        startActivity(
+                            QuarantinedRepeatAnswerActivity.intentFor(
+                                this@QuarantinedRepeatRowsActivity,
+                                projectId, workId, repeatRow.rowId
+                            )
+                        )
+                    }
+                })
+                rows.addView(Button(this).apply {
                     setText(R.string.private_repeat_archive)
                     isAllCaps = false
                     setOnClickListener {

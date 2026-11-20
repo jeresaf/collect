@@ -6,6 +6,7 @@ import org.hamcrest.CoreMatchers.notNullValue
 import org.hamcrest.CoreMatchers.nullValue
 import org.hamcrest.MatcherAssert.assertThat
 import org.junit.Test
+import org.robolectric.annotation.Config
 import org.junit.runner.RunWith
 import org.mockito.kotlin.mock
 import org.odk.collect.android.instancemanagement.CachingProjectDependencyModuleFactory
@@ -20,6 +21,7 @@ import org.odk.collect.shared.locks.BooleanChangeLock
 import org.odk.collect.shared.settings.InMemSettings
 
 @RunWith(AndroidJUnit4::class)
+@Config(sdk = [35])
 class InstanceSubmitterTest {
     private val form = FormFixtures.form("1")
 

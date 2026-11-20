@@ -1,0 +1,96 @@
+name: M4C2B3C3B3A Typed Transfer Preflight Qualification
+
+on:
+  push:
+    branches:
+      - codex/m4c2b3c3b3a-transfer-preflight
+  pull_request:
+    branches:
+      - codex/m4c2b3c3b2-typed-review-evidence
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m4c2b3c3b3a-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-native-typed-mapping:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+      - name: Install Android SDK
+        run: |
+          sdkmanager --install 'platforms;android-37.0' 'build-tools;36.0.0'
+          if [ -d "$ANDROID_HOME/platforms/android-37.0" ] && [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Route Maven Central to official alternate endpoint in disposable runner
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("build.gradle.kts")
+          s = p.read_text()
+          assert s.count("mavenCentral()") == 2
+          p.write_text(s.replace("mavenCentral()", 'maven { url = uri("https://repo1.maven.org/maven2/") }'))
+          PY
+      - name: Previous protected-mapping regressions and new native typed mapping tests
+        run: |
+          chmod +x gradlew
+          ./gradlew :collect_app:testDebug \
+            --tests org.odk.collect.android.recordwork.RecordWorkContractsTest \
+            --tests org.odk.collect.android.recordwork.RecordWorkReadOnlyClientTest \
+            --tests org.odk.collect.android.recordwork.RecordWorkPreparationClientTest \
+            --tests org.odk.collect.android.recordwork.CrossVersionAssessmentTest \
+            --tests org.odk.collect.android.recordwork.HistoricalSchemaMappingTest \
+            --tests org.odk.collect.android.recordwork.JavaRosaStagingProbeTest \
+            --tests org.odk.collect.android.recordwork.ReviewedScalarTransferProbeTest \
+            --tests org.odk.collect.android.recordwork.QuarantinedWorkDraftVaultTest \
+            --tests org.odk.collect.android.recordwork.QuarantinedUploadBoundaryTest \
+            --tests org.odk.collect.android.instancemanagement.send.InstanceSubmitterTest \
+            --tests org.odk.collect.android.recordwork.JavaRosaPrivateTextSessionTest \
+            --tests org.odk.collect.android.recordwork.JavaRosaPrivateScalarSessionTest \
+            --tests org.odk.collect.android.recordwork.JavaRosaPrivateStaticChoiceSessionTest \
+            --tests org.odk.collect.android.recordwork.JavaRosaPrivateImageFieldProbeTest \
+            --tests org.odk.collect.android.recordwork.QuarantinedPrivateImageStoreTest \
+            --tests org.odk.collect.android.recordwork.JavaRosaPrivateRepeatStructureProbeTest \
+            --tests org.odk.collect.android.recordwork.QuarantinedRepeatRowVaultTest \
+            --tests org.odk.collect.android.recordwork.QuarantinedRepeatAnswerStoreTest \
+            --tests org.odk.collect.android.recordwork.ApprovedHistoricalTextImporterTest \
+            --tests org.odk.collect.android.recordwork.EncryptedPrivateTextDraftStoreTest \
+            --tests org.odk.collect.android.recordwork.ReviewedTypedMappingClassifierTest \
+            --tests org.odk.collect.android.recordwork.NativeTypedMappingProbeTest \
+            --tests org.odk.collect.android.recordwork.ProtectedTypedReviewStoreTest \
+            --tests org.odk.collect.android.recordwork.TypedTransferPreflightInspectorTest \
+            --no-daemon --stacktrace
+      - name: Compile branded debug APK
+        run: |
+          ./gradlew :collect_app:assembleDebug \
+            -PCOLLECT_SERVER_URL=https://collector.example.org/v1/projects/00000000-0000-0000-0000-000000000000 \
+            --no-daemon --stacktrace
+      - name: Check application identity
+        run: |
+          set -euo pipefail
+          apk="$(find collect_app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
+          test -f "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" > /tmp/typed-mapping-badging.txt
+          grep -Fq "package: name='org.jeresaf.datacollector.android'" /tmp/typed-mapping-badging.txt
+          grep -Fq "application-label:'Data Collector'" /tmp/typed-mapping-badging.txt
+      - if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: m4c2b3c3b3a-test-evidence
+          path: |
+            collect_app/build/test-results
+            collect_app/build/reports/tests
+          if-no-files-found: ignore
+          retention-days: 14

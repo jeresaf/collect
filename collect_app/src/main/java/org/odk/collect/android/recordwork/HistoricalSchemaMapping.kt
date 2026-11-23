@@ -4,12 +4,8 @@ import org.odk.collect.android.formmanagement.metadata.FormMetadataParser
 import org.w3c.dom.Document
 import org.w3c.dom.Element
 import org.w3c.dom.Node
-import org.xml.sax.InputSource
 import java.io.ByteArrayInputStream
-import java.io.StringReader
 import java.security.MessageDigest
-import javax.xml.XMLConstants
-import javax.xml.parsers.DocumentBuilderFactory
 
 /**
  * M4C-2A: a version-bound human mapping proposal; NOT a transformed instance.
@@ -314,18 +310,7 @@ object HistoricalSchemaMappingEngine {
 
     private fun parseDocument(xml: String): Document {
         require(xml.isNotBlank() && xml.length <= MAX_XML) { "XML exceeds size limit" }
-        val factory = DocumentBuilderFactory.newInstance()
-        factory.isNamespaceAware = true
-        factory.isXIncludeAware = false
-        factory.isExpandEntityReferences = false
-        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true)
-        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-        factory.setFeature("http://xml.org/sax/features/external-general-entities", false)
-        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-        factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
-        val doc = factory.newDocumentBuilder().apply {
-            setEntityResolver { _, _ -> throw IllegalArgumentException("Entity resolution forbidden") }
-        }.parse(InputSource(StringReader(xml)))
+        val doc = RecordWorkSafeXml.parse(xml, MAX_XML, MAX_DEPTH, MAX_NODES)
         val pending = java.util.ArrayDeque<Pair<Element, Int>>()
         pending.add(doc.documentElement to 0)
         var total = 0

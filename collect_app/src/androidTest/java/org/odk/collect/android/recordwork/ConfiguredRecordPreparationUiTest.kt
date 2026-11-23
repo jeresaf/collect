@@ -524,7 +524,31 @@ class ConfiguredRecordPreparationUiTest {
                 if (candidateCount >= 0) break
                 Thread.sleep(250)
             }
-            assertTrue("Real JavaRosa target review must be displayed", candidateCount > 0)
+            if (candidateCount <= 0) {
+                // Report a restricted status classification only, never a
+                // server response, source XML, URL, form text or credentials.
+                var statusCode = "UNKNOWN"
+                var childCount = -1
+                scenario.onActivity { activity ->
+                    val text = activity.findViewById<TextView>(R.id.work_status).text.toString()
+                    statusCode = when (text) {
+                        activity.getString(R.string.work_failed_server) -> "FAILED_SERVER"
+                        activity.getString(R.string.work_failed_network) -> "FAILED_NETWORK"
+                        activity.getString(R.string.work_failed_conflict) -> "FAILED_CONFLICT"
+                        activity.getString(R.string.work_failed_access) -> "FAILED_ACCESS"
+                        activity.getString(R.string.work_failed_auth) -> "FAILED_AUTH"
+                        activity.getString(R.string.work_created) -> "PREVIEW_CREATED"
+                        activity.getString(R.string.work_loading) -> "LOADING"
+                        else -> "OTHER"
+                    }
+                    childCount = activity.findViewById<LinearLayout>(
+                        R.id.work_versions
+                    ).childCount
+                }
+                throw AssertionError(
+                    "No verified mapping review; statusCode=$statusCode, rows=$childCount"
+                )
+            }
             assertTrue("Review must stay within visible safe bound", candidateCount <= 30)
             assertEquals(null, vault.read(activeProjectId(), pending.id, scope))
             for (index in 0 until candidateCount) {

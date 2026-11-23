@@ -164,6 +164,23 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           script: ./gradlew :collect_app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.odk.collect.android.recordwork.ConnectedBackendTlsSmokeTest,org.odk.collect.android.recordwork.ConnectedRecordDiscoveryTest --no-daemon --stacktrace
+      - name: Verify durable PostgreSQL amendment admission postconditions
+        env:
+          PGPASSWORD: synthetic-ci-only
+        run: |
+          set -euo pipefail
+          query() {
+            psql -tAX -v ON_ERROR_STOP=1 -h 127.0.0.1 -U odk_user -d odk_platform -c "$1"
+          }
+          stale="$(query "SELECT count(*) FROM record_work_items WHERE source_submission_id='81000000-0000-4000-8000-000000000007' AND work_type='AMENDMENT'")"
+          current="$(query "SELECT count(*) FROM record_work_items WHERE source_submission_id='81000000-0000-4000-8000-000000000008' AND work_type='AMENDMENT' AND state='READY'")"
+          links="$(query "SELECT count(*) FROM record_links")"
+          submissions="$(query "SELECT count(*) FROM submissions WHERE id IN ('81000000-0000-4000-8000-000000000007','81000000-0000-4000-8000-000000000008')")"
+          test "$stale" = 0
+          test "$current" = 1
+          test "$links" = 0
+          test "$submissions" = 2
+          echo "PostgreSQL admission assertions PASS: V1=0 V2=1 links=0 submissions=2"
       - name: Cleanup disposable CA, server and temporary store
         if: always()
         run: |

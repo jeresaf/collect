@@ -143,17 +143,13 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
             pending.addView(text(getString(R.string.remote_work_empty)))
         } else {
             snapshot.pendingWork.forEach { task ->
-                pending.addView(Button(this).apply {
-                    text = "${task.type} ${task.visitKey.orEmpty()}\n${task.id}"
-                    isAllCaps = false
-                    setOnClickListener {
-                        val session = activeSession() ?: return@setOnClickListener
-                        runCatching {
-                            RecordWorkNavigation.pending(
-                                this@RecordWorkBrowserActivity, session.projectId, task
-                            )
-                        }.onSuccess { startActivity(it) }
-                    }
+                pending.addView(RecordWorkPendingRow.create(this, task) { selected ->
+                    val session = activeSession() ?: return@create
+                    runCatching {
+                        RecordWorkNavigation.pending(
+                            this@RecordWorkBrowserActivity, session.projectId, selected
+                        )
+                    }.onSuccess { startActivity(it) }
                 })
             }
         }

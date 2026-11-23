@@ -10,6 +10,7 @@ import org.mockito.kotlin.whenever
 import org.odk.collect.settings.SettingsProvider
 import org.odk.collect.settings.keys.ProjectKeys
 import org.odk.collect.shared.settings.Settings
+import java.io.IOException
 import java.net.URL
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
@@ -78,12 +79,36 @@ class ConnectedFollowUpSubmissionTest {
               <meta><instanceID>$instance</instanceID></meta>
             </data>
         """.trimIndent()
-        assertEquals(201, upload(ssl, work.id, body))
-        // Duplicate acknowledgement or upload retry must not make a second visit.
+        // U06-T04C-03C: the real server MUST commit the multipart POST first.
+        // The test-only transport boundary then discards its acknowledgement,
+        // producing an ambiguous IOException at the Android caller.
+        var lostAcknowledgement = false
+        try {
+            upload(ssl, work.id, body, discardCommittedAcknowledgement = true)
+            fail("The caller must not receive the committed 201 acknowledgement")
+        } catch (expected: IOException) {
+            assertEquals("Synthetic post-commit acknowledgement loss", expected.message)
+            lostAcknowledgement = true
+        }
+        assertTrue(lostAcknowledgement)
+
+        // Never interpret a lost acknowledgement as proof that submission
+        // failed. Query the same actor/project over fresh verified HTTPS and
+        // reconcile the stable instanceID before attempting an identical retry.
+        val reconciled = RecordWorkReadOnlyClient(provider, open).load(project)
+        assertEquals(3, reconciled.records.size)
+        val committed = reconciled.records.single { it.instanceId == instance }
+        assertEquals(target, committed.formVersionId)
+        assertFalse(reconciled.pendingWork.any { it.id == work.id })
+
+        // Deliberately force a retry to prove the backend cannot create a
+        // duplicate observation or second link from the same work/instance.
         assertEquals(409, upload(ssl, work.id, body))
 
         val snapshot = RecordWorkReadOnlyClient(provider, open).load(project)
         assertEquals(3, snapshot.records.size)
+        assertEquals(committed.submissionId,
+            snapshot.records.single { it.instanceId == instance }.submissionId)
         assertTrue(snapshot.records.any { it.instanceId == instance &&
             it.formVersionId == target })
         val prior = snapshot.records.single { it.submissionId == source }
@@ -92,7 +117,7 @@ class ConnectedFollowUpSubmissionTest {
         assertFalse(snapshot.pendingWork.any { it.id == work.id })
     }
 
-    private fun upload(ssl: SSLContext, workId: String, xml: String): Int {
+    private fun upload(\n        ssl: SSLContext, workId: String, xml: String,\n        discardCommittedAcknowledgement: Boolean = false\n    ): Int {
         val boundary = "u06multipart" + UUID.randomUUID().toString().replace("-", "")
         val head = (
             "--$boundary\r\n" +
@@ -139,6 +164,12 @@ class ConnectedFollowUpSubmissionTest {
             connection.getInputStreamOrError()?.use { stream ->
                 val buffer = ByteArray(8192)
                 while (stream.read(buffer) >= 0) { /* drain safely */ }
+            }
+            if (discardCommittedAcknowledgement && status == 201) {
+                // CI-only injected loss after a real 201. The calling app
+                // receives no receipt/status; do not silently treat as a
+                // completed network call or claim real packet-loss testing.
+                throw IOException("Synthetic post-commit acknowledgement loss")
             }
             return status
         } finally {

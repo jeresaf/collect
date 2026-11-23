@@ -6,7 +6,7 @@ APP_ID=org.jeresaf.datacollector.android
 CLASS=org.odk.collect.android.recordwork.ConnectedRestartDraftBoundaryTest
 
 ./gradlew :collect_app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=org.odk.collect.android.recordwork.ConnectedBackendTlsSmokeTest,org.odk.collect.android.recordwork.ConnectedRecordDiscoveryTest,org.odk.collect.android.recordwork.ConnectedStaleWorkRecoveryTest,org.odk.collect.android.recordwork.ConnectedRecoveryUiDenialTest,org.odk.collect.android.recordwork.ConfiguredRecordPreparationUiTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=org.odk.collect.android.recordwork.ConnectedBackendTlsSmokeTest,org.odk.collect.android.recordwork.ConnectedRecordDiscoveryTest,org.odk.collect.android.recordwork.ConnectedStaleWorkRecoveryTest,org.odk.collect.android.recordwork.ConnectedRecoveryUiDenialTest \
   --no-daemon --stacktrace
 
 # Gradle's first invocation installed both test and target APKs. Discover the
@@ -42,3 +42,20 @@ echo "U06-T04C-02B: separate instrumentation processes, private ciphertext prese
 run_one independentFollowUpIsCreatedOnceAndOriginalRevisionRemainsImmutable \
   org.odk.collect.android.recordwork.ConnectedFollowUpSubmissionTest
 echo "U06-T04C-03A: real Android HTTPS follow-up upload + replay guard: PASS"
+
+# Real ODK first-launch project configuration uses the full CollectTestRule
+# device/reset lifecycle. It must run from a fresh application state in an
+# independent instrumentation process, not be mixed into the earlier live-API
+# probe suite. The preceding tests have already verified and cleaned their
+# synthetic private draft and confirmed the backend's durable postconditions
+# are checked in the next workflow step.
+adb shell pm clear "$APP_ID" >/dev/null
+ui_output="$(adb shell am instrument -w -e class \
+  org.odk.collect.android.recordwork.ConfiguredRecordPreparationUiTest \
+  "$instrumentation")"
+if ! grep -Eq '^OK \(2 tests\)' <<<"$ui_output" ||
+   grep -Eq '^FAILURES|^INSTRUMENTATION_FAILED' <<<"$ui_output"; then
+  echo "::error::Isolated fresh-project Android UI tests failed (2 expected)"
+  exit 1
+fi
+echo "U06-T04D-03B2A: independent clean-profile Android preparation UI tests PASS"

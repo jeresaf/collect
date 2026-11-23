@@ -40,6 +40,7 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
     private lateinit var formRows: LinearLayout
     private lateinit var saveButton: Button
     private lateinit var approvedImportButton: Button
+    private lateinit var recoveryButton: Button
     private lateinit var progress: ProgressBar
     private lateinit var settings: SettingsProvider
     private var activeBinding: QuarantinedWorkDraft? = null
@@ -100,6 +101,13 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
         }
         content.addView(approvedImportButton)
         content.addView(saveButton)
+        recoveryButton = Button(this).apply {
+            text = "Review server records (manual recovery)"
+            isEnabled = false
+            visibility = View.GONE
+            setOnClickListener { reviewConflict() }
+        }
+        content.addView(recoveryButton)
         content.addView(TextView(this).apply {
             setText(R.string.private_text_editor_never_submit)
         })
@@ -143,6 +151,8 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
     )
 
     private fun open() {
+        recoveryButton.visibility = View.GONE
+        recoveryButton.isEnabled = false
         saveButton.isEnabled = false
         progress.visibility = View.VISIBLE
         status.setText(R.string.private_text_editor_loading)
@@ -184,6 +194,8 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
     }
 
     private fun render(result: OpenResult) {
+        recoveryButton.visibility = View.GONE
+        recoveryButton.isEnabled = false
         activeBinding = result.binding
         formFields = result.fields
         formPaths = result.fields.map { it.path }
@@ -402,7 +414,19 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
         }
     }
 
+    private fun reviewConflict() {
+        if (recoveryButton.visibility != View.VISIBLE || !activeProjectMatches() ||
+            !runCatching { vault().read(projectId, workId, actorHash()) != null }
+                .getOrDefault(false)) return reject()
+        startActivity(QuarantinedConflictReviewActivity.intentFor(
+            this, projectId, workId))
+    }
+
     private fun reject(error: Throwable? = null) {
+        val outcome = error?.let(ProtectedWorkRecovery::forFailure)
+        recoveryButton.visibility = if (outcome?.mayManuallyReviewServerRecords == true)
+            View.VISIBLE else View.GONE
+        recoveryButton.isEnabled = outcome?.mayManuallyReviewServerRecords == true
         activeBinding = null
         formPaths = emptyList()
         formFields = emptyList()

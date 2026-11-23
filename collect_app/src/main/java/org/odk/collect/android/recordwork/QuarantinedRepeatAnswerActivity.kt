@@ -248,11 +248,10 @@ class QuarantinedRepeatAnswerActivity : LocalizedActivity() {
                     status.setText(R.string.private_repeat_answer_saved)
                     save.isEnabled = true
                 }.onFailure { error ->
-                    // On 409 the encrypted previous repeat answers remain in
-                    // the private vault, but editing must stop until a new
-                    // server-issued work item is explicitly reviewed.
-                    status.text = ProtectedWorkRecovery.forFailure(error).message
-                    save.isEnabled = false
+                    // A failed server recheck must not leave older repeated
+                    // answers rendered for a revoked or changed account.
+                    // Saved ciphertext remains untouched in the vault.
+                    deny(error)
                 }
             }
         }
@@ -267,6 +266,22 @@ class QuarantinedRepeatAnswerActivity : LocalizedActivity() {
         spinner.visibility = View.GONE
         if (error == null) status.setText(R.string.private_repeat_answer_denied)
         else status.text = ProtectedWorkRecovery.forFailure(error).message
+    }
+
+    override fun onStop() {
+        // Wipe plaintext EditTexts on backgrounding. On returning to the
+        // activity, decrypt only after a new online authorization succeeds.
+        generation++
+        deny()
+        super.onStop()
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        if (projectId.isNotBlank() && validUuid(workId) &&
+            validUuid(rowId) && activeProjectMatches()) {
+            open()
+        } else deny()
     }
 
     override fun onDestroy() {

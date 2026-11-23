@@ -53,9 +53,9 @@ adb shell pm clear "$APP_ID" >/dev/null
 ui_output="$(adb shell am instrument -w -e class \
   org.odk.collect.android.recordwork.ConfiguredRecordPreparationUiTest \
   "$instrumentation")"
-if ! grep -Eq '^OK \(3 tests\)' <<<"$ui_output" ||
+if ! grep -Eq '^OK \(4 tests\)' <<<"$ui_output" ||
    grep -Eq '^FAILURES|^INSTRUMENTATION_FAILED' <<<"$ui_output"; then
-  echo "::error::Isolated fresh-project Android UI tests failed (3 expected)"
+  echo "::error::Isolated fresh-project Android UI tests failed (4 expected)"
   exit 1
 fi
-echo "U06-T04D-03B2B: three clean-profile Android preparation UI tests PASS"
+echo "U06-T04D-04A: four clean-profile Android preparation/browser UI tests PASS"

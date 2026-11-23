@@ -1,6 +1,16 @@
 package org.odk.collect.android.recordwork
 
 import android.view.View
+import android.content.Intent
+import android.widget.LinearLayout
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.action.ViewActions.click
+import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.withId
+import androidx.test.espresso.matcher.ViewMatchers.withText
+import org.hamcrest.Matchers.allOf
+import org.hamcrest.Matchers.containsString
 import android.widget.Button
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
@@ -168,6 +178,70 @@ class ConfiguredRecordPreparationUiTest {
                         .text.toString().contains("Synthetic V1"))
                 }
             }
+        }
+    }
+
+
+    /**
+     * U06-T04D-04A: a fully configured Android project performs the genuine
+     * authenticated GET inside the real RecordWorkBrowserActivity. The
+     * operator then taps the historical V1 row and Android launches the
+     * production preparation Activity, with AMENDMENT still unavailable.
+     *
+     * Ephemeral CA trust is injected into the *debug APK only* by CI before
+     * compilation. Release network trust configuration is unchanged.
+     */
+    @Test
+    fun realBrowserActivityFetchesServerRowsAndOpensHistoricalPrepareActivity() {
+        rule.startAtFirstLaunch()
+            .clickManuallyEnterProjectDetails()
+            .inputUrl("https://10.0.2.2:8443/v1/projects/81000000-0000-4000-8000-000000000001")
+            .inputUsername("u06-connected-owner")
+            .inputPassword("u06-disposable-only")
+            .addProject()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        ActivityScenario.launch<RecordWorkBrowserActivity>(
+            Intent(context, RecordWorkBrowserActivity::class.java)
+        ).use { scenario ->
+            var discovered = false
+            for (attempt in 1..80) {
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                scenario.onActivity { activity ->
+                    val container = activity.findViewById<LinearLayout>(
+                        R.id.remote_records_list
+                    )
+                    val labels = (0 until container.childCount)
+                        .map { container.getChildAt(it) }
+                        .filterIsInstance<Button>()
+                        .map { it.text.toString() }
+                    discovered = labels.any { it.contains(source) &&
+                        it.contains("Historical record") } &&
+                        labels.any { it.contains(corrected) && it.contains("server rechecks") }
+                }
+                if (discovered) break
+                Thread.sleep(250)
+            }
+            assertTrue(
+                "The actual browser must fetch both owned V1/V2 records through app HTTPS",
+                discovered
+            )
+            // Not a synthetic component callback: Espresso taps the real
+            // dynamically rendered record row inside RecordWorkBrowserActivity.
+            onView(allOf(
+                withText(containsString(source)),
+                androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom(Button::class.java)
+            )).perform(click())
+            onView(withId(R.id.work_followup)).check(matches(isDisplayed()))
+            onView(withId(R.id.work_create)).check(matches(
+                androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility(
+                    androidx.test.espresso.matcher.ViewMatchers.Visibility.GONE
+                )
+            ))
+            onView(withId(R.id.work_amend)).check(matches(
+                androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility(
+                    androidx.test.espresso.matcher.ViewMatchers.Visibility.GONE
+                )
+            ))
         }
     }
 

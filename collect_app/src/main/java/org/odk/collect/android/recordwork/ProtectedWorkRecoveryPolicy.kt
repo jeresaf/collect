@@ -20,6 +20,12 @@ class ProtectedWorkRecovery private constructor(val failure: ProtectedWorkFailur
     val canUpload: Boolean get() = false
     val mayAutomaticallyRetargetSource: Boolean get() = false
     val mayAutomaticallyRetrySubmission: Boolean get() = false
+    // A manual navigation to the existing authenticated READ-ONLY records
+    // browser is not authorization to access, retarget or send this draft.
+    // Only conflict/completed work offers this route; revoked users must
+    // first restore access, and outages cannot be called "reconciled".
+    val mayManuallyReviewServerRecords: Boolean
+        get() = failure == ProtectedWorkFailure.STALE_OR_COMPLETED
 
     val message: String
         get() = when (failure) {

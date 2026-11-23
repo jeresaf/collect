@@ -2,7 +2,7 @@ name: U06-T04A Connected Android HTTPS Smoke (experimental)
 
 on:
   push:
-    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission, codex/u06-t04c02-stale-recovery, codex/u06-t04c02b-draft-restart]
+    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission, codex/u06-t04c02-stale-recovery, codex/u06-t04c02b-draft-restart, codex/u06-t04c03a-followup-submission]
   workflow_dispatch:
 
 permissions:
@@ -180,9 +180,19 @@ jobs:
           test "$stale" = 0
           test "$current" = 1
           test "$followups" = 1
-          test "$links" = 0
+          test "$links" = 1
+          completed="$(query "SELECT count(*) FROM record_work_items WHERE work_type='FOLLOW_UP' AND state='COMPLETED' AND source_submission_id='81000000-0000-4000-8000-000000000007' AND visit_key LIKE 'completed-visit-%'")"
+          child="$(query "SELECT count(*) FROM record_links r JOIN record_work_items w ON w.id=r.work_item_id JOIN submissions s ON s.id=r.child_submission_id WHERE r.source_submission_id='81000000-0000-4000-8000-000000000007' AND r.link_type='FOLLOW_UP' AND s.form_version_id='81000000-0000-4000-8000-000000000004' AND s.xml_content LIKE '%Synthetic independent later visit%' AND w.state='COMPLETED'")"
+          original_xml="$(query "SELECT count(*) FROM submissions WHERE id='81000000-0000-4000-8000-000000000007' AND xml_content LIKE '%Synthetic V1%'")"
+          untouched_archive="$(query "SELECT count(*) FROM submission_versions WHERE submission_id='81000000-0000-4000-8000-000000000007' AND xml_content LIKE '%Synthetic V1%'")"
+          all_submissions="$(query "SELECT count(*) FROM submissions WHERE form_id='81000000-0000-4000-8000-000000000002'")"
+          test "$completed" = 1
+          test "$child" = 1
+          test "$original_xml" = 1
+          test "$untouched_archive" = 1
+          test "$all_submissions" = 3
           test "$submissions" = 2
-          echo "PostgreSQL admission assertions PASS: V1 amendment=0 V2 amendment=1 V1 second visit=1 links=0 submissions=2"
+          echo "PostgreSQL admission + follow-up submission assertions PASS: V1 amendment=0 V2 amendment=1 V1 planned visit=1 linked completed visit=1 links=1 total submissions=3 and source/archive preserved"
       - name: Cleanup disposable CA, server and temporary store
         if: always()
         run: |

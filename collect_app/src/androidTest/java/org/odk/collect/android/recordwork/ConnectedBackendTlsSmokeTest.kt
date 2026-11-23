@@ -57,7 +57,13 @@ class ConnectedBackendTlsSmokeTest {
         connection.requestMethod = "GET"
         try {
             assertEquals(200, connection.responseCode)
-            assertTrue(connection.contentType.startsWith("application/json"))
+            val mediaType = connection.contentType?.substringBefore(';')?.trim()?.lowercase()
+            assertTrue(
+                "Health endpoint must return a JSON media type",
+                mediaType == "application/json" ||
+                    (mediaType?.startsWith("application/") == true &&
+                        mediaType.endsWith("+json"))
+            )
             val response = connection.inputStream.bufferedReader().use { it.readText() }
             assertEquals("UP", JSONObject(response).getString("status"))
         } finally {

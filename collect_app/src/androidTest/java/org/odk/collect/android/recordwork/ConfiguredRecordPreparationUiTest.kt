@@ -12,6 +12,7 @@ import androidx.test.espresso.matcher.ViewMatchers.withText
 import org.hamcrest.Matchers.allOf
 import org.hamcrest.Matchers.containsString
 import android.widget.Button
+import android.widget.EditText
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -34,6 +35,7 @@ import org.odk.collect.shared.settings.Settings
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import java.net.URL
+import java.util.UUID
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
 import javax.net.ssl.HttpsURLConnection
@@ -322,6 +324,99 @@ class ConfiguredRecordPreparationUiTest {
         val after = connectedClient().load("81000000-0000-4000-8000-000000000001")
             .pendingWork.map { it.id }.toSet()
         assertEquals("Browsing target versions must never POST work", before, after)
+    }
+
+
+    /**
+     * U06-T04D-04B2: user-confirmed FOLLOW_UP creation through the real
+     * preparation Activity against the real Spring/Postgres work API.
+     * Explicit approval must create exactly one server-owned READY work item
+     * with a unique visit key, but no new submitted household observation.
+     */
+    @Test
+    fun confirmedSecondVisitCreatesExactlyOneReadyWorkWithoutSubmittingObservation() {
+        rule.startAtFirstLaunch()
+            .clickManuallyEnterProjectDetails()
+            .inputUrl("https://10.0.2.2:8443/v1/projects/81000000-0000-4000-8000-000000000001")
+            .inputUsername("u06-connected-owner")
+            .inputPassword("u06-disposable-only")
+            .addProject()
+        val backendProject = "81000000-0000-4000-8000-000000000001"
+        val before = connectedClient().load(backendProject)
+        val record = before.records.single { it.submissionId == source }
+        assertEquals(RemoteAmendmentRevision.SUPERSEDED, record.amendmentRevision)
+        val visit = "u06-ui-create-" + UUID.randomUUID().toString()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        ActivityScenario.launch<RecordWorkPrepareActivity>(
+            RecordWorkNavigation.record(context, activeProjectId(), record)
+        ).use { scenario ->
+            onView(withId(R.id.work_amend)).check(matches(
+                androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility(
+                    androidx.test.espresso.matcher.ViewMatchers.Visibility.GONE
+                )
+            ))
+            onView(withId(R.id.work_followup)).perform(click())
+            var ready = false
+            for (attempt in 1..80) {
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                scenario.onActivity { activity ->
+                    val versions = activity.findViewById<LinearLayout>(R.id.work_versions)
+                    ready = (0 until versions.childCount).any {
+                        val item = versions.getChildAt(it)
+                        item is Button && item.text.toString().contains("Version ")
+                    }
+                }
+                if (ready) break
+                Thread.sleep(250)
+            }
+            assertTrue("Server must authorize at least one follow-up target", ready)
+            scenario.onActivity { activity ->
+                val buttons = activity.findViewById<LinearLayout>(R.id.work_versions)
+                val chosen = (0 until buttons.childCount)
+                    .map { buttons.getChildAt(it) }
+                    .filterIsInstance<Button>()
+                    .firstOrNull { it.text.toString().contains("(latest)") }
+                    ?: (buttons.getChildAt(0) as Button)
+                assertTrue(chosen.performClick())
+                val input = activity.findViewById<EditText>(R.id.work_visit_key)
+                assertEquals(View.VISIBLE, input.visibility)
+                input.setText(visit)
+                assertEquals(View.VISIBLE,
+                    activity.findViewById<View>(R.id.work_create).visibility)
+            }
+            val unconfirmed = connectedClient().load(backendProject).pendingWork
+            assertEquals("Target selection and visit-key entry cannot create work",
+                before.pendingWork.map { it.id }.toSet(),
+                unconfirmed.map { it.id }.toSet())
+            onView(withId(R.id.work_create)).perform(click())
+            // Material confirmation is mandatory; an open dialog has no
+            // backend side effect until the operator explicitly approves.
+            assertEquals(before.pendingWork.map { it.id }.toSet(),
+                connectedClient().load(backendProject).pendingWork.map { it.id }.toSet())
+            onView(withText(android.R.string.ok)).perform(click())
+
+            var created: RemoteVisitWork? = null
+            for (attempt in 1..120) {
+                val pending = connectedClient().load(backendProject).pendingWork
+                created = pending.singleOrNull { it.visitKey == visit }
+                if (created != null) break
+                Thread.sleep(250)
+            }
+            val confirmed = requireNotNull(created) {
+                "User-approved visit must appear as server-owned READY follow-up"
+            }
+            assertEquals(source, confirmed.sourceSubmissionId)
+            assertEquals(RecordWorkType.FOLLOW_UP, confirmed.type)
+            assertTrue(UUID.fromString(confirmed.id).toString() == confirmed.id)
+            assertEquals(visit, confirmed.visitKey)
+            assertFalse(confirmed.id in before.pendingWork.map { it.id }.toSet())
+            assertEquals(1, connectedClient().load(backendProject)
+                .pendingWork.count { it.visitKey == visit })
+            // The original household remains historical and untouched.
+            assertEquals(RemoteAmendmentRevision.SUPERSEDED,
+                connectedClient().load(backendProject).records
+                    .single { it.submissionId == source }.amendmentRevision)
+        }
     }
 
     private fun connectedClient(): RecordWorkReadOnlyClient {

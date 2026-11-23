@@ -340,11 +340,10 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
                     return@runOnUiThread
                 progress.visibility = View.GONE
                 result.onSuccess { open() }.onFailure { error ->
-                    // Do not erase encrypted local answers on a stale work or
-                    // temporary network failure. No automatic transfer retry.
-                    status.text = ProtectedWorkRecovery.forFailure(error).message
-                    saveButton.isEnabled = false
-                    approvedImportButton.isEnabled = false
+                    // Clear potentially sensitive on-screen answers whenever
+                    // the server no longer authorizes this exact work. Only
+                    // already encrypted/saved values remain in private storage.
+                    reject(error)
                 }
             }
         }
@@ -394,11 +393,10 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
                     status.setText(R.string.private_text_editor_saved)
                     saveButton.isEnabled = true
                 }.onFailure { error ->
-                    // Fixed, non-sensitive recovery message. Preserve the
-                    // existing private AES-GCM draft, never auto-resubmit.
-                    status.text = ProtectedWorkRecovery.forFailure(error).message
-                    saveButton.isEnabled = false
-                    approvedImportButton.isEnabled = false
+                    // Even if the server revoked access while the form was
+                    // open, no fields or unsaved answers may stay on screen.
+                    // reject() does not delete the encrypted private vault.
+                    reject(error)
                 }
             }
         }
@@ -416,6 +414,24 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
         progress.visibility = View.GONE
         if (error == null) status.setText(R.string.private_text_editor_denied)
         else status.text = ProtectedWorkRecovery.forFailure(error).message
+    }
+
+    override fun onStop() {
+        // The editor must not leave plaintext answers in views while its
+        // account/project may be switched or its server authority revoked.
+        // No disk writes or ciphertext deletion occur in reject().
+        generation++
+        reject()
+        super.onStop()
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        // Every foreground return requires a new authenticated READY check;
+        // encrypted drafts are reopened only after that check succeeds.
+        if (isUuid(workId) && projectId.isNotBlank() && activeProjectMatches()) {
+            open()
+        } else reject()
     }
 
     override fun onDestroy() {

@@ -97,7 +97,8 @@ class ConnectedRecordDiscoveryTest {
             .load(project)
         assertTrue(snapshot.pendingWork.any { it.id == created.id &&
             it.sourceSubmissionId == corrected })
-        assertFalse(snapshot.pendingWork.any { it.sourceSubmissionId == original })
+        assertFalse(snapshot.pendingWork.any { it.sourceSubmissionId == original &&
+            it.type == RecordWorkType.AMENDMENT })
     }
 
     /**

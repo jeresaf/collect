@@ -419,6 +419,58 @@ class ConfiguredRecordPreparationUiTest {
         }
     }
 
+
+    /**
+     * U06-T04E-01: an authorized server READY work item alone MUST NOT grant
+     * access to the protected editor. Until the operator approves mappings,
+     * JavaRosa checks the target and an inert, actor-bound quarantine entry
+     * exists, opening the editor via a forged Intent must fail closed.
+     *
+     * The preceding connected test creates this server-owned READY work;
+     * the test runner executes these full first-launch methods sequentially
+     * as separate Android instrumentation processes with a cleared profile.
+     */
+    @Test
+    fun serverReadyFollowUpWithoutLocalApprovalCannotOpenProtectedEditor() {
+        rule.startAtFirstLaunch()
+            .clickManuallyEnterProjectDetails()
+            .inputUrl("https://10.0.2.2:8443/v1/projects/81000000-0000-4000-8000-000000000001")
+            .inputUsername("u06-connected-owner")
+            .inputPassword("u06-disposable-only")
+            .addProject()
+        val project = "81000000-0000-4000-8000-000000000001"
+        val snapshot = connectedClient().load(project)
+        val pending = snapshot.pendingWork.single {
+            it.type == RecordWorkType.FOLLOW_UP &&
+                it.visitKey?.startsWith("u06-ui-create-") == true
+        }
+        assertEquals(source, pending.sourceSubmissionId)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        assertEquals(null, QuarantinedWorkDraftVault(context.noBackupFilesDir)
+            .read(activeProjectId(), pending.id,
+                QuarantinedWorkDraftVault.sha256(
+                    activeProjectId() + "\n" +
+                    RecordWorkApiPaths.fromProjectUrl(
+                        "https://10.0.2.2:8443/v1/projects/$project"
+                    ).records() + "\n" + "u06-connected-owner"
+                )))
+        ActivityScenario.launch<QuarantinedTextDraftActivity>(
+            QuarantinedTextDraftActivity.intentFor(context, activeProjectId(), pending.id)
+        ).use { scenario ->
+            // Even though the work ID exists server-side, no reviewed binding
+            // exists on this device. The editor cannot expose any questions,
+            // private answers or a Save/Finalize/Send route.
+            scenario.onActivity { activity ->
+                val save = activity.findViewById<Button>(
+                    org.odk.collect.android.R.id.private_text_editor_save
+                )
+                assertFalse(save.isEnabled)
+            }
+        }
+        assertEquals(snapshot.pendingWork.map { it.id }.toSet(),
+            connectedClient().load(project).pendingWork.map { it.id }.toSet())
+    }
+
     private fun connectedClient(): RecordWorkReadOnlyClient {
         val backendProject = "81000000-0000-4000-8000-000000000001"
         val settings = mock<Settings>()

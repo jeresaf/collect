@@ -202,7 +202,7 @@ jobs:
           test "$untouched_original_media" = 0
           stored_path="$(query "SELECT sa.storage_path FROM submission_attachments sa JOIN record_links l ON l.child_submission_id=sa.submission_id WHERE l.link_type='FOLLOW_UP' AND sa.file_name='u06-followup-photo.jpg'")"
           test -f "$stored_path"
-          test "$(xxd -p "$stored_path" | tr -d '\\n')" = 'ffd8ffe000104a464946000111223344ffd9'
+          test "$(xxd -p "$stored_path" | tr -d '\n')" = 'ffd8ffe000104a464946000111223344ffd9'
           stored_hash="$(query "SELECT sa.content_hash FROM submission_attachments sa JOIN record_links l ON l.child_submission_id=sa.submission_id WHERE l.link_type='FOLLOW_UP' AND sa.file_name='u06-followup-photo.jpg'")"
           test "$(sha256sum "$stored_path" | cut -d' ' -f1)" = "$stored_hash"
           echo "PostgreSQL repeat/media assertions PASS: two indexed child repeats, linked photo, byte-verified media and unchanged original"

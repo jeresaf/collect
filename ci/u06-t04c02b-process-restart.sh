@@ -77,12 +77,21 @@ test ! -e collect_app/src/main/res/raw/u06_ci_ephemeral_ca.pem
 # The existing AndroidTest APK remains installed. A clean app profile
 # avoids carrying stale authenticated context into first-launch UI tests.
 adb shell pm clear "$APP_ID" >/dev/null
-ui_output="$(adb shell am instrument -w -e class \
+# Capture the UI runner's actual result even when adb itself returns a
+# nonzero status. The prior run collapsed every UI failure into a generic
+# "4 expected" line; keep synthetic data out of CI logs.
+ui_output_file=/tmp/u06-t04d04a-ui-instrumentation.txt
+adb shell am instrument -w -e class \
   org.odk.collect.android.recordwork.ConfiguredRecordPreparationUiTest \
-  "$instrumentation")"
-if ! grep -Eq '^OK \(4 tests\)' <<<"$ui_output" ||
-   grep -Eq '^FAILURES|^INSTRUMENTATION_FAILED' <<<"$ui_output"; then
+  "$instrumentation" >"$ui_output_file" 2>&1 || true
+if ! grep -Eq '^OK \(4 tests\)' "$ui_output_file" ||
+   grep -Eq '^FAILURES|^INSTRUMENTATION_FAILED' "$ui_output_file"; then
   echo "::error::Isolated fresh-project Android UI tests failed (4 expected)"
+  # Emit only test names, failure classification and redacted stack frames,
+  # not complete runner output, URLs, HTTP headers or credentials.
+  grep -E 'INSTRUMENTATION_STATUS: (class|test|numtests)|^FAILURES|^INSTRUMENTATION_FAILED|^INSTRUMENTATION_RESULT: shortMsg|^OK \(|^Time:|^Tests run:|^java\.lang\.(AssertionError|RuntimeException)|^android\.(view|os)\.' "$ui_output_file" \
+    | sed -E 's/(password|Authorization|Basic )[^[:space:]]*/[REDACTED]/g' \
+    | tail -n 70 || true
   exit 1
 fi
 echo "U06-T04D-04A: four clean-profile Android preparation/browser UI tests PASS"

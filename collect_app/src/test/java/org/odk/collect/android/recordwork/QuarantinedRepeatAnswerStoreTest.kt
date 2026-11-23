@@ -146,7 +146,11 @@ class QuarantinedRepeatAnswerStoreTest {
         val (binding, session) = fixture()
         val row = rows().addRow(binding, session.schema, group, uuid())
         val initial = mapOf(namePath to "SENSITIVE_REPEAT_PERSON", agePath to "31")
-        store().save(binding, session, row.rowId, initial)
+        // JavaRosa may fill blank native repeat fields, so compare the
+        // validated output accepted at save to the subsequent validated read.
+        val saved = store().save(binding, session, row.rowId, initial)
+        assertEquals("SENSITIVE_REPEAT_PERSON", saved.values[namePath])
+        assertEquals("31", saved.values[agePath])
         val file = File(folder(), "repeat-answer-" + row.rowId + ".aesgcm")
         val originalBytes = file.readBytes()
         val beforeIds = rows().read(binding, session.schema).rows.map { it.rowId }
@@ -163,7 +167,9 @@ class QuarantinedRepeatAnswerStoreTest {
             assertEquals(beforeIds,
                 rows().read(binding, session.schema).rows.map { it.rowId })
             val recovered = store().read(binding, session, row.rowId)
-            assertEquals(initial, recovered.values)
+            assertEquals(saved.values, recovered.values)
+            assertEquals(initial[namePath], recovered.values[namePath])
+            assertEquals(initial[agePath], recovered.values[agePath])
             assertFalse(recovered.canUpload)
         }
         assertFalse(file.readBytes().toString(Charsets.ISO_8859_1)

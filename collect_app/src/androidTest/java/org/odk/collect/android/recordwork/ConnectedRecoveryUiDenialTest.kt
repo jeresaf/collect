@@ -71,6 +71,81 @@ class ConnectedRecoveryUiDenialTest {
         }
     }
 
+
+    /**
+     * A deep link or restored intent claiming that a historical record is
+     * amendable must not override the active project binding. Test both a
+     * forged "current" amendment hint and a forged pre-existing work item.
+     */
+    @Test
+    fun forgedProjectAndAmendmentHintCannotEnableMutationOnAndroid() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val wrongProject = "93000000-0000-4000-8000-000000000001"
+        val source = "93000000-0000-4000-8000-000000000002"
+        val intent = Intent(context, RecordWorkPrepareActivity::class.java)
+            .putExtra(RecordWorkPrepareActivity.EXTRA_PROJECT, wrongProject)
+            .putExtra(RecordWorkPrepareActivity.EXTRA_SOURCE, source)
+            .putExtra(RecordWorkPrepareActivity.EXTRA_SOURCE_CAN_AMEND, true)
+            .putExtra(RecordWorkPrepareActivity.EXTRA_WORK,
+                "93000000-0000-4000-8000-000000000003")
+            .putExtra(RecordWorkPrepareActivity.EXTRA_TARGET,
+                "93000000-0000-4000-8000-000000000004")
+            .putExtra(RecordWorkPrepareActivity.EXTRA_TYPE, "AMENDMENT")
+        ActivityScenario.launch<RecordWorkPrepareActivity>(intent).use { scenario ->
+            fun check(activity: RecordWorkPrepareActivity) {
+                assertEquals(View.GONE,
+                    activity.findViewById<View>(R.id.work_amend).visibility)
+                assertEquals(View.GONE,
+                    activity.findViewById<View>(R.id.work_followup).visibility)
+                assertEquals(View.GONE,
+                    activity.findViewById<View>(R.id.work_create).visibility)
+                assertEquals(View.GONE,
+                    activity.findViewById<View>(R.id.work_visit_key).visibility)
+                assertEquals(0,
+                    (activity.findViewById<View>(R.id.work_versions)
+                        as android.widget.LinearLayout).childCount)
+                val status = activity.findViewById<TextView>(R.id.work_status).text.toString()
+                assertTrue("Foreign project must fail closed", status.isNotBlank())
+            }
+            scenario.onActivity(::check)
+            scenario.recreate()
+            scenario.onActivity(::check)
+        }
+    }
+
+    @Test
+    fun forgedConflictIdentifiersNeverRevealRecoveryNavigation() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val intent = QuarantinedConflictReviewActivity.intentFor(
+            context,
+            "93000000-0000-4000-8000-000000000001",
+            "93000000-0000-4000-8000-000000000003"
+        )
+        ActivityScenario.launch<QuarantinedConflictReviewActivity>(intent).use { scenario ->
+            scenario.onActivity { activity ->
+                val content = activity.findViewById<View>(android.R.id.content)
+                val views = mutableListOf<View>()
+                fun walk(view: View) {
+                    views.add(view)
+                    if (view is android.view.ViewGroup) {
+                        for (i in 0 until view.childCount) walk(view.getChildAt(i))
+                    }
+                }
+                walk(content)
+                assertTrue(
+                    "Unauthorized conflict navigation must stay hidden",
+                    views.filterIsInstance<Button>().all {
+                        it.visibility != View.VISIBLE && !it.isEnabled
+                    }
+                )
+                assertFalse(views.filterIsInstance<TextView>()
+                    .filter { it.visibility == View.VISIBLE }
+                    .joinToString("\n") { it.text.toString() }
+                    .contains("Work ID:"))
+            }
+        }
+    }
+
     @Test
     fun prepareScreenWithoutValidSourceKeepsEveryMutationActionHidden() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

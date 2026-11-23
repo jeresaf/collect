@@ -4,12 +4,8 @@ import org.odk.collect.android.formmanagement.metadata.FormMetadataParser
 import org.w3c.dom.Document
 import org.w3c.dom.Element
 import org.w3c.dom.Node
-import org.xml.sax.InputSource
 import java.io.ByteArrayInputStream
-import java.io.StringReader
 import java.security.MessageDigest
-import javax.xml.XMLConstants
-import javax.xml.parsers.DocumentBuilderFactory
 
 /**
  * M4C-1 deliberately read-only: no answer extraction, migration, persistence,
@@ -213,18 +209,7 @@ object CrossVersionAssessmentEngine {
     private data class ChoiceInfo(val dynamic: Boolean, val allowed: Set<String>)
 
     private fun hardenedParse(xml: String): Document {
-        val factory = DocumentBuilderFactory.newInstance()
-        factory.isNamespaceAware = true
-        factory.isXIncludeAware = false
-        factory.isExpandEntityReferences = false
-        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true)
-        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-        factory.setFeature("http://xml.org/sax/features/external-general-entities", false)
-        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-        factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
-        return factory.newDocumentBuilder().apply {
-            setEntityResolver { _, _ -> throw IllegalArgumentException("External entities forbidden") }
-        }.parse(InputSource(StringReader(xml))).also {
+        return RecordWorkSafeXml.parse(xml, MAX_XML_CHARS, MAX_DEPTH, MAX_FIELDS * 8).also {
             require(it.documentElement != null) { "Missing root" }
             // Bound *all* parsed XForm nodes, not just nodes inside its
             // primary instance. Deep body/model/choice hierarchies otherwise

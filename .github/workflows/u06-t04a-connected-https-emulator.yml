@@ -2,7 +2,7 @@ name: U06-T04A Connected Android HTTPS Smoke (experimental)
 
 on:
   push:
-    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission, codex/u06-t04c02-stale-recovery, codex/u06-t04c02b-draft-restart, codex/u06-t04c03a-followup-submission]
+    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission, codex/u06-t04c02-stale-recovery, codex/u06-t04c02b-draft-restart, codex/u06-t04c03a-followup-submission, codex/u06-t04c03b-repeats-media]
   workflow_dispatch:
 
 permissions:
@@ -192,6 +192,20 @@ jobs:
           test "$untouched_archive" = 1
           test "$all_submissions" = 3
           test "$submissions" = 2
+          repeat_rows="$(query "SELECT count(*) FROM submission_answers a JOIN record_links l ON l.child_submission_id=a.submission_id WHERE l.link_type='FOLLOW_UP' AND a.path IN ('children[0]/child_age_text','children[1]/child_age_text')")"
+          repeat_names="$(query "SELECT count(*) FROM submission_answers a JOIN record_links l ON l.child_submission_id=a.submission_id WHERE l.link_type='FOLLOW_UP' AND a.path IN ('children[0]/child_name','children[1]/child_name')")"
+          photo_link="$(query "SELECT count(*) FROM submission_attachments sa JOIN record_links l ON l.child_submission_id=sa.submission_id JOIN submission_answers a ON a.id=sa.answer_id WHERE l.link_type='FOLLOW_UP' AND sa.file_name='u06-followup-photo.jpg' AND a.path='photo'")"
+          untouched_original_media="$(query "SELECT count(*) FROM submission_attachments WHERE submission_id='81000000-0000-4000-8000-000000000007'")"
+          test "$repeat_rows" = 2
+          test "$repeat_names" = 2
+          test "$photo_link" = 1
+          test "$untouched_original_media" = 0
+          stored_path="$(query "SELECT sa.storage_path FROM submission_attachments sa JOIN record_links l ON l.child_submission_id=sa.submission_id WHERE l.link_type='FOLLOW_UP' AND sa.file_name='u06-followup-photo.jpg'")"
+          test -f "$stored_path"
+          test "$(xxd -p "$stored_path" | tr -d '\\n')" = 'ffd8ffe000104a464946000111223344ffd9'
+          stored_hash="$(query "SELECT sa.content_hash FROM submission_attachments sa JOIN record_links l ON l.child_submission_id=sa.submission_id WHERE l.link_type='FOLLOW_UP' AND sa.file_name='u06-followup-photo.jpg'")"
+          test "$(sha256sum "$stored_path" | cut -d' ' -f1)" = "$stored_hash"
+          echo "PostgreSQL repeat/media assertions PASS: two indexed child repeats, linked photo, byte-verified media and unchanged original"
           echo "PostgreSQL admission + follow-up submission assertions PASS: V1 amendment=0 V2 amendment=1 V1 planned visit=1 linked completed visit=1 links=1 total submissions=3 and source/archive preserved"
       - name: Cleanup disposable CA, server and temporary store
         if: always()

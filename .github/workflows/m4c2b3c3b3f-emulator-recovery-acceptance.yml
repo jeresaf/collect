@@ -60,10 +60,9 @@ jobs:
           profile: pixel_6
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           disable-animations: true
-          script: |
-            ./gradlew :collect_app:connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.class=org.odk.collect.android.recordwork.U06OfflineConflictEmulatorIT \
-              --no-daemon --stacktrace
+          # This action executes the script as /bin/sh -c. Keep it on one
+          # line: line-continuation slashes become literal Gradle task names.
+          script: ./gradlew :collect_app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.odk.collect.android.recordwork.U06OfflineConflictEmulatorIT --no-daemon --stacktrace
       - name: Recheck branded APK identity
         if: success()
         run: |

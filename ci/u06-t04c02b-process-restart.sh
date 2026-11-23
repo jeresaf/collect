@@ -93,7 +93,11 @@ do
   if ! grep -Eq '^OK \(1 test\)' "$ui_output_file" ||
      grep -Eq '^FAILURES|^INSTRUMENTATION_FAILED' "$ui_output_file"; then
     echo "::error::Isolated Android first-launch UI method FAILED: ${method}"
-    grep -E "^FAILURES|^INSTRUMENTATION_FAILED|^Tests run:|^Time:" "$ui_output_file" | tail -n 5 || true
+    # Emit only exception type and Android/Espresso/application stack methods.
+    # Do not print assertion messages containing server response bodies or
+    # connection/credential values; raw output stays local to the runner.
+    grep -E '^FAILURES|^INSTRUMENTATION_FAILED|^Tests run:|^Time:|^java\\.lang\\.(AssertionError|RuntimeException|IllegalStateException)|^androidx\\.test\\.espresso\\.[A-Za-z.]+Exception|^[[:space:]]+at (org\\.odk\\.collect\\.android\\.recordwork\\.|androidx\\.test\\.espresso\\.|androidx\\.test\\.core\\.app\\.)' "$ui_output_file" \\
+      | sed -E 's/\\([^)]*https?:\\/\\/[^)]*\\)/([REDACTED])/g' | tail -n 35 || true
     exit 1
   fi
   echo "Android first-launch UI method PASS: ${method}"

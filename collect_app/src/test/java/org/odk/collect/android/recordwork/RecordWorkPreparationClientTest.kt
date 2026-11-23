@@ -584,6 +584,54 @@ class RecordWorkPreparationClientTest {
     }
 
     @Test
+    fun `stale protected editor refresh preserves typed HTTP 409 through parser`() {
+        val (settings, _) = projectSettings()
+        val actorScope = QuarantinedWorkDraftVault.sha256(
+            project + "\n" + RecordWorkApiPaths.fromProjectUrl(base).records() +
+                "\n" + "enumerator"
+        )
+        val binding = QuarantinedWorkDraft(
+            projectId = project,
+            actorContextSha256 = actorScope,
+            workId = workId,
+            sourceSubmissionId = source,
+            sourceInstanceId = "uuid:9e1e9e90-5cc8-4e65-a5d0-acb5bdc1500d",
+            targetFormVersionId = target,
+            targetFormId = "household",
+            targetVersion = "2",
+            workType = RecordWorkType.AMENDMENT,
+            visitKey = null,
+            reservedInstanceId = "uuid:b2edb2a9-3250-479a-a30a-0cdb1586b055",
+            sourceXmlSha256 = "a".repeat(64),
+            sourceXFormSha256 = "b".repeat(64),
+            targetXFormSha256 = "c".repeat(64),
+            reviewedPaths = 1,
+            validationTransfers = 0,
+            requiresDeprecatedId = true
+        )
+        val urls = mutableListOf<String>()
+        val client = RecordWorkPreparationClient(settings) { url ->
+            urls.add(url.toString())
+            connection(409,
+                """{"message":"Source amended since work was created",
+                    "sensitive":"DO_NOT_DISPLAY_HISTORIC_ANSWER"}""").first
+        }
+        try {
+            client.authorizePrivateTextForm(project, binding)
+            fail("HTTP 409 must deny a previously staged draft")
+        } catch (error: PreparationException) {
+            assertEquals(PreparationError.CONFLICT, error.reason)
+            val outcome = ProtectedWorkRecovery.forFailure(error)
+            assertEquals(ProtectedWorkFailure.STALE_OR_COMPLETED, outcome.failure)
+            assertTrue(outcome.preserveSavedEncryptedDraft)
+            assertFalse(outcome.canSave)
+            assertFalse(outcome.canUpload)
+            assertFalse(outcome.message.contains("DO_NOT_DISPLAY_HISTORIC_ANSWER"))
+        }
+        assertEquals(listOf("$base/record-work-items/$workId/prepare"), urls)
+    }
+
+    @Test
     fun `401 403 404 409 and redirects are never accepted`() {
         val (settings, _) = projectSettings()
         listOf(

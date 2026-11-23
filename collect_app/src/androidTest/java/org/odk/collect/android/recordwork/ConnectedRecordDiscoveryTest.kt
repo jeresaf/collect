@@ -39,7 +39,8 @@ class ConnectedRecordDiscoveryTest {
         val snapshot = client.load(project)
         assertEquals(2, snapshot.records.size)
         // A separate amendment admission test may have created work already.
-        assertTrue(snapshot.pendingWork.all { it.sourceSubmissionId == corrected })
+        assertTrue(snapshot.pendingWork.filter { it.type == RecordWorkType.AMENDMENT }
+            .all { it.sourceSubmissionId == corrected })
         val revisions = snapshot.records.associateBy { it.submissionId }
         assertEquals(setOf(original, corrected), revisions.keys)
         assertEquals(RemoteAmendmentRevision.SUPERSEDED, revisions.getValue(original).amendmentRevision)
@@ -97,6 +98,40 @@ class ConnectedRecordDiscoveryTest {
         assertTrue(snapshot.pendingWork.any { it.id == created.id &&
             it.sourceSubmissionId == corrected })
         assertFalse(snapshot.pendingWork.any { it.sourceSubmissionId == original })
+    }
+
+    /**
+     * U06-T04C-01: a second household visit is independent from amendment.
+     * A historical V1 observation is eligible for FOLLOW_UP despite being
+     * superseded for AMENDMENT. Work creation never uploads an observation.
+     */
+    @Test
+    fun historicalHouseholdMayScheduleIndependentSecondVisitWithoutAmendingV1() {
+        val client = preparationClient()
+        val targetVersion = "81000000-0000-4000-8000-000000000004"
+        val request = NewRecordWork(
+            sourceSubmissionId = original,
+            targetFormVersionId = targetVersion,
+            workType = RecordWorkType.FOLLOW_UP,
+            clientRequestId = "u06-visit-request-" + UUID.randomUUID(),
+            visitKey = "second-household-visit"
+        )
+        val created = client.create(project, request)
+        assertEquals(original, created.sourceSubmissionId)
+        assertEquals(targetVersion, created.targetFormVersionId)
+        assertEquals(RecordWorkType.FOLLOW_UP, created.type)
+        assertEquals("second-household-visit", created.visitKey)
+        assertEquals(created.id, client.create(project, request).id)
+        val snapshot = clientFor("u06-connected-owner", "u06-disposable-only")
+            .load(project)
+        assertTrue(snapshot.pendingWork.any {
+            it.id == created.id && it.sourceSubmissionId == original &&
+                it.type == RecordWorkType.FOLLOW_UP &&
+                it.visitKey == "second-household-visit"
+        })
+        val originalHistory = snapshot.records.first { it.submissionId == original }
+        assertEquals(RemoteAmendmentRevision.SUPERSEDED, originalHistory.amendmentRevision)
+        assertFalse(originalHistory.mayOfferAmendment)
     }
 
     private fun preparationClient(): RecordWorkPreparationClient {

@@ -34,14 +34,18 @@ jobs:
             ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"
           fi
       - uses: gradle/actions/setup-gradle@v4
-      - name: Route Maven Central to official alternate endpoint in disposable runner
+      - name: Use Maven Central primary endpoint in disposable runner
+        # The alternate repo1.maven.org host returned HTTP 429 on the first
+        # run before any application sources or tests were compiled. Keep the
+        # repository build file intact and use the official Maven Central
+        # primary endpoint; this step changes only runner working files.
         run: |
           python3 - <<'PY'
           from pathlib import Path
           p = Path("build.gradle.kts")
           s = p.read_text()
           assert s.count("mavenCentral()") == 2
-          p.write_text(s.replace("mavenCentral()", 'maven { url = uri("https://repo1.maven.org/maven2/") }'))
+          p.write_text(s.replace("mavenCentral()", 'maven { url = uri("https://repo.maven.apache.org/maven2/") }'))
           PY
       - name: Protected work regressions and superseded source contract
         run: |

@@ -178,7 +178,7 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
             runOnUiThread {
                 if (request != generation || isFinishing || isDestroyed) return@runOnUiThread
                 progress.visibility = View.GONE
-                result.onSuccess { render(it) }.onFailure { reject() }
+                result.onSuccess { render(it) }.onFailure { reject(it) }
             }
         }
     }
@@ -339,8 +339,10 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
                 if (request != generation || isFinishing || isDestroyed)
                     return@runOnUiThread
                 progress.visibility = View.GONE
-                result.onSuccess { open() }.onFailure {
-                    status.setText(R.string.mapping_approved_import_denied)
+                result.onSuccess { open() }.onFailure { error ->
+                    // Do not erase encrypted local answers on a stale work or
+                    // temporary network failure. No automatic transfer retry.
+                    status.text = ProtectedWorkRecovery.forFailure(error).message
                     saveButton.isEnabled = false
                     approvedImportButton.isEnabled = false
                 }
@@ -391,16 +393,18 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
                 result.onSuccess {
                     status.setText(R.string.private_text_editor_saved)
                     saveButton.isEnabled = true
-                }.onFailure {
-                    // Never print server/body/PII/exception to the UI.
-                    status.setText(R.string.private_text_editor_save_failed)
+                }.onFailure { error ->
+                    // Fixed, non-sensitive recovery message. Preserve the
+                    // existing private AES-GCM draft, never auto-resubmit.
+                    status.text = ProtectedWorkRecovery.forFailure(error).message
                     saveButton.isEnabled = false
+                    approvedImportButton.isEnabled = false
                 }
             }
         }
     }
 
-    private fun reject() {
+    private fun reject(error: Throwable? = null) {
         activeBinding = null
         formPaths = emptyList()
         formFields = emptyList()
@@ -410,7 +414,8 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
         formRows.removeAllViews()
         inputs.clear()
         progress.visibility = View.GONE
-        status.setText(R.string.private_text_editor_denied)
+        if (error == null) status.setText(R.string.private_text_editor_denied)
+        else status.text = ProtectedWorkRecovery.forFailure(error).message
     }
 
     override fun onDestroy() {

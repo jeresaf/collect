@@ -22,6 +22,8 @@ Existing Android preparation HTTP code maps 409 to `PreparationError.CONFLICT`. 
 
 The protected text/repeat screens **already require fresh online authorization for each save**. This increment does not enable saving changes while offline. A previously persisted AES-GCM local draft is retained on disk when server authority is denied. Unsaved text on a failed save is not guaranteed durable; the UI must not claim it was saved.
 
+**Additional fail-closed lifecycle guard:** a rejected mid-edit authorization (including an attempted save or historical import) now clears the text editor's rendered input controls and active in-memory bindings; the repeated-row editor likewise clears rendered answers and its active binding. Both wipe their in-memory fields when backgrounded (`onStop`) and do a new authenticated READY check before rebuilding fields on return (`onRestart`). Neither lifecycle callback deletes vault files. Saved ciphertext and permanent repeat-row UUIDs are checked byte-for-byte in synthetic AES-GCM regressions after STALE/NETWORK/ACCESS failures. The last unsaved on-screen changes can be lost on backgrounding or server denial: only an earlier successful encrypted Save is durable. No background sync, offline save, retry or editor grant is introduced.
+
 ## Bounded test matrix
 
 - Pure policy tests: conflict vs network vs access revocation vs invalid/unexpected errors; saved local ciphertext preserved by design, no permission escalation or exception-body leak.

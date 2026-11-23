@@ -2,7 +2,7 @@ name: U06-T04A Connected Android HTTPS Smoke (experimental)
 
 on:
   push:
-    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission, codex/u06-t04c02-stale-recovery, codex/u06-t04c02b-draft-restart, codex/u06-t04c03a-followup-submission, codex/u06-t04c03b-repeats-media]
+    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission, codex/u06-t04c02-stale-recovery, codex/u06-t04c02b-draft-restart, codex/u06-t04c03a-followup-submission, codex/u06-t04c03b-repeats-media, codex/u06-t04c03c-lost-ack-recovery]
   workflow_dispatch:
 
 permissions:
@@ -191,6 +191,13 @@ jobs:
           test "$original_xml" = 1
           test "$untouched_archive" = 1
           test "$all_submissions" = 3
+          duplicate_instance="$(query "SELECT count(*) FROM submissions s JOIN record_links l ON l.child_submission_id=s.id WHERE l.link_type='FOLLOW_UP' AND s.instance_id LIKE 'uuid:%' AND s.xml_content LIKE '%Synthetic independent later visit%'")"
+          completed_once="$(query "SELECT count(*) FROM record_work_items w JOIN record_links l ON l.work_item_id=w.id WHERE w.state='COMPLETED' AND w.client_request_id LIKE 'completed-work-%' AND w.visit_key LIKE 'completed-visit-%' AND l.link_type='FOLLOW_UP'")"
+          attachment_once="$(query "SELECT count(*) FROM submission_attachments sa JOIN record_links l ON l.child_submission_id=sa.submission_id WHERE l.link_type='FOLLOW_UP' AND sa.file_name='u06-followup-photo.jpg'")"
+          test "$duplicate_instance" = 1
+          test "$completed_once" = 1
+          test "$attachment_once" = 1
+          echo "U06-T04C-03C replay postflight PASS: exactly one submitted visit, completed work, link and media attachment after lost ACK"
           test "$submissions" = 2
           repeat_rows="$(query "SELECT count(*) FROM submission_answers a JOIN record_links l ON l.child_submission_id=a.submission_id WHERE l.link_type='FOLLOW_UP' AND a.path IN ('children[0]/child_age_text','children[1]/child_age_text')")"
           repeat_names="$(query "SELECT count(*) FROM submission_answers a JOIN record_links l ON l.child_submission_id=a.submission_id WHERE l.link_type='FOLLOW_UP' AND a.path IN ('children[0]/child_name','children[1]/child_name')")"

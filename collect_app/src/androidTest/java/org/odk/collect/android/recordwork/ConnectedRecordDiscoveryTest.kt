@@ -241,7 +241,18 @@ class ConnectedRecordDiscoveryTest {
     fun serverOwnedPendingWorkCreatesOnlyScopedWorkReferenceIntent() {
         val snapshot = clientFor("u06-connected-owner", "u06-disposable-only").load(project)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        snapshot.pendingWork.forEach { work ->
+        // Run an unconditional synthetic pending contract assertion, because
+        // the other API tests create pending work in nondeterministic order.
+        // Also exercise every real pending item present in this authenticated
+        // snapshot without assuming one exists yet.
+        val reference = RemoteVisitWork(
+            id = "81000000-0000-4000-8000-000000000090",
+            sourceSubmissionId = original,
+            targetFormVersionId = "81000000-0000-4000-8000-000000000004",
+            type = RecordWorkType.FOLLOW_UP,
+            visitKey = "independent-visit"
+        )
+        (listOf(reference) + snapshot.pendingWork).forEach { work ->
             val intent = RecordWorkNavigation.pending(context, project, work)
             assertEquals(project, intent.getStringExtra(RecordWorkPrepareActivity.EXTRA_PROJECT))
             assertEquals(work.sourceSubmissionId,

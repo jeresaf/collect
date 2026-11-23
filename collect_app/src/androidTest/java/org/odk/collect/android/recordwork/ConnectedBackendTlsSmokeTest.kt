@@ -71,6 +71,55 @@ class ConnectedBackendTlsSmokeTest {
         }
     }
 
+    /**
+     * U06-T04B-00: real Android TLS + OpenRosa authentication boundary.
+     * No synthetic user or record is seeded at this stage: this proves
+     * that unauthenticated record discovery fails closed over the actual
+     * Spring Boot / PostgreSQL-backed HTTP listener.
+     */
+    @Test
+    fun realRecordsEndpointRejectsAnonymousAndroidClientWithoutDataLeak() {
+        val endpoint = URL(
+            "https://10.0.2.2:8443/v1/projects/" +
+                "00000000-0000-0000-0000-000000000000/records"
+        )
+        val connection = endpoint.openConnection() as HttpsURLConnection
+        connection.sslSocketFactory = ephemeralTrustContext().socketFactory
+        connection.instanceFollowRedirects = false
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 15_000
+        connection.requestMethod = "GET"
+        connection.setRequestProperty("Accept", "application/json")
+        try {
+            assertEquals("Anonymous record discovery must be forbidden", 401,
+                connection.responseCode)
+            val body = connection.errorStream?.bufferedReader()?.use { it.readText() }
+                .orEmpty()
+            assertFalse("No historical answer may leak", body.contains("Original household"))
+            assertFalse("No historical answer may leak", body.contains("Corrected household"))
+            assertFalse("No private source XML may leak", body.contains("<data"))
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun ephemeralTrustContext(): SSLContext {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val certificate = instrumentation.context.assets.open("u06_t04a_ca.pem").use {
+            CertificateFactory.getInstance("X.509").generateCertificate(it)
+        }
+        val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+            load(null)
+            setCertificateEntry("u06-t04a-only", certificate)
+        }
+        val trustManagers = TrustManagerFactory.getInstance(
+            TrustManagerFactory.getDefaultAlgorithm()
+        ).apply { init(keyStore) }.trustManagers
+        return SSLContext.getInstance("TLS").apply {
+            init(null, trustManagers, null)
+        }
+    }
+
     @Test
     fun untrustedTestCaIsNotAcceptedByAndroidDefaultTrust() {
         val connection = URL(url).openConnection() as HttpsURLConnection

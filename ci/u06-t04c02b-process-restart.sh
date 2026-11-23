@@ -20,8 +20,9 @@ fi
 
 run_one() {
   local method="$1"
+  local klass="${2:-$CLASS}"
   local output
-  output="$(adb shell am instrument -w -e class "${CLASS}#${method}" "$instrumentation")"
+  output="$(adb shell am instrument -w -e class "${klass}#${method}" "$instrumentation")"
   # Never dump test instrumentation output: it may contain private diagnostics.
   if ! grep -Eq '^OK \(1 test\)' <<<"$output" || grep -Eq '^FAILURES|^INSTRUMENTATION_FAILED' <<<"$output"; then
     echo "::error::Android process-boundary phase ${method} did not pass"
@@ -34,3 +35,10 @@ run_one phaseOneWriteOnlyEncryptedNoBackupCiphertext
 adb shell am force-stop "$APP_ID"
 run_one phaseTwoAfterForceStopPreservesAnswersOnLiveConflict
 echo "U06-T04C-02B: separate instrumentation processes, private ciphertext preserved; server 409 enforced."
+
+# A third, separate test process runs only after the earlier read-only,
+# admission, encrypted-restart and stale-conflict tests have finished.
+# This prevents a newly-created follow-up from changing their expected lists.
+run_one independentFollowUpIsCreatedOnceAndOriginalRevisionRemainsImmutable \
+  org.odk.collect.android.recordwork.ConnectedFollowUpSubmissionTest
+echo "U06-T04C-03A: real Android HTTPS follow-up upload + replay guard: PASS"

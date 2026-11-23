@@ -67,6 +67,20 @@ jobs:
             sleep 2
           done
           test "$ready" = 1
+      - name: Seed disposable V1/V2 PostgreSQL record fixtures
+        env:
+          PGPASSWORD: synthetic-ci-only
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client
+          fi
+          psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U odk_user -d odk_platform \\
+            -f ci/u06-t04b-owned-revisions.sql
+          count="$(psql -tAX -h 127.0.0.1 -U odk_user -d odk_platform \\
+            -c "SELECT count(*) FROM submissions WHERE id IN ('81000000-0000-4000-8000-000000000007','81000000-0000-4000-8000-000000000008')")"
+          test "$count" = 2
       - name: Generate per-run CA and SSL endpoint for emulator host bridge
         run: |
           set -euo pipefail
@@ -149,7 +163,7 @@ jobs:
           disk-size: 6000M
           disable-animations: true
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
-          script: ./gradlew :collect_app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.odk.collect.android.recordwork.ConnectedBackendTlsSmokeTest --no-daemon --stacktrace
+          script: ./gradlew :collect_app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.odk.collect.android.recordwork.ConnectedBackendTlsSmokeTest,org.odk.collect.android.recordwork.ConnectedRecordDiscoveryTest --no-daemon --stacktrace
       - name: Cleanup disposable CA, server and temporary store
         if: always()
         run: |

@@ -49,6 +49,33 @@ echo "U06-T04C-03A: real Android HTTPS follow-up upload + replay guard: PASS"
 # probe suite. The preceding tests have already verified and cleaned their
 # synthetic private draft and confirmed the backend's durable postconditions
 # are checked in the next workflow step.
+# The security regression above MUST run with normal Android trust and
+# verify our disposable CA is rejected by the production-default policy.
+# Only after it succeeds do we temporarily trust CI's ephemeral CA in a
+# rebuilt debug APK, so the actual browser Activity can fetch the HTTPS
+# fixture using its own project settings. Never modify the release policy.
+mkdir -p collect_app/src/debug/res/xml collect_app/src/debug/res/raw
+cp /tmp/u06-t04a-tls/ca.crt collect_app/src/debug/res/raw/u06_ci_ephemeral_ca.pem
+cat >collect_app/src/debug/res/xml/network_security_config.xml <<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <base-config cleartextTrafficPermitted="true">
+    <trust-anchors>
+      <certificates src="@raw/isrgrootx1"/>
+      <certificates src="system"/>
+      <certificates src="@raw/u06_ci_ephemeral_ca"/>
+    </trust-anchors>
+  </base-config>
+</network-security-config>
+XML
+test ! -e collect_app/src/main/res/raw/u06_ci_ephemeral_ca.pem
+./gradlew :collect_app:installDebug --no-daemon --stacktrace >/tmp/u06-ui-debug-install.log 2>&1 || {
+  echo "::error::Ephemeral-CA debug APK rebuild/install failed"
+  tail -n 60 /tmp/u06-ui-debug-install.log
+  exit 1
+}
+# The existing AndroidTest APK remains installed. A clean app profile
+# avoids carrying stale authenticated context into first-launch UI tests.
 adb shell pm clear "$APP_ID" >/dev/null
 ui_output="$(adb shell am instrument -w -e class \
   org.odk.collect.android.recordwork.ConfiguredRecordPreparationUiTest \

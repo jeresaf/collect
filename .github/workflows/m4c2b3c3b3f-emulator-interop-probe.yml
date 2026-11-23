@@ -148,10 +148,10 @@ jobs:
           disk-size: 6000M
           disable-animations: true
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
-          script: |
-            ./gradlew :collect_app:connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.class=org.odk.collect.android.recordwork.RecordWorkEmulatorInteropProbeTest \
-              --no-daemon --stacktrace
+          # This action passes the entire script to /usr/bin/sh -c.
+          # Its YAML multiline command was previously interpreted with a
+          # literal trailing backslash as an extra Gradle task.
+          script: ./gradlew :collect_app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.odk.collect.android.recordwork.RecordWorkEmulatorInteropProbeTest --no-daemon --stacktrace
       - if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:

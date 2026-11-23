@@ -75,7 +75,11 @@ class RecordWorkEmulatorInteropProbeTest {
                 "sourceXml":"PRIVATE_ANSWER_MUST_NOT_RENDER"}""")
         }
         val binding = QuarantinedWorkDraft(
-            projectId = project, actorContextSha256 = "a".repeat(64),
+            projectId = project, actorContextSha256 =
+                QuarantinedWorkDraftVault.sha256(
+                    project + "\n" + RecordWorkApiPaths.fromProjectUrl(base).records() +
+                        "\n" + "enumerator"
+                ),
             workId = work, sourceSubmissionId = source,
             sourceInstanceId = "uuid:9e1e9e90-5cc8-4e65-a5d0-acb5bdc1500d",
             targetFormVersionId = target, targetFormId = "household",

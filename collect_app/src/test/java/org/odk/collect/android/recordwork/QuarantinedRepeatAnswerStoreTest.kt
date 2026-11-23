@@ -142,6 +142,36 @@ class QuarantinedRepeatAnswerStoreTest {
         })
     }
 
+    @Test fun failedServerReauthorizationKeepsRepeatRowCiphertextAndIdentity() {
+        val (binding, session) = fixture()
+        val row = rows().addRow(binding, session.schema, group, uuid())
+        val initial = mapOf(namePath to "SENSITIVE_REPEAT_PERSON", agePath to "31")
+        store().save(binding, session, row.rowId, initial)
+        val file = File(folder(), "repeat-answer-" + row.rowId + ".aesgcm")
+        val originalBytes = file.readBytes()
+        val beforeIds = rows().read(binding, session.schema).rows.map { it.rowId }
+        for (reason in listOf(PreparationError.CONFLICT,
+            PreparationError.NETWORK, PreparationError.ACCESS_DENIED)) {
+            val state = ProtectedWorkRecovery.forFailure(PreparationException(reason))
+            assertTrue(state.preserveSavedEncryptedDraft)
+            assertFalse(state.canOpenEditor)
+            assertFalse(state.canSave)
+            assertFalse(state.canUpload)
+            assertFalse(state.mayAutomaticallyRetargetSource)
+            assertFalse(state.mayAutomaticallyRetrySubmission)
+            assertTrue(originalBytes.contentEquals(file.readBytes()))
+            assertEquals(beforeIds,
+                rows().read(binding, session.schema).rows.map { it.rowId })
+            val recovered = store().read(binding, session, row.rowId)
+            assertEquals(initial, recovered.values)
+            assertFalse(recovered.canUpload)
+        }
+        assertFalse(file.readBytes().toString(Charsets.ISO_8859_1)
+            .contains("SENSITIVE_REPEAT_PERSON"))
+        rejects { store().read(binding.copy(actorContextSha256 = "b".repeat(64)),
+            session, row.rowId) }
+    }
+
     @Test fun deletingEarlierRowNeverReassignsSecondRowsAnswers() {
         val (binding, session) = fixture()
         val first = rows().addRow(binding, session.schema, group, uuid())

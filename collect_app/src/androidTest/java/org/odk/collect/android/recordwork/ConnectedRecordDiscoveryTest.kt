@@ -155,6 +155,52 @@ class ConnectedRecordDiscoveryTest {
         )
     }
 
+    /**
+     * U06-T04D-03A: real authenticated Spring/PostgreSQL records are rendered
+     * through the same Android Button factory used by the production browser.
+     * No fake record JSON, test-only activity or source XML is used.
+     */
+    @Test
+    fun actualAndroidRowsRenderHistoricalAndCurrentWithoutEscalatingAmendment() {
+        val snapshot = clientFor("u06-connected-owner", "u06-disposable-only")
+            .load(project)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val rows = snapshot.records.associate { record ->
+            var selected: RemoteRecord? = null
+            val button = RecordWorkRecordRow.create(context, record) {
+                selected = it
+            }
+            assertFalse(button.isAllCaps)
+            assertTrue(button.text.toString().contains(record.submissionId))
+            assertFalse(button.text.toString().contains("Synthetic V1"))
+            assertFalse(button.text.toString().contains("PRIVATE_STALE_SOURCE"))
+            assertTrue(button.performClick())
+            assertEquals(record, selected)
+            record.submissionId to button.text.toString()
+        }
+        assertEquals(setOf(original, corrected), rows.keys)
+        assertTrue(rows.getValue(original).contains("Historical record"))
+        assertTrue(rows.getValue(original).contains("choose its newer revision"))
+        assertTrue(rows.getValue(corrected).contains("server rechecks"))
+        assertFalse(snapshot.records.first { it.submissionId == original }.mayOfferAmendment)
+        assertTrue(snapshot.records.first { it.submissionId == corrected }.mayOfferAmendment)
+    }
+
+    @Test
+    fun unknownRevisionRowCannotPresentAnAmendmentOffer() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val unknown = RemoteRecord(
+            submissionId = original,
+            instanceId = "uuid:81000000-0000-4000-8000-000000000017",
+            formId = "81000000-0000-4000-8000-000000000002",
+            formVersionId = null,
+            submittedAt = "2026-11-19T10:00:00Z"
+        )
+        val row = RecordWorkRecordRow.create(context, unknown) {}
+        assertTrue(row.text.toString().contains("amendment creation blocked"))
+        assertFalse(unknown.mayOfferAmendment)
+    }
+
     private fun clientFor(username: String, password: String): RecordWorkReadOnlyClient {
         val settings = mock<Settings>()
         val provider = mock<SettingsProvider>()

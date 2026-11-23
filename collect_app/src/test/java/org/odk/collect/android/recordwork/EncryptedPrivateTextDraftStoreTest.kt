@@ -40,6 +40,37 @@ class EncryptedPrivateTextDraftStoreTest {
         assertFalse(file.parentFile.listFiles().orEmpty().any { it.name.endsWith(".xml") })
     }
 
+    @Test fun staleAndOfflineRecoveryPreserveExactEncryptedDraftBytes() {
+        val binding = stage()
+        val expected = mapOf(paths[0] to privateAnswer, paths[1] to "Private followup")
+        store().save(binding, expected, paths)
+        val before = encryptedFile().readBytes()
+
+        for (failure in listOf(PreparationError.CONFLICT, PreparationError.NETWORK,
+            PreparationError.ACCESS_DENIED)) {
+            val recovery = ProtectedWorkRecovery.forFailure(
+                PreparationException(failure)
+            )
+            assertTrue(recovery.preserveSavedEncryptedDraft)
+            assertFalse(recovery.canOpenEditor)
+            assertFalse(recovery.canSave)
+            assertFalse(recovery.canFinalize)
+            assertFalse(recovery.canUpload)
+            assertFalse(recovery.mayAutomaticallyRetargetSource)
+            assertFalse(recovery.mayAutomaticallyRetrySubmission)
+            assertTrue(before.contentEquals(encryptedFile().readBytes()))
+            val recovered = store().read(binding, paths)
+            assertEquals(expected, recovered.answers)
+            assertTrue(recovered.hasSavedDraft)
+            assertFalse(recovered.canSubmit)
+            // This test has no reauthorization: a storage read alone MUST NOT
+            // constitute permission to show or send a quarantined draft.
+        }
+        rejects { store().read(binding.copy(actorContextSha256 = "b".repeat(64)), paths) }
+        assertFalse(encryptedFile().readBytes().toString(Charsets.ISO_8859_1)
+            .contains(privateAnswer))
+    }
+
     @Test fun zeroValuesAreNotMistakenForAValidSubmittedInstance() {
         val binding = stage()
         assertFalse(store().read(binding, paths).hasSavedDraft)

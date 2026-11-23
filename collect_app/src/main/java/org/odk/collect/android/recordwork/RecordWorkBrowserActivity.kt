@@ -1,6 +1,5 @@
 package org.odk.collect.android.recordwork
 
-import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -132,13 +131,11 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
             snapshot.records.forEach { record ->
                 records.addView(RecordWorkRecordRow.create(this, record) { selected ->
                     val session = activeSession() ?: return@create
-                    startActivity(Intent(this@RecordWorkBrowserActivity,
-                        RecordWorkPrepareActivity::class.java).apply {
-                        putExtra(RecordWorkPrepareActivity.EXTRA_PROJECT, session.projectId)
-                        putExtra(RecordWorkPrepareActivity.EXTRA_SOURCE, selected.submissionId)
-                        putExtra(RecordWorkPrepareActivity.EXTRA_SOURCE_CAN_AMEND,
-                            selected.mayOfferAmendment)
-                    })
+                    runCatching {
+                        RecordWorkNavigation.record(
+                            this@RecordWorkBrowserActivity, session.projectId, selected
+                        )
+                    }.onSuccess(::startActivity)
                 })
             }
         }
@@ -151,14 +148,11 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
                     isAllCaps = false
                     setOnClickListener {
                         val session = activeSession() ?: return@setOnClickListener
-                        startActivity(Intent(this@RecordWorkBrowserActivity,
-                            RecordWorkPrepareActivity::class.java).apply {
-                            putExtra(RecordWorkPrepareActivity.EXTRA_PROJECT, session.projectId)
-                            putExtra(RecordWorkPrepareActivity.EXTRA_SOURCE, task.sourceSubmissionId)
-                            putExtra(RecordWorkPrepareActivity.EXTRA_WORK, task.id)
-                            putExtra(RecordWorkPrepareActivity.EXTRA_TARGET, task.targetFormVersionId)
-                            putExtra(RecordWorkPrepareActivity.EXTRA_TYPE, task.type.name)
-                        })
+                        runCatching {
+                            RecordWorkNavigation.pending(
+                                this@RecordWorkBrowserActivity, session.projectId, task
+                            )
+                        }.onSuccess(::startActivity)
                     }
                 })
             }

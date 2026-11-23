@@ -26,7 +26,8 @@ import android.util.Base64
  *
  * The upload is a deliberately minimal native HttpURLConnection transport
  * probe; it does not claim integration with ODK's full InstanceSubmitter,
- * media/attachments/repeats or the native editable form lifecycle.
+ * the native editable form lifecycle. This test exercises binary/media
+ * and repeat parsing only at real HTTPS intake; not native ODK InstanceSubmitter.
  */
 @RunWith(AndroidJUnit4::class)
 class ConnectedFollowUpSubmissionTest {
@@ -71,6 +72,9 @@ class ConnectedFollowUpSubmissionTest {
         val body = """
             <data id="u06-synthetic-household" version="2">
               <household_name>Synthetic independent later visit</household_name>
+              <photo>u06-followup-photo.jpg</photo>
+              <children><child_name>Amina</child_name><child_age_text>seven</child_age_text></children>
+              <children><child_name>Juma</child_name><child_age_text>four</child_age_text></children>
               <meta><instanceID>$instance</instanceID></meta>
             </data>
         """.trimIndent()
@@ -97,6 +101,18 @@ class ConnectedFollowUpSubmissionTest {
         ).toByteArray(Charsets.UTF_8)
         val end = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
         val payload = xml.toByteArray(Charsets.UTF_8)
+        // Small synthetic JPEG-signature fixture; byte-for-byte persistence is
+        // checked in the runner, without logging media or private answers.
+        val photo = byteArrayOf(
+            0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xe0.toByte(),
+            0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
+            0x11, 0x22, 0x33, 0x44, 0xff.toByte(), 0xd9.toByte()
+        )
+        val attachmentHeader = (
+            "\r\n--$boundary\r\n" +
+            "Content-Disposition: form-data; name=\"photo\"; filename=\"u06-followup-photo.jpg\"\r\n" +
+            "Content-Type: image/jpeg\r\n\r\n"
+        ).toByteArray(Charsets.UTF_8)
         val connection = URL("$base/submission").openConnection() as HttpsURLConnection
         connection.sslSocketFactory = ssl.socketFactory
         connection.instanceFollowRedirects = false
@@ -109,11 +125,13 @@ class ConnectedFollowUpSubmissionTest {
             Base64.encodeToString("$username:$password".toByteArray(), Base64.NO_WRAP))
         connection.setRequestProperty("X-DataCollector-Work-Item-Id", workId)
         connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-        connection.setFixedLengthStreamingMode(head.size + payload.size + end.size)
+        connection.setFixedLengthStreamingMode(head.size + payload.size + attachmentHeader.size + photo.size + end.size)
         try {
             connection.outputStream.use {
                 it.write(head)
                 it.write(payload)
+                it.write(attachmentHeader)
+                it.write(photo)
                 it.write(end)
             }
             val status = connection.responseCode

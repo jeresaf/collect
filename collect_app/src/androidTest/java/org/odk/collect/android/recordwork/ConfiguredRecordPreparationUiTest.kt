@@ -502,6 +502,7 @@ class ConfiguredRecordPreparationUiTest {
         )
         val vault = QuarantinedWorkDraftVault(context.noBackupFilesDir)
         assertEquals(null, vault.read(activeProjectId(), pending.id, scope))
+        verifyAndroidXmlAdmissionRejectsUnsafeInputs()
         verifyConnectedPreparationLayers(project, pending, context.cacheDir)
         val selection = RecordWorkNavigation.pending(context, activeProjectId(), pending)
         ActivityScenario.launch<RecordWorkPrepareActivity>(selection).use { scenario ->
@@ -599,6 +600,30 @@ class ConfiguredRecordPreparationUiTest {
         }
     }
 
+
+
+    // Exercise the actual Android parser, not only the desktop unit-test
+    // provider. These synthetic inputs do not resolve external resources.
+    private fun verifyAndroidXmlAdmissionRejectsUnsafeInputs() {
+        val good = RecordWorkSafeXml.parse(
+            "<data><answer>A &amp; B</answer></data>", 1024, 4, 8
+        )
+        assertEquals("A & B", good.getElementsByTagName("answer").item(0).textContent)
+        val forbidden = listOf(
+            "<!DOCTYPE data><data/>",
+            "<!DOCTYPE data [<!ENTITY value 'synthetic'>]><data>&value;</data>",
+            "<!DOCTYPE data SYSTEM 'urn:u06:forbidden'><data/>",
+            "<data xmlns:i='http://www.w3.org/2001/XInclude'><i:include href='urn:u06:forbidden'/></data>",
+            "<data><a><b><c><d><e/></d></c></b></a></data>",
+            "<data><a/><a/><a/><a/><a/><a/><a/><a/></data>"
+        )
+        forbidden.forEachIndexed { index, xml ->
+            val failure = runCatching { RecordWorkSafeXml.parse(xml, 1024, 4, 8) }
+                .exceptionOrNull()
+            assertTrue("Unsafe XML admission case $index must fail closed",
+                failure is IllegalArgumentException)
+        }
+    }
 
     // Diagnostic only: use the genuine disposable server response in RAM,
     // independently exercising each of the existing production validation

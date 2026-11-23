@@ -130,28 +130,15 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
             records.addView(text(getString(R.string.remote_records_empty)))
         } else {
             snapshot.records.forEach { record ->
-                records.addView(Button(this).apply {
-                    val amendmentLabel = when (record.amendmentRevision) {
-                        RemoteAmendmentRevision.CURRENT ->
-                            "No archived amendment shown (server rechecks before creating work)"
-                        RemoteAmendmentRevision.SUPERSEDED ->
-                            "Historical record — already amended; choose its newer revision"
-                        RemoteAmendmentRevision.UNKNOWN ->
-                            "Revision status unavailable — amendment creation blocked"
-                    }
-                    text = "${record.submittedAt}\n${record.submissionId}\n" +
-                        "Form: ${record.formId}\n$amendmentLabel"
-                    isAllCaps = false
-                    setOnClickListener {
-                        val session = activeSession() ?: return@setOnClickListener
-                        startActivity(Intent(this@RecordWorkBrowserActivity,
-                            RecordWorkPrepareActivity::class.java).apply {
-                            putExtra(RecordWorkPrepareActivity.EXTRA_PROJECT, session.projectId)
-                            putExtra(RecordWorkPrepareActivity.EXTRA_SOURCE, record.submissionId)
-                            putExtra(RecordWorkPrepareActivity.EXTRA_SOURCE_CAN_AMEND,
-                                record.mayOfferAmendment)
-                        })
-                    }
+                records.addView(RecordWorkRecordRow.create(this, record) { selected ->
+                    val session = activeSession() ?: return@create
+                    startActivity(Intent(this@RecordWorkBrowserActivity,
+                        RecordWorkPrepareActivity::class.java).apply {
+                        putExtra(RecordWorkPrepareActivity.EXTRA_PROJECT, session.projectId)
+                        putExtra(RecordWorkPrepareActivity.EXTRA_SOURCE, selected.submissionId)
+                        putExtra(RecordWorkPrepareActivity.EXTRA_SOURCE_CAN_AMEND,
+                            selected.mayOfferAmendment)
+                    })
                 })
             }
         }

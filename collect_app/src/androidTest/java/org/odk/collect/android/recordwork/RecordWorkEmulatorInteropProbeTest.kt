@@ -39,7 +39,7 @@ class RecordWorkEmulatorInteropProbeTest {
         val urls = mutableListOf<String>()
         val client = RecordWorkReadOnlyClient(provider) { destination ->
             urls += destination.toString()
-            val response = if (destination.toString().endsWith("/records")) {
+            val responseBody = if (destination.toString().endsWith("/records")) {
                 """
                 [
                   {"submissionId":"$source",
@@ -53,7 +53,7 @@ class RecordWorkEmulatorInteropProbeTest {
                 ]
                 """.trimIndent()
             } else "[]"
-            response(200, response)
+            response(200, responseBody)
         }
         val snapshot = client.load(project)
         assertEquals(listOf("$base/records", "$base/record-work-items"), urls)

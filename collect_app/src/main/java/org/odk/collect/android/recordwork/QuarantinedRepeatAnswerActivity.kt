@@ -35,6 +35,7 @@ class QuarantinedRepeatAnswerActivity : LocalizedActivity() {
     private lateinit var status: TextView
     private lateinit var fieldsContainer: LinearLayout
     private lateinit var save: Button
+    private lateinit var recoveryButton: Button
     private lateinit var spinner: ProgressBar
     private val inputs = linkedMapOf<String, EditText>()
     private var generation = 0
@@ -74,6 +75,13 @@ class QuarantinedRepeatAnswerActivity : LocalizedActivity() {
             )
         )
         root.addView(save)
+        recoveryButton = Button(this).apply {
+            text = "Review server records (manual recovery)"
+            visibility = View.GONE
+            isEnabled = false
+            setOnClickListener { reviewConflict() }
+        }
+        root.addView(recoveryButton)
         root.addView(TextView(this).apply {
             setText(R.string.private_repeat_answer_no_upload)
         })
@@ -142,6 +150,8 @@ class QuarantinedRepeatAnswerActivity : LocalizedActivity() {
     )
 
     private fun open() {
+        recoveryButton.visibility = View.GONE
+        recoveryButton.isEnabled = false
         save.isEnabled = false
         spinner.visibility = View.VISIBLE
         status.setText(R.string.private_repeat_answer_loading)
@@ -164,6 +174,8 @@ class QuarantinedRepeatAnswerActivity : LocalizedActivity() {
     }
 
     private fun render(readback: Readback) {
+        recoveryButton.visibility = View.GONE
+        recoveryButton.isEnabled = false
         openedBinding = readback.authorized.binding
         openedFields = readback.authorized.fields
         inputs.clear()
@@ -257,7 +269,21 @@ class QuarantinedRepeatAnswerActivity : LocalizedActivity() {
         }
     }
 
+    private fun reviewConflict() {
+        if (recoveryButton.visibility != View.VISIBLE || !activeProjectMatches() ||
+            !runCatching {
+                QuarantinedWorkDraftVault(noBackupFilesDir)
+                    .read(projectId, workId, actorHash()) != null
+            }.getOrDefault(false)) return deny()
+        startActivity(QuarantinedConflictReviewActivity.intentFor(
+            this, projectId, workId))
+    }
+
     private fun deny(error: Throwable? = null) {
+        val outcome = error?.let { ProtectedWorkRecovery.forFailure(it) }
+        recoveryButton.visibility = if (outcome?.mayManuallyReviewServerRecords == true)
+            View.VISIBLE else View.GONE
+        recoveryButton.isEnabled = outcome?.mayManuallyReviewServerRecords == true
         openedBinding = null
         openedFields = emptyList()
         inputs.clear()

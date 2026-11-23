@@ -502,6 +502,7 @@ class ConfiguredRecordPreparationUiTest {
         )
         val vault = QuarantinedWorkDraftVault(context.noBackupFilesDir)
         assertEquals(null, vault.read(activeProjectId(), pending.id, scope))
+        verifyConnectedPreparationLayers(project, pending, context.cacheDir)
         val selection = RecordWorkNavigation.pending(context, activeProjectId(), pending)
         ActivityScenario.launch<RecordWorkPrepareActivity>(selection).use { scenario ->
             var candidateCount = -1
@@ -595,6 +596,80 @@ class ConfiguredRecordPreparationUiTest {
             assertEquals(candidateCount, binding.reviewedPaths)
             assertEquals(before.pendingWork.map { it.id }.toSet(),
                 connectedClient().load(project).pendingWork.map { it.id }.toSet())
+        }
+    }
+
+
+    // Diagnostic only: use the genuine disposable server response in RAM,
+    // independently exercising each of the existing production validation
+    // layers. Never expose the response, form XML, values or auth headers.
+    private fun verifyConnectedPreparationLayers(
+        project: String, work: RemoteVisitWork, cache: java.io.File
+    ) {
+        fun <T> checked(phase: String, action: () -> T): T {
+            try {
+                return action()
+            } catch (error: Exception) {
+                val feature = listOf(
+                    "disallow-doctype-decl",
+                    "external-general-entities",
+                    "external-parameter-entities",
+                    "load-external-dtd",
+                    "secure-processing",
+                    "XInclude",
+                    "No primary instance",
+                    "Native JavaRosa rejected XForm",
+                    "Target XForm ID differs",
+                    "Target XForm version differs",
+                    "Invalid primary instance",
+                    "Unsupported relative or missing form path"
+                ).firstOrNull { error.message.orEmpty().contains(it, ignoreCase = true) }
+                    ?: "UNCLASSIFIED"
+                throw AssertionError(
+                    "Preparation layer=$phase exception=${error.javaClass.simpleName} category=$feature"
+                )
+            }
+        }
+        val path = RecordWorkApiPaths.fromProjectUrl(
+            "https://10.0.2.2:8443/v1/projects/$project"
+        ).prepare(work.id)
+        val payload = checked("HTTPS_RESPONSE") {
+            val connection = URL(path).openConnection() as HttpsURLConnection
+            try {
+                connection.instanceFollowRedirects = false
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+                connection.setRequestProperty("Authorization", "Basic " +
+                    android.util.Base64.encodeToString(
+                        "u06-connected-owner:u06-disposable-only".toByteArray(Charsets.UTF_8),
+                        android.util.Base64.NO_WRAP
+                    ))
+                require(connection.responseCode == 200) { "Unexpected prepare status" }
+                org.json.JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+            } finally {
+                connection.disconnect()
+            }
+        }
+        val sourceXml = payload.getString("sourceXml")
+        val targetXml = payload.getString("targetXFormXml")
+        val original = if (payload.isNull("sourceXFormXml")) null
+            else payload.getString("sourceXFormXml")
+        val targetId = payload.getString("targetFormId")
+        val targetVersion = payload.getString("targetFormVersion")
+        checked("CROSS_VERSION_ASSESSMENT") {
+            CrossVersionAssessmentEngine.assess(
+                work.id, work.sourceSubmissionId, work.targetFormVersionId,
+                work.type, sourceXml, targetXml, targetId, targetVersion
+            )
+        }
+        val plan = checked("HISTORICAL_SCHEMA_MAPPING") {
+            HistoricalSchemaMappingEngine.plan(
+                work.id, work.sourceSubmissionId, work.targetFormVersionId,
+                work.type, sourceXml, original, targetXml, targetId, targetVersion
+            )
+        }
+        checked("JAVAROSA_INITIALIZATION") {
+            JavaRosaStagingProbe(cache).inspect(plan, targetXml, original)
         }
     }
 

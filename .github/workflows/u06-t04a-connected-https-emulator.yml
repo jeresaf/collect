@@ -2,7 +2,7 @@ name: U06-T04A Connected Android HTTPS Smoke (experimental)
 
 on:
   push:
-    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission, codex/u06-t04c02-stale-recovery]
+    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission, codex/u06-t04c02-stale-recovery, codex/u06-t04c02b-draft-restart]
   workflow_dispatch:
 
 permissions:
@@ -163,7 +163,7 @@ jobs:
           disk-size: 6000M
           disable-animations: true
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
-          script: ./gradlew :collect_app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.odk.collect.android.recordwork.ConnectedBackendTlsSmokeTest,org.odk.collect.android.recordwork.ConnectedRecordDiscoveryTest,org.odk.collect.android.recordwork.ConnectedStaleWorkRecoveryTest --no-daemon --stacktrace
+          script: bash ci/u06-t04c02b-process-restart.sh
       - name: Verify durable PostgreSQL amendment admission postconditions
         env:
           PGPASSWORD: synthetic-ci-only

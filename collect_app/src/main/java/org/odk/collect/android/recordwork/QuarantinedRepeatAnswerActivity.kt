@@ -158,7 +158,7 @@ class QuarantinedRepeatAnswerActivity : LocalizedActivity() {
                 if (token != generation || isFinishing || isDestroyed)
                     return@runOnUiThread
                 spinner.visibility = View.GONE
-                result.onSuccess { render(it) }.onFailure { deny() }
+                result.onSuccess { render(it) }.onFailure { deny(it) }
             }
         }
     }
@@ -247,22 +247,26 @@ class QuarantinedRepeatAnswerActivity : LocalizedActivity() {
                 result.onSuccess {
                     status.setText(R.string.private_repeat_answer_saved)
                     save.isEnabled = true
-                }.onFailure {
-                    status.setText(R.string.private_repeat_answer_failed)
+                }.onFailure { error ->
+                    // On 409 the encrypted previous repeat answers remain in
+                    // the private vault, but editing must stop until a new
+                    // server-issued work item is explicitly reviewed.
+                    status.text = ProtectedWorkRecovery.forFailure(error).message
                     save.isEnabled = false
                 }
             }
         }
     }
 
-    private fun deny() {
+    private fun deny(error: Throwable? = null) {
         openedBinding = null
         openedFields = emptyList()
         inputs.clear()
         fieldsContainer.removeAllViews()
         save.isEnabled = false
         spinner.visibility = View.GONE
-        status.setText(R.string.private_repeat_answer_denied)
+        if (error == null) status.setText(R.string.private_repeat_answer_denied)
+        else status.text = ProtectedWorkRecovery.forFailure(error).message
     }
 
     override fun onDestroy() {

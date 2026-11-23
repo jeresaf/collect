@@ -201,6 +201,82 @@ class ConnectedRecordDiscoveryTest {
         assertFalse(unknown.mayOfferAmendment)
     }
 
+    /**
+     * U06-T04D-03B1: validate the exact production browser-to-prepare intents
+     * using owned records and pending work from actual Spring/PostgreSQL.
+     * An Intent is NOT an authorization and this test does not start Activity.
+     */
+    @Test
+    fun authenticatedServerRecordsProduceExactFailClosedPreparationIntents() {
+        val snapshot = clientFor("u06-connected-owner", "u06-disposable-only").load(project)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val originalRecord = snapshot.records.single { it.submissionId == original }
+        val currentRecord = snapshot.records.single { it.submissionId == corrected }
+
+        val oldIntent = RecordWorkNavigation.record(context, project, originalRecord)
+        val currentIntent = RecordWorkNavigation.record(context, project, currentRecord)
+        assertEquals(project,
+            oldIntent.getStringExtra(RecordWorkPrepareActivity.EXTRA_PROJECT))
+        assertEquals(original,
+            oldIntent.getStringExtra(RecordWorkPrepareActivity.EXTRA_SOURCE))
+        assertFalse(oldIntent.getBooleanExtra(
+            RecordWorkPrepareActivity.EXTRA_SOURCE_CAN_AMEND, true))
+        assertTrue(currentIntent.getBooleanExtra(
+            RecordWorkPrepareActivity.EXTRA_SOURCE_CAN_AMEND, false))
+        assertEquals(corrected,
+            currentIntent.getStringExtra(RecordWorkPrepareActivity.EXTRA_SOURCE))
+        assertFalse(oldIntent.hasExtra(RecordWorkPrepareActivity.EXTRA_WORK))
+        assertFalse(oldIntent.hasExtra(RecordWorkPrepareActivity.EXTRA_TARGET))
+        assertFalse(oldIntent.hasExtra(RecordWorkPrepareActivity.EXTRA_TYPE))
+        assertFalse(currentIntent.hasExtra(RecordWorkPrepareActivity.EXTRA_WORK))
+        assertFalse(currentIntent.hasExtra(RecordWorkPrepareActivity.EXTRA_TARGET))
+
+        // The raw source answers and authentication secrets are never extras.
+        assertFalse(oldIntent.extras.toString().contains("u06-disposable-only"))
+        assertFalse(oldIntent.extras.toString().contains("Synthetic V1"))
+        assertFalse(oldIntent.extras.toString().contains("PRIVATE_STALE_SOURCE"))
+    }
+
+    @Test
+    fun serverOwnedPendingWorkCreatesOnlyScopedWorkReferenceIntent() {
+        val snapshot = clientFor("u06-connected-owner", "u06-disposable-only").load(project)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        snapshot.pendingWork.forEach { work ->
+            val intent = RecordWorkNavigation.pending(context, project, work)
+            assertEquals(project, intent.getStringExtra(RecordWorkPrepareActivity.EXTRA_PROJECT))
+            assertEquals(work.sourceSubmissionId,
+                intent.getStringExtra(RecordWorkPrepareActivity.EXTRA_SOURCE))
+            assertEquals(work.id,
+                intent.getStringExtra(RecordWorkPrepareActivity.EXTRA_WORK))
+            assertEquals(work.targetFormVersionId,
+                intent.getStringExtra(RecordWorkPrepareActivity.EXTRA_TARGET))
+            assertEquals(work.type.name,
+                intent.getStringExtra(RecordWorkPrepareActivity.EXTRA_TYPE))
+            assertFalse(intent.hasExtra(RecordWorkPrepareActivity.EXTRA_SOURCE_CAN_AMEND))
+            assertFalse(intent.extras.toString().contains("u06-disposable-only"))
+        }
+    }
+
+    @Test
+    fun malformedServerRecordIdentifierCannotMakeNavigationIntent() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val invalid = RemoteRecord(
+            submissionId = "../private-source-xml",
+            instanceId = "uuid:81000000-0000-4000-8000-000000000017",
+            formId = original,
+            formVersionId = null,
+            submittedAt = "2026-11-23T00:00:00Z",
+            amendmentRevision = RemoteAmendmentRevision.CURRENT
+        )
+        var rejected = false
+        try {
+            RecordWorkNavigation.record(context, project, invalid)
+        } catch (_: IllegalArgumentException) {
+            rejected = true
+        }
+        assertTrue("Navigation must reject noncanonical server IDs", rejected)
+    }
+
     private fun clientFor(username: String, password: String): RecordWorkReadOnlyClient {
         val settings = mock<Settings>()
         val provider = mock<SettingsProvider>()

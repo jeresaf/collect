@@ -23,7 +23,7 @@ FROM users WHERE username='admin';
 INSERT INTO form_versions (id,form_id,version,xml_content,xmlns,created_by_id,is_published,is_latest)
 SELECT '81000000-0000-4000-8000-000000000004',
        '81000000-0000-4000-8000-000000000002','2',
-       '<data id="u06-synthetic-household" version="2"><household_name/></data>',
+       '<h:html xmlns:h="http://www.w3.org/1999/xhtml" xmlns="http://www.w3.org/2002/xforms"><h:head><h:title>U06 synthetic household visit</h:title><model><instance><data id="u06-synthetic-household" version="2"><household_name/><meta><instanceID/></meta></data></instance><bind nodeset="/data/household_name" type="string"/></model></h:head><h:body><input ref="/data/household_name"><label>Household name</label></input></h:body></h:html>',
        'u06-synthetic-household',id,TRUE,TRUE
 FROM users WHERE username='admin';
 

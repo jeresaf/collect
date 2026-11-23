@@ -460,12 +460,10 @@ class ConfiguredRecordPreparationUiTest {
             // Even though the work ID exists server-side, no reviewed binding
             // exists on this device. The editor cannot expose any questions,
             // private answers or a Save/Finalize/Send route.
-            scenario.onActivity { activity ->
-                val save = activity.findViewById<Button>(
-                    org.odk.collect.android.R.id.private_text_editor_save
-                )
-                assertFalse(save.isEnabled)
-            }
+            onView(withText(org.odk.collect.strings.R.string.private_text_editor_save))
+                .check(matches(androidx.test.espresso.matcher.ViewMatchers.isNotEnabled()))
+            onView(withText(org.odk.collect.strings.R.string.private_text_editor_never_submit))
+                .check(matches(isDisplayed()))
         }
         assertEquals(snapshot.pendingWork.map { it.id }.toSet(),
             connectedClient().load(project).pendingWork.map { it.id }.toSet())

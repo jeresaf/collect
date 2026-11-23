@@ -423,7 +423,7 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
     }
 
     private fun reject(error: Throwable? = null) {
-        val outcome = error?.let(ProtectedWorkRecovery::forFailure)
+        val outcome = error?.let { ProtectedWorkRecovery.forFailure(it) }
         recoveryButton.visibility = if (outcome?.mayManuallyReviewServerRecords == true)
             View.VISIBLE else View.GONE
         recoveryButton.isEnabled = outcome?.mayManuallyReviewServerRecords == true

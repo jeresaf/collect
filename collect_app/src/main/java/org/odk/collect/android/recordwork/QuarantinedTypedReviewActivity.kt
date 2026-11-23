@@ -153,7 +153,7 @@ class QuarantinedTypedReviewActivity : LocalizedActivity() {
                         "Encrypted operator review exists. Decisions are immutable."
                     else "Select an action for every target field. Rule review is NOT approval to copy any answer."
                     save.isEnabled = prior == null
-                }.onFailure { deny() }
+                }.onFailure { deny(it) }
             }
         }
     }
@@ -193,20 +193,22 @@ class QuarantinedTypedReviewActivity : LocalizedActivity() {
                             status.text = "Encrypted review recorded. No transfer or submission enabled."
                             selectors.values.forEach { it.isEnabled = false }
                             save.isEnabled = false
-                        }.onFailure { deny() }
+                        }.onFailure { deny(it) }
                     }
                 }
             }.show()
     }
 
-    private fun deny() {
+    private fun deny(error: Throwable? = null) {
         binding = null
         loaded = null
         selectors.clear()
         rows.removeAllViews()
         save.isEnabled = false
         progress.visibility = View.GONE
-        status.text = "Review unavailable. Recheck active project, server assignment and form versions."
+        status.text = if (error == null)
+            "Review unavailable. Recheck active project, server assignment and form versions."
+        else ProtectedWorkRecovery.forFailure(error).message
     }
 
     override fun onStop() {

@@ -288,6 +288,67 @@ class ConnectedRecordDiscoveryTest {
         assertTrue("Navigation must reject noncanonical server IDs", rejected)
     }
 
+
+    /**
+     * U06-T04D-03C1: genuine authorized READY follow-up work is independently
+     * retrieved, rendered using the browser's production Android Button and
+     * selected without silently changing it into an amendment.
+     */
+    @Test
+    fun genuineReadyVisitRendersAsIndependentPendingWorkAndKeepsServerId() {
+        val request = NewRecordWork(
+            sourceSubmissionId = original,
+            targetFormVersionId = "81000000-0000-4000-8000-000000000004",
+            workType = RecordWorkType.FOLLOW_UP,
+            clientRequestId = "u06-ui-pending-request-" + UUID.randomUUID(),
+            visitKey = "u06-ui-pending-" + UUID.randomUUID()
+        )
+        val preparer = preparationClient()
+        val created = preparer.create(project, request)
+        assertEquals(created.id, preparer.create(project, request).id)
+        val snapshot = clientFor("u06-connected-owner", "u06-disposable-only").load(project)
+        val ready = snapshot.pendingWork.single { it.id == created.id }
+        assertEquals(RecordWorkType.FOLLOW_UP, ready.type)
+        assertEquals(original, ready.sourceSubmissionId)
+        assertEquals(request.visitKey, ready.visitKey)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        var selected: RemoteVisitWork? = null
+        val button = RecordWorkPendingRow.create(context, ready) { selected = it }
+        assertTrue(button.text.toString().contains("Independent follow-up visit"))
+        assertTrue(button.text.toString().contains(ready.id))
+        assertTrue(button.text.toString().contains(ready.visitKey.orEmpty()))
+        assertFalse(button.text.toString().contains("Pending amendment"))
+        assertFalse(button.text.toString().contains("Synthetic V1"))
+        assertFalse(button.isAllCaps)
+        assertTrue(button.performClick())
+        assertEquals(ready, selected)
+        val intent = RecordWorkNavigation.pending(context, project, requireNotNull(selected))
+        assertEquals(ready.id, intent.getStringExtra(RecordWorkPrepareActivity.EXTRA_WORK))
+        assertEquals(ready.sourceSubmissionId,
+            intent.getStringExtra(RecordWorkPrepareActivity.EXTRA_SOURCE))
+        assertEquals(ready.targetFormVersionId,
+            intent.getStringExtra(RecordWorkPrepareActivity.EXTRA_TARGET))
+        assertEquals(RecordWorkType.FOLLOW_UP.name,
+            intent.getStringExtra(RecordWorkPrepareActivity.EXTRA_TYPE))
+        assertFalse(intent.hasExtra(RecordWorkPrepareActivity.EXTRA_SOURCE_CAN_AMEND))
+    }
+
+    @Test
+    fun amendmentWorkRowCannotBeConfusedWithIndependentVisit() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val work = RemoteVisitWork(
+            id = "81000000-0000-4000-8000-000000000090",
+            sourceSubmissionId = corrected,
+            targetFormVersionId = "81000000-0000-4000-8000-000000000004",
+            type = RecordWorkType.AMENDMENT,
+            visitKey = null
+        )
+        val button = RecordWorkPendingRow.create(context, work) {}
+        assertTrue(button.text.toString().contains("Pending amendment"))
+        assertFalse(button.text.toString().contains("Independent follow-up visit"))
+        assertFalse(button.text.toString().contains("Visit:"))
+    }
+
     private fun clientFor(username: String, password: String): RecordWorkReadOnlyClient {
         val settings = mock<Settings>()
         val provider = mock<SettingsProvider>()

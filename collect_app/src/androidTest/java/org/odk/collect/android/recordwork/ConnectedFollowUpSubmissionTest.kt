@@ -117,7 +117,10 @@ class ConnectedFollowUpSubmissionTest {
         assertFalse(snapshot.pendingWork.any { it.id == work.id })
     }
 
-    private fun upload(\n        ssl: SSLContext, workId: String, xml: String,\n        discardCommittedAcknowledgement: Boolean = false\n    ): Int {
+    private fun upload(
+        ssl: SSLContext, workId: String, xml: String,
+        discardCommittedAcknowledgement: Boolean = false
+    ): Int {
         val boundary = "u06multipart" + UUID.randomUUID().toString().replace("-", "")
         val head = (
             "--$boundary\r\n" +

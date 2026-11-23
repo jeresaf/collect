@@ -131,7 +131,16 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
         } else {
             snapshot.records.forEach { record ->
                 records.addView(Button(this).apply {
-                    text = "${record.submittedAt}\n${record.submissionId}\nForm: ${record.formId}"
+                    val amendmentLabel = when (record.amendmentRevision) {
+                        RemoteAmendmentRevision.CURRENT ->
+                            "No archived amendment shown (server rechecks before creating work)"
+                        RemoteAmendmentRevision.SUPERSEDED ->
+                            "Historical record — already amended; choose its newer revision"
+                        RemoteAmendmentRevision.UNKNOWN ->
+                            "Revision status unavailable — amendment creation blocked"
+                    }
+                    text = "${record.submittedAt}\n${record.submissionId}\n" +
+                        "Form: ${record.formId}\n$amendmentLabel"
                     isAllCaps = false
                     setOnClickListener {
                         val session = activeSession() ?: return@setOnClickListener
@@ -139,6 +148,8 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
                             RecordWorkPrepareActivity::class.java).apply {
                             putExtra(RecordWorkPrepareActivity.EXTRA_PROJECT, session.projectId)
                             putExtra(RecordWorkPrepareActivity.EXTRA_SOURCE, record.submissionId)
+                            putExtra(RecordWorkPrepareActivity.EXTRA_SOURCE_CAN_AMEND,
+                                record.mayOfferAmendment)
                         })
                     }
                 })

@@ -12,13 +12,25 @@ import javax.net.ssl.HttpsURLConnection
 import android.util.Base64
 
 /** Server-owned records, never local ODK draft/instance identities. */
+/**
+ * A point-in-time hint from the backend. UNKNOWN is intentionally not treated
+ * as CURRENT; older server releases have no revision-admission field.
+ * Even CURRENT cannot authorize amendment creation: the backend rechecks
+ * and locks the source transactionally on every POST.
+ */
+enum class RemoteAmendmentRevision { CURRENT, SUPERSEDED, UNKNOWN }
+
 data class RemoteRecord(
     val submissionId: String,
     val instanceId: String,
     val formId: String,
     val formVersionId: String?,
-    val submittedAt: String
-)
+    val submittedAt: String,
+    val amendmentRevision: RemoteAmendmentRevision = RemoteAmendmentRevision.UNKNOWN
+) {
+    val mayOfferAmendment: Boolean
+        get() = amendmentRevision == RemoteAmendmentRevision.CURRENT
+}
 
 data class RemoteVisitWork(
     val id: String,
@@ -162,7 +174,21 @@ object RecordWorkJsonParser {
                 instanceId = item.getString("instanceId").also { require(it.isNotBlank()) },
                 formId = safeUuid(item.getString("formId")),
                 formVersionId = if (item.isNull("formVersionId")) null else safeUuid(item.getString("formVersionId")),
-                submittedAt = item.optString("submittedAt")
+                submittedAt = item.optString("submittedAt"),
+                amendmentRevision = if (!item.has("amendmentSuperseded") ||
+                    item.isNull("amendmentSuperseded")) {
+                    RemoteAmendmentRevision.UNKNOWN
+                } else {
+                    // JSONObject.getBoolean can coerce strings; fail closed
+                    // instead of treating a malformed response as admission.
+                    when (item.get("amendmentSuperseded")) {
+                        true -> RemoteAmendmentRevision.SUPERSEDED
+                        false -> RemoteAmendmentRevision.CURRENT
+                        else -> throw IllegalArgumentException(
+                            "Invalid amendment revision signal"
+                        )
+                    }
+                }
             )
         }
     }

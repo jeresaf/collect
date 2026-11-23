@@ -84,7 +84,8 @@ for method in \
   historicalRecordOffersIndependentVisitButNeverAmendment \
   currentRevisionShowsAmendmentChoiceWithoutPreauthorizingSubmission \
   genuineBackendRecordSelectionOpensRealPreparationActivity \
-  realBrowserActivityFetchesServerRowsAndOpensHistoricalPrepareActivity
+  realBrowserActivityFetchesServerRowsAndOpensHistoricalPrepareActivity \
+  supersededRecordCanReviewAuthorizedFollowUpTargetsWithoutCreatingWork
 do
   ui_output_file="/tmp/u06-ui-${method}.txt"
   adb shell pm clear "$APP_ID" >/dev/null
@@ -101,4 +102,4 @@ do
   fi
   echo "Android first-launch UI method PASS: ${method}"
 done
-echo "U06-T04D-04A: four independently isolated Android UI tests PASS"
+echo "U06-T04D-04A: five independently isolated Android UI tests PASS"

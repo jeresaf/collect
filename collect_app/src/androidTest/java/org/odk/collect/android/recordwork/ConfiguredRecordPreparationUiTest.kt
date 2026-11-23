@@ -469,6 +469,111 @@ class ConfiguredRecordPreparationUiTest {
             connectedClient().load(project).pendingWork.map { it.id }.toSet())
     }
 
+
+    /**
+     * U06-T04E-02A: real READY work must undergo the actual Android mapping
+     * review, user confirmation and server reauthorization before a local
+     * actor-bound quarantine is staged. Selecting REENTER for every target
+     * field prevents any old-household answer from being copied.
+     *
+     * This is NOT a native ODK Instance, finalized draft or permission to
+     * upload. It only grants the separate private editor a binding to check.
+     */
+    @Test
+    fun reviewedFollowUpStagesOnlyAfterEveryTargetFieldAndExplicitApproval() {
+        rule.startAtFirstLaunch()
+            .clickManuallyEnterProjectDetails()
+            .inputUrl("https://10.0.2.2:8443/v1/projects/81000000-0000-4000-8000-000000000001")
+            .inputUsername("u06-connected-owner")
+            .inputPassword("u06-disposable-only")
+            .addProject()
+        val project = "81000000-0000-4000-8000-000000000001"
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val before = connectedClient().load(project)
+        val pending = before.pendingWork.single {
+            it.type == RecordWorkType.FOLLOW_UP &&
+                it.visitKey?.startsWith("u06-ui-create-") == true
+        }
+        val scope = QuarantinedWorkDraftVault.sha256(
+            activeProjectId() + "\n" +
+                RecordWorkApiPaths.fromProjectUrl(
+                    "https://10.0.2.2:8443/v1/projects/$project"
+                ).records() + "\n" + "u06-connected-owner"
+        )
+        val vault = QuarantinedWorkDraftVault(context.noBackupFilesDir)
+        assertEquals(null, vault.read(activeProjectId(), pending.id, scope))
+        val selection = RecordWorkNavigation.pending(context, activeProjectId(), pending)
+        ActivityScenario.launch<RecordWorkPrepareActivity>(selection).use { scenario ->
+            var candidateCount = -1
+            for (attempt in 1..120) {
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                scenario.onActivity { activity ->
+                    val rows = activity.findViewById<LinearLayout>(R.id.work_versions)
+                    val views = (0 until rows.childCount)
+                        .map { rows.getChildAt(it) }
+                    val stageLabel = activity.getString(R.string.mapping_quarantine_stage)
+                    val stage = views.filterIsInstance<Button>()
+                        .singleOrNull { it.text.toString() == stageLabel }
+                    if (stage != null) {
+                        // One review prompt + N candidates + one stage button +
+                        // the non-editable quarantine warning.
+                        candidateCount = views.filterIsInstance<Button>().size - 1
+                        assertFalse(stage.isEnabled)
+                    }
+                }
+                if (candidateCount >= 0) break
+                Thread.sleep(250)
+            }
+            assertTrue("Real JavaRosa target review must be displayed", candidateCount > 0)
+            assertTrue("Review must stay within visible safe bound", candidateCount <= 30)
+            assertEquals(null, vault.read(activeProjectId(), pending.id, scope))
+            for (index in 0 until candidateCount) {
+                scenario.onActivity { activity ->
+                    val rows = activity.findViewById<LinearLayout>(R.id.work_versions)
+                    // The review prompt is a TextView at position zero.
+                    val item = rows.getChildAt(index + 1) as Button
+                    assertTrue(item.performClick())
+                }
+                // Explicitly REENTER every path: no amendment/old answers copied
+                // into an independent second visit.
+                onView(withText(R.string.mapping_review_reenter)).perform(click())
+            }
+            scenario.onActivity { activity ->
+                val rows = activity.findViewById<LinearLayout>(R.id.work_versions)
+                val stage = (0 until rows.childCount)
+                    .map { rows.getChildAt(it) }
+                    .filterIsInstance<Button>()
+                    .single { it.text.toString() ==
+                        activity.getString(R.string.mapping_quarantine_stage) }
+                assertTrue("Complete review should activate quarantined staging",
+                    stage.isEnabled)
+                assertTrue(stage.performClick())
+            }
+            assertEquals(null, vault.read(activeProjectId(), pending.id, scope))
+            onView(withText(android.R.string.ok)).perform(click())
+            var staged: QuarantinedWorkDraft? = null
+            for (attempt in 1..120) {
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                staged = vault.read(activeProjectId(), pending.id, scope)
+                if (staged != null) break
+                Thread.sleep(250)
+            }
+            val binding = requireNotNull(staged) {
+                "Only explicitly reviewed and authorized work may be staged"
+            }
+            assertEquals(pending.id, binding.workId)
+            assertEquals(source, binding.sourceSubmissionId)
+            assertEquals(RecordWorkType.FOLLOW_UP, binding.workType)
+            assertEquals(0, binding.validationTransfers)
+            assertFalse(binding.canFinalize)
+            assertFalse(binding.canUpload)
+            assertFalse(binding.canOpenEditor)
+            assertEquals(candidateCount, binding.reviewedPaths)
+            assertEquals(before.pendingWork.map { it.id }.toSet(),
+                connectedClient().load(project).pendingWork.map { it.id }.toSet())
+        }
+    }
+
     private fun connectedClient(): RecordWorkReadOnlyClient {
         val backendProject = "81000000-0000-4000-8000-000000000001"
         val settings = mock<Settings>()

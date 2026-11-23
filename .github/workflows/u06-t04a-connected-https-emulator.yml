@@ -2,7 +2,7 @@ name: U06-T04A Connected Android HTTPS Smoke (experimental)
 
 on:
   push:
-    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission, codex/u06-t04c02-stale-recovery, codex/u06-t04c02b-draft-restart, codex/u06-t04c03a-followup-submission, codex/u06-t04c03b-repeats-media, codex/u06-t04c03c-lost-ack-recovery, codex/u06-t04d01-ui-fail-closed]
+    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission, codex/u06-t04c02-stale-recovery, codex/u06-t04c02b-draft-restart, codex/u06-t04c03a-followup-submission, codex/u06-t04c03b-repeats-media, codex/u06-t04c03c-lost-ack-recovery, codex/u06-t04d01-ui-fail-closed, codex/u06-t04d02-ui-context-invariants]
   workflow_dispatch:
 
 permissions:

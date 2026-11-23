@@ -18,6 +18,17 @@ import org.odk.collect.android.injection.DaggerUtils
 import org.odk.collect.android.support.TestDependencies
 import org.odk.collect.android.support.rules.CollectTestRule
 import org.odk.collect.android.support.rules.TestRuleChain
+import org.odk.collect.settings.SettingsProvider
+import org.odk.collect.settings.keys.ProjectKeys
+import org.odk.collect.shared.settings.Settings
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.whenever
+import java.net.URL
+import java.security.KeyStore
+import java.security.cert.CertificateFactory
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManagerFactory
 
 /**
  * U06-T04D-03B2A: real configured ODK project + real preparation Activity.
@@ -106,6 +117,85 @@ class ConfiguredRecordPreparationUiTest {
                 assertEquals(0,
                     (activity.findViewById<View>(R.id.work_versions)
                         as android.widget.LinearLayout).childCount)
+            }
+        }
+    }
+
+
+    /**
+     * U06-T04D-03B2B: genuine owned V1/V2 records fetched over TLS from the
+     * seeded Spring/PostgreSQL service are rendered into production Android
+     * record buttons, selected, and displayed in a real preparation Activity.
+     * The test uses separate CI-scoped TLS trust/credentials for discovery;
+     * it does NOT claim the configured ODK project is authenticated against
+     * the backend nor that the complete browser Activity performed the GET.
+     */
+    @Test
+    fun genuineBackendRecordSelectionOpensRealPreparationActivity() {
+        configureProject()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val localProject = activeProjectId()
+        val owned = connectedClient().load("81000000-0000-4000-8000-000000000001")
+        val historical = owned.records.single { it.submissionId == source }
+        val current = owned.records.single { it.submissionId == corrected }
+        assertEquals(RemoteAmendmentRevision.SUPERSEDED, historical.amendmentRevision)
+        assertEquals(RemoteAmendmentRevision.CURRENT, current.amendmentRevision)
+
+        for (record in listOf(historical, current)) {
+            var clicked: RemoteRecord? = null
+            val row = RecordWorkRecordRow.create(context, record) { clicked = it }
+            assertTrue(row.performClick())
+            assertEquals(record, clicked)
+            val intent = RecordWorkNavigation.record(context, localProject, requireNotNull(clicked))
+            assertEquals(record.submissionId,
+                intent.getStringExtra(RecordWorkPrepareActivity.EXTRA_SOURCE))
+            ActivityScenario.launch<RecordWorkPrepareActivity>(intent).use { scenario ->
+                scenario.onActivity { activity ->
+                    assertEquals(
+                        if (record.mayOfferAmendment) View.VISIBLE else View.GONE,
+                        activity.findViewById<View>(R.id.work_amend).visibility
+                    )
+                    assertEquals(View.VISIBLE,
+                        activity.findViewById<View>(R.id.work_followup).visibility)
+                    assertEquals(View.GONE,
+                        activity.findViewById<View>(R.id.work_create).visibility)
+                    assertEquals(View.GONE,
+                        activity.findViewById<View>(R.id.work_visit_key).visibility)
+                    assertEquals(0,
+                        (activity.findViewById<View>(R.id.work_versions)
+                            as android.widget.LinearLayout).childCount)
+                    assertFalse(activity.findViewById<TextView>(R.id.work_status)
+                        .text.toString().contains("Synthetic V1"))
+                }
+            }
+        }
+    }
+
+    private fun connectedClient(): RecordWorkReadOnlyClient {
+        val backendProject = "81000000-0000-4000-8000-000000000001"
+        val settings = mock<Settings>()
+        val provider = mock<SettingsProvider>()
+        whenever(provider.getUnprotectedSettings(backendProject)).thenReturn(settings)
+        whenever(settings.getString(ProjectKeys.KEY_SERVER_URL)).thenReturn(
+            "https://10.0.2.2:8443/v1/projects/$backendProject"
+        )
+        whenever(settings.getString(ProjectKeys.KEY_USERNAME)).thenReturn("u06-connected-owner")
+        whenever(settings.getString(ProjectKeys.KEY_PASSWORD)).thenReturn("u06-disposable-only")
+        val cert = InstrumentationRegistry.getInstrumentation().context.assets
+            .open("u06_t04a_ca.pem").use {
+                CertificateFactory.getInstance("X.509").generateCertificate(it)
+            }
+        val store = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+            load(null)
+            setCertificateEntry("disposable-ci-only", cert)
+        }
+        val managers = TrustManagerFactory.getInstance(
+            TrustManagerFactory.getDefaultAlgorithm()
+        ).apply { init(store) }.trustManagers
+        val tls = SSLContext.getInstance("TLS").apply { init(null, managers, null) }
+        return RecordWorkReadOnlyClient(provider) { destination: URL ->
+            (destination.openConnection() as HttpsURLConnection).also {
+                it.sslSocketFactory = tls.socketFactory
             }
         }
     }

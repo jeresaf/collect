@@ -2,7 +2,7 @@ name: U06-T04A Connected Android HTTPS Smoke (experimental)
 
 on:
   push:
-    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission]
+    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission]
   workflow_dispatch:
 
 permissions:
@@ -174,13 +174,15 @@ jobs:
           }
           stale="$(query "SELECT count(*) FROM record_work_items WHERE source_submission_id='81000000-0000-4000-8000-000000000007' AND work_type='AMENDMENT'")"
           current="$(query "SELECT count(*) FROM record_work_items WHERE source_submission_id='81000000-0000-4000-8000-000000000008' AND work_type='AMENDMENT' AND state='READY'")"
+          followups="$(query "SELECT count(*) FROM record_work_items WHERE source_submission_id='81000000-0000-4000-8000-000000000007' AND work_type='FOLLOW_UP' AND visit_key='second-household-visit' AND state='READY'")"
           links="$(query "SELECT count(*) FROM record_links")"
           submissions="$(query "SELECT count(*) FROM submissions WHERE id IN ('81000000-0000-4000-8000-000000000007','81000000-0000-4000-8000-000000000008')")"
           test "$stale" = 0
           test "$current" = 1
+          test "$followups" = 1
           test "$links" = 0
           test "$submissions" = 2
-          echo "PostgreSQL admission assertions PASS: V1=0 V2=1 links=0 submissions=2"
+          echo "PostgreSQL admission assertions PASS: V1 amendment=0 V2 amendment=1 V1 second visit=1 links=0 submissions=2"
       - name: Cleanup disposable CA, server and temporary store
         if: always()
         run: |

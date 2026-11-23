@@ -6,7 +6,7 @@ APP_ID=org.jeresaf.datacollector.android
 CLASS=org.odk.collect.android.recordwork.ConnectedRestartDraftBoundaryTest
 
 ./gradlew :collect_app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=org.odk.collect.android.recordwork.ConnectedBackendTlsSmokeTest,org.odk.collect.android.recordwork.ConnectedRecordDiscoveryTest,org.odk.collect.android.recordwork.ConnectedStaleWorkRecoveryTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=org.odk.collect.android.recordwork.ConnectedBackendTlsSmokeTest,org.odk.collect.android.recordwork.ConnectedRecordDiscoveryTest,org.odk.collect.android.recordwork.ConnectedStaleWorkRecoveryTest,org.odk.collect.android.recordwork.ConnectedRecoveryUiDenialTest \
   --no-daemon --stacktrace
 
 # Gradle's first invocation installed both test and target APKs. Discover the

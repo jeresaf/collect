@@ -60,6 +60,59 @@ class RecordWorkReadOnlyClientTest {
     }
 
     @Test
+    fun `backend amendmentSuperseded status distinguishes historical and current records`() {
+        val oldId = submissionId
+        val freshId = "2c85d9fe-7b5a-45ce-b843-d99f647d12d9"
+        val json = """
+            [
+              {"submissionId":"$oldId",
+               "instanceId":"uuid:9e1e9e90-5cc8-4e65-a5d0-acb5bdc1500d",
+               "formId":"$oldId","formVersionId":"$targetId",
+               "submittedAt":"2026-11-23T10:00:00Z","amendmentSuperseded":true},
+              {"submissionId":"$freshId",
+               "instanceId":"uuid:cc29e1f4-7c5e-40ed-9ce7-384508378999",
+               "formId":"$oldId","formVersionId":"$targetId",
+               "submittedAt":"2026-11-23T10:05:00Z","amendmentSuperseded":false}
+            ]
+        """.trimIndent()
+        val parsed = RecordWorkJsonParser.records(json)
+        assertEquals(RemoteAmendmentRevision.SUPERSEDED, parsed[0].amendmentRevision)
+        assertEquals(RemoteAmendmentRevision.CURRENT, parsed[1].amendmentRevision)
+        assertTrue(!parsed[0].mayOfferAmendment)
+        assertTrue(parsed[1].mayOfferAmendment)
+
+        // Old servers do not expose the new admission hint. Absence must
+        // NEVER be interpreted as an editable current revision.
+        val unknown = RecordWorkJsonParser.records(recordsJson()).single()
+        assertEquals(RemoteAmendmentRevision.UNKNOWN, unknown.amendmentRevision)
+        assertTrue(!unknown.mayOfferAmendment)
+
+        // A JSON string "false" must not be coerced to a safe CURRENT state.
+        val malformed = json.replace("\"amendmentSuperseded\":false",
+            "\"amendmentSuperseded\":\"false\"")
+        var refused = false
+        try { RecordWorkJsonParser.records(malformed) }
+        catch (_: RuntimeException) { refused = true }
+        assertTrue("Malformed server revision admission must fail closed", refused)
+    }
+
+    @Test
+    fun `server revision signals are read under exact ODK project credentials`() {
+        val (provider, _) = settings()
+        val response = recordsJson().replace(
+            "\"submittedAt\":\"2026-11-20T11:00:00Z\"",
+            "\"submittedAt\":\"2026-11-20T11:00:00Z\",\"amendmentSuperseded\":false"
+        )
+        val client = RecordWorkReadOnlyClient(provider) { url ->
+            fakeConnection(200, if (url.toString().endsWith("/records")) response else "[]")
+        }
+        val snapshot = client.load(projectId)
+        assertEquals(RemoteAmendmentRevision.CURRENT,
+            snapshot.records.single().amendmentRevision)
+        assertTrue(snapshot.records.single().mayOfferAmendment)
+    }
+
+    @Test
     fun `missing credentials fail without a network request`() {
         val (provider, settings) = settings()
         whenever(settings.getString(ProjectKeys.KEY_PASSWORD)).thenReturn("")

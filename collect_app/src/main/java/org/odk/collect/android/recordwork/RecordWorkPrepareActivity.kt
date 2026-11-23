@@ -44,6 +44,9 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
 
     private val projectId get() = intent.getStringExtra(EXTRA_PROJECT).orEmpty()
     private val sourceId get() = intent.getStringExtra(EXTRA_SOURCE).orEmpty()
+    // Untrusted UI hint only. The backend locks and rechecks the source when
+    // creating a new AMENDMENT. Missing data (older server) denies this path.
+    private val sourceMayAmend get() = intent.getBooleanExtra(EXTRA_SOURCE_CAN_AMEND, false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -86,6 +89,13 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
             status.setText(R.string.work_pending)
             previewExisting(existing, target!!, type)
         } else {
+            if (!sourceMayAmend) {
+                amend.visibility = View.GONE
+                amend.isEnabled = false
+                status.text = "This source is already amended or its revision " +
+                    "status is unavailable. Select the newer record for an amendment; " +
+                    "an independent follow-up visit may still be prepared."
+            }
             amend.setOnClickListener { loadVersions(RecordWorkType.AMENDMENT) }
             followup.setOnClickListener { loadVersions(RecordWorkType.FOLLOW_UP) }
             create.setOnClickListener { confirmCreate() }
@@ -121,6 +131,10 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
     }
 
     private fun loadVersions(type: RecordWorkType) {
+        if (type == RecordWorkType.AMENDMENT && !sourceMayAmend) {
+            status.text = "Amendment blocked: source revision not verified current."
+            return
+        }
         if (session() == null) {
             status.setText(R.string.work_failed_changed_project)
             return
@@ -162,6 +176,10 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
 
     private fun confirmCreate() {
         val type = chosenType ?: return
+        if (type == RecordWorkType.AMENDMENT && !sourceMayAmend) {
+            status.text = "Amendment blocked: select a current server record."
+            return
+        }
         val target = chosenTarget ?: return
         val visit = if (type == RecordWorkType.FOLLOW_UP) {
             visitKey.text.toString().trim()
@@ -574,6 +592,7 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
         const val EXTRA_WORK = "recordwork.work"
         const val EXTRA_TARGET = "recordwork.target"
         const val EXTRA_TYPE = "recordwork.type"
+        const val EXTRA_SOURCE_CAN_AMEND = "recordwork.sourceCanAmend"
         private const val SAVED_ID = "recordwork.request.id"
         private const val SAVED_SPEC = "recordwork.request.spec"
         private val TOKEN = Regex("[A-Za-z0-9._:-]{1,128}")

@@ -135,7 +135,7 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
                         RecordWorkNavigation.record(
                             this@RecordWorkBrowserActivity, session.projectId, selected
                         )
-                    }.onSuccess(::startActivity)
+                    }.onSuccess { startActivity(it) }
                 })
             }
         }
@@ -152,7 +152,7 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
                             RecordWorkNavigation.pending(
                                 this@RecordWorkBrowserActivity, session.projectId, task
                             )
-                        }.onSuccess(::startActivity)
+                        }.onSuccess { startActivity(it) }
                     }
                 })
             }

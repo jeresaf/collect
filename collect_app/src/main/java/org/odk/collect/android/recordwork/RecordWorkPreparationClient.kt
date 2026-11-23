@@ -698,6 +698,12 @@ class RecordWorkPreparationClient(
     private fun <T> parseOrReject(block: () -> T): T {
         return try {
             block()
+        } catch (error: PreparationException) {
+            // An authenticated READY refresh can now return HTTP 409 if an
+            // offline AMENDMENT became stale. Preserve that typed conflict
+            // across nested authorization parsers; never disguise it as a
+            // malformed response or re-open a quarantined editor.
+            throw error
         } catch (_: Exception) {
             throw PreparationException(PreparationError.BAD_RESPONSE)
         }

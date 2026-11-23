@@ -229,7 +229,11 @@ class ConfiguredRecordPreparationUiTest {
             // dynamically rendered record row inside RecordWorkBrowserActivity.
             onView(allOf(
                 withText(containsString(source)),
-                androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom(Button::class.java)
+                withText(containsString("Historical record")),
+                androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom(Button::class.java),
+                androidx.test.espresso.matcher.ViewMatchers.isDescendantOfA(
+                    withId(R.id.remote_records_list)
+                )
             )).perform(click())
             onView(withId(R.id.work_followup)).check(matches(isDisplayed()))
             onView(withId(R.id.work_create)).check(matches(

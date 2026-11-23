@@ -249,6 +249,81 @@ class ConfiguredRecordPreparationUiTest {
         }
     }
 
+
+    /**
+     * U06-T04D-04B1: real server target discovery through the configured
+     * ODK account. A superseded record may choose a NEW independent visit
+     * with server-approved target versions, but no READY work is created
+     * until the operator explicitly confirms a valid visit key.
+     */
+    @Test
+    fun supersededRecordCanReviewAuthorizedFollowUpTargetsWithoutCreatingWork() {
+        rule.startAtFirstLaunch()
+            .clickManuallyEnterProjectDetails()
+            .inputUrl("https://10.0.2.2:8443/v1/projects/81000000-0000-4000-8000-000000000001")
+            .inputUsername("u06-connected-owner")
+            .inputPassword("u06-disposable-only")
+            .addProject()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val originalRecord = connectedClient()
+            .load("81000000-0000-4000-8000-000000000001")
+            .records.single { it.submissionId == source }
+        assertFalse(originalRecord.mayOfferAmendment)
+        val before = connectedClient().load("81000000-0000-4000-8000-000000000001")
+            .pendingWork.map { it.id }.toSet()
+        val navigation = RecordWorkNavigation.record(context, activeProjectId(), originalRecord)
+        ActivityScenario.launch<RecordWorkPrepareActivity>(navigation).use { scenario ->
+            onView(withId(R.id.work_amend)).check(matches(
+                androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility(
+                    androidx.test.espresso.matcher.ViewMatchers.Visibility.GONE
+                )
+            ))
+            onView(withId(R.id.work_create)).check(matches(
+                androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility(
+                    androidx.test.espresso.matcher.ViewMatchers.Visibility.GONE
+                )
+            ))
+            onView(withId(R.id.work_followup)).perform(click())
+            var targetsReady = false
+            for (attempt in 1..80) {
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                scenario.onActivity { activity ->
+                    val targets = activity.findViewById<LinearLayout>(R.id.work_versions)
+                    targetsReady = targets.childCount > 0 &&
+                        (0 until targets.childCount).all { index ->
+                            val item = targets.getChildAt(index)
+                            item is Button && item.text.toString().contains("Version ")
+                        }
+                    if (targetsReady) {
+                        assertEquals(View.GONE,
+                            activity.findViewById<View>(R.id.work_create).visibility)
+                        assertEquals(View.GONE,
+                            activity.findViewById<View>(R.id.work_visit_key).visibility)
+                        assertEquals(View.GONE,
+                            activity.findViewById<View>(R.id.work_amend).visibility)
+                    }
+                }
+                if (targetsReady) break
+                Thread.sleep(250)
+            }
+            assertTrue("Server must return authorized follow-up target form versions", targetsReady)
+            scenario.onActivity { activity ->
+                val targets = activity.findViewById<LinearLayout>(R.id.work_versions)
+                // User chooses a server-reported target; do NOT click CREATE.
+                assertTrue((targets.getChildAt(0) as Button).performClick())
+                assertEquals(View.VISIBLE,
+                    activity.findViewById<View>(R.id.work_create).visibility)
+                assertEquals(View.VISIBLE,
+                    activity.findViewById<View>(R.id.work_visit_key).visibility)
+                assertEquals(View.GONE,
+                    activity.findViewById<View>(R.id.work_amend).visibility)
+            }
+        }
+        val after = connectedClient().load("81000000-0000-4000-8000-000000000001")
+            .pendingWork.map { it.id }.toSet()
+        assertEquals("Browsing target versions must never POST work", before, after)
+    }
+
     private fun connectedClient(): RecordWorkReadOnlyClient {
         val backendProject = "81000000-0000-4000-8000-000000000001"
         val settings = mock<Settings>()

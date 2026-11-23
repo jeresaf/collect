@@ -5,6 +5,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import java.util.UUID
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.kotlin.mock
@@ -36,7 +38,8 @@ class ConnectedRecordDiscoveryTest {
         val client = clientFor("u06-connected-owner", "u06-disposable-only")
         val snapshot = client.load(project)
         assertEquals(2, snapshot.records.size)
-        assertEquals(0, snapshot.pendingWork.size)
+        // A separate amendment admission test may have created work already.
+        assertTrue(snapshot.pendingWork.all { it.sourceSubmissionId == corrected })
         val revisions = snapshot.records.associateBy { it.submissionId }
         assertEquals(setOf(original, corrected), revisions.keys)
         assertEquals(RemoteAmendmentRevision.SUPERSEDED, revisions.getValue(original).amendmentRevision)
@@ -55,6 +58,65 @@ class ConnectedRecordDiscoveryTest {
         } catch (e: ReadOnlyRecordException) {
             assertEquals(ReadOnlyRequestFailure.AUTH_REQUIRED, e.reason)
         }
+    }
+
+    /**
+     * U06-T04B-02: actual app preparation client and real server-owned work IDs.
+     * Historical source is denied transactionally; current source admits one
+     * distinct work item. No editor, answer transfer or upload is authorized.
+     */
+    @Test
+    fun realBackendDeniesSupersededAndAdmitsCurrentAmendment() {
+        val client = preparationClient()
+        val targetVersion = "81000000-0000-4000-8000-000000000004"
+        val staleRequest = NewRecordWork(
+            original, targetVersion, RecordWorkType.AMENDMENT,
+            "u06-stale-" + UUID.randomUUID()
+        )
+        try {
+            client.create(project, staleRequest)
+            fail("Superseded V1 must never receive new amendment work")
+        } catch (error: PreparationException) {
+            assertEquals(PreparationError.CONFLICT, error.reason)
+        }
+        val freshRequest = NewRecordWork(
+            corrected, targetVersion, RecordWorkType.AMENDMENT,
+            "u06-current-" + UUID.randomUUID()
+        )
+        val created = client.create(project, freshRequest)
+        assertEquals(corrected, created.sourceSubmissionId)
+        assertEquals(targetVersion, created.targetFormVersionId)
+        assertEquals(RecordWorkType.AMENDMENT, created.type)
+        assertEquals(null, created.visitKey)
+        assertTrue(UUID.fromString(created.id).toString() == created.id)
+        val repeated = client.create(project, freshRequest)
+        assertEquals(created.id, repeated.id)
+
+        val snapshot = clientFor("u06-connected-owner", "u06-disposable-only")
+            .load(project)
+        assertTrue(snapshot.pendingWork.any { it.id == created.id &&
+            it.sourceSubmissionId == corrected })
+        assertFalse(snapshot.pendingWork.any { it.sourceSubmissionId == original })
+    }
+
+    private fun preparationClient(): RecordWorkPreparationClient {
+        val settings = mock<Settings>()
+        val provider = mock<SettingsProvider>()
+        whenever(provider.getUnprotectedSettings(project)).thenReturn(settings)
+        whenever(settings.getString(ProjectKeys.KEY_SERVER_URL)).thenReturn(base)
+        whenever(settings.getString(ProjectKeys.KEY_USERNAME))
+            .thenReturn("u06-connected-owner")
+        whenever(settings.getString(ProjectKeys.KEY_PASSWORD))
+            .thenReturn("u06-disposable-only")
+        val ssl = ephemeralTrust()
+        return RecordWorkPreparationClient(
+            settings = provider,
+            openConnection = { destination: URL ->
+                (destination.openConnection() as HttpsURLConnection).also {
+                    it.sslSocketFactory = ssl.socketFactory
+                }
+            }
+        )
     }
 
     private fun clientFor(username: String, password: String): RecordWorkReadOnlyClient {

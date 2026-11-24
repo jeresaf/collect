@@ -726,6 +726,36 @@ class ConfiguredRecordPreparationUiTest {
                 val fresh = probe.inspect(activeProjectId(), binding,
                     "Synthetic second session " + UUID.randomUUID())
                 assertTrue(fresh.inMemoryAnswerVerified)
+                val group = "/data/children"
+                val name = "$group/child_name"
+                val age = "$group/child_age_text"
+                val exercise = NativeRepeatExercise(
+                    groupPath = group,
+                    rows = listOf(
+                        mapOf(name to "Synthetic member A", age to "7"),
+                        mapOf(name to "Synthetic member B", age to "11")
+                    ),
+                    editedFirstPath = name,
+                    editedFirstValue = "Synthetic member A edited"
+                )
+                val repeated = probe.inspect(activeProjectId(), binding,
+                    "Synthetic repeat session " + UUID.randomUUID(), exercise)
+                assertTrue(repeated.inMemoryAnswerVerified)
+                assertTrue("Native repeat creation, edit and deletion must pass",
+                    repeated.inMemoryRepeatVerified)
+                assertEquals(2, repeated.repeatRowsBeforeDeletion)
+                assertEquals(1, repeated.repeatRowsAfterDeletion)
+                assertEquals(evidence.questionPaths, repeated.questionPaths)
+                assertFalse(repeated.canSave)
+                assertFalse(repeated.canFinalize)
+                assertFalse(repeated.canUpload)
+                // Repeat the complete exercise in a new controller: no
+                // previous native row values may survive in this session.
+                val repeatedFresh = probe.inspect(activeProjectId(), binding,
+                    "Synthetic fresh repeat session " + UUID.randomUUID(), exercise)
+                assertTrue(repeatedFresh.inMemoryRepeatVerified)
+                assertEquals(2, repeatedFresh.repeatRowsBeforeDeletion)
+                assertEquals(1, repeatedFresh.repeatRowsAfterDeletion)
                 assertEquals(originalFiles, snapshot())
                 assertFalse(evidence.canSave)
                 assertFalse(evidence.canFinalize)

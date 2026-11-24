@@ -48,6 +48,7 @@ internal data class ProtectedNativeControllerEvidence(
     val repeatRowsBeforeDeletion: Int = 0,
     val repeatRowsAfterDeletion: Int = 0,
     val conditionalValidationVerified: Boolean = false,
+    val nativeImageBindingVerified: Boolean = false,
     val canSave: Boolean = false,
     val canFinalize: Boolean = false,
     val canUpload: Boolean = false
@@ -67,13 +68,15 @@ internal class ProtectedNativeControllerProbe(
         binding: QuarantinedWorkDraft,
         firstTextAnswer: String? = null,
         repeatExercise: NativeRepeatExercise? = null,
-        conditionalExercise: Boolean = false
+        conditionalExercise: Boolean = false,
+        verifyStagedImage: Boolean = false
     ): ProtectedNativeControllerEvidence {
         // This is a disposable controller exercise, not a draft save API.
         require(firstTextAnswer == null ||
             (firstTextAnswer.isNotBlank() && firstTextAnswer.length <= 16_384 &&
                 '\u0000' !in firstTextAnswer)) { "Invalid temporary native text answer" }
-        require(!conditionalExercise || (firstTextAnswer == null && repeatExercise == null))
+        require(!conditionalExercise || (firstTextAnswer == null && repeatExercise == null && !verifyStagedImage))
+        require(!verifyStagedImage || (firstTextAnswer != null && repeatExercise == null))
         require(repeatExercise == null || firstTextAnswer != null) {
             "Repeat exercise requires the direct text navigation gate"
         }
@@ -327,6 +330,63 @@ internal class ProtectedNativeControllerProbe(
                 require(controller.getAnswer(directRef)?.value == firstTextAnswer)
                 repeatVerified = true
             }
+            var imageVerified = false
+            if (verifyStagedImage) {
+                // Native ODK image widgets represent binary answers as
+                // StringData filenames. Use only a generated opaque name
+                // derived from an authenticated encrypted asset, never a
+                // caller path, source attachment, URI or plaintext file.
+                val path = requireNotNull(next)
+                require(imagePaths == setOf(path) &&
+                    repeatPaths.none { path.startsWith(it + "/") } &&
+                    approval.decisions[path] == MappingDecision.REENTER)
+                var imageIndex: FormIndex? = null
+                for (attempt in 1..100) {
+                    val event = controller.stepToNextEvent(true)
+                    if (event == FormEntryController.EVENT_QUESTION &&
+                        absolutePath(controller.getFormIndex().reference) == path) {
+                        imageIndex = controller.getFormIndex()
+                        break
+                    }
+                    if (event == FormEntryController.EVENT_END_OF_FORM) break
+                }
+                val index = requireNotNull(imageIndex)
+                val ref = index.reference
+                val node = requireNotNull(def.instance.resolveReference(ref))
+                require(node.isLeaf && node.dataType == Constants.DATATYPE_BINARY)
+                require(controller.getAnswer(ref)?.value.let { it == null || it == "" })
+                val store = QuarantinedPrivateImageStore(
+                    noBackupRoot, AndroidKeyStorePrivateDraftCipher()
+                )
+                val filename = requireNotNull(store.withVerifiedImage(
+                    binding, path, listOf(path)
+                ) { receipt, bytes ->
+                    require(receipt.fieldPath == path &&
+                        receipt.sha256 == QuarantinedPrivateImageStore.digest(bytes) &&
+                        receipt.bytes == bytes.size && !receipt.canFinalize && !receipt.canSubmit)
+                    val extension = when (receipt.mime) {
+                        "image/jpeg" -> "jpg"
+                        "image/png" -> "png"
+                        "image/webp" -> "webp"
+                        else -> throw IllegalArgumentException("Unsupported image type")
+                    }
+                    "protected-" + receipt.sha256 + "." + extension
+                }) { "Authenticated staged image is required" }
+                require(controller.answerQuestion(index, StringData(filename)) ==
+                    FormEntryController.ANSWER_OK)
+                require(controller.getAnswer(ref)?.value == filename)
+                // Revisit the exact image index and then clear only the
+                // native RAM reference. The encrypted asset stays intact.
+                require(controller.stepToPreviousEvent() == FormEntryController.EVENT_QUESTION)
+                require(absolutePath(controller.getFormIndex().reference) == first)
+                require(controller.jumpToIndex(index) == FormEntryController.EVENT_QUESTION)
+                require(controller.getAnswer(ref)?.value == filename)
+                require(controller.answerQuestion(index, null) == FormEntryController.ANSWER_OK)
+                require(controller.getAnswer(ref)?.value.let { it == null || it == "" })
+                require(store.receipt(binding, path, listOf(path)) != null)
+                require(folder.walkTopDown().none { it.isFile && it.name == filename })
+                imageVerified = true
+            }
             var conditionalVerified = false
             if (conditionalExercise) {
                 // A deliberately narrow qualification of direct native
@@ -400,7 +460,7 @@ internal class ProtectedNativeControllerProbe(
                 binding.workId, binding.targetFormVersionId,
                 binding.targetXFormSha256, questionPaths, imagePaths,
                 repeatPaths, first, answerVerified, next,
-                repeatVerified, beforeDelete, afterDelete, conditionalVerified
+                repeatVerified, beforeDelete, afterDelete, conditionalVerified, imageVerified
             )
         } finally {
             check(folder.deleteRecursively()) { "Native controller scratch cleanup failed" }

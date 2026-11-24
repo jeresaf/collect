@@ -107,3 +107,10 @@ do
   echo "Android first-launch UI method PASS: ${method}"
 done
 echo "U06-T04D-04A: nine independently isolated Android UI tests PASS"
+
+# Preserve the ninth method's actual saved work and configured project.
+# Separate instrumentation invocation after force-stop, without pm clear.
+adb shell am force-stop "$APP_ID"
+run_one actualEditorRecoversSavedAnswerAfterForceStop \
+  org.odk.collect.android.recordwork.ConnectedProtectedEditorRestartTest
+echo "U06-T04E-03B: actual protected editor reopened saved answer after force-stop; unchanged ciphertext and READY work."

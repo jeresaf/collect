@@ -504,7 +504,7 @@ class ConfiguredRecordPreparationUiTest {
      * authorized by the server, even though its source is historical.
      */
     @Test
-    fun approvedScalarFollowUpOpensBlankProtectedEditorWithoutUploadRights() {
+    fun approvedScalarFollowUpOpensAndSavesNewAnswersWithoutUploadRights() {
         rule.startAtFirstLaunch()
             .clickManuallyEnterProjectDetails()
             .inputUrl("https://10.0.2.2:8443/v1/projects/81000000-0000-4000-8000-000000000001")
@@ -733,6 +733,86 @@ class ConfiguredRecordPreparationUiTest {
                 }
                 assertTrue("Actual private scalar editor must open after renewed authorization",
                     editorReady)
+                // U06-T04E-03A: operate the actual editor controls, not the
+                // store's save() method. The server must authorize the same
+                // READY work again and JavaRosa must validate the new answer.
+                val paths = listOf("/data/household_name")
+                val answer = "Synthetic new visit " + UUID.randomUUID().toString()
+                val store = EncryptedPrivateTextDraftStore(
+                    context.noBackupFilesDir, AndroidKeyStorePrivateDraftCipher()
+                )
+                assertFalse(store.read(binding, paths).hasSavedDraft)
+                val ciphertext = java.io.File(
+                    java.io.File(java.io.File(java.io.File(context.noBackupFilesDir,
+                        QuarantinedWorkDraftVault.VAULT_DIRECTORY), binding.projectId),
+                        binding.workId),
+                    "private-answers.aesgcm"
+                )
+                assertFalse(ciphertext.exists())
+                InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                    val editor = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+                        .getInstance().getActivitiesInStage(
+                            androidx.test.runner.lifecycle.Stage.RESUMED
+                        ).filterIsInstance<QuarantinedTextDraftActivity>().single()
+                    val widgets = editorWidgets(editor.window.decorView)
+                    widgets.filterIsInstance<EditText>().single().setText(answer)
+                }
+                // Typing alone is not a committed private save.
+                assertFalse(ciphertext.exists())
+                InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                    val editor = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+                        .getInstance().getActivitiesInStage(
+                            androidx.test.runner.lifecycle.Stage.RESUMED
+                        ).filterIsInstance<QuarantinedTextDraftActivity>().single()
+                    val save = editorWidgets(editor.window.decorView)
+                        .filterIsInstance<Button>().single {
+                            it.text.toString() == editor.getString(R.string.private_text_editor_save)
+                        }
+                    assertTrue(save.isEnabled)
+                    assertTrue(save.performClick())
+                }
+                var saved = false
+                for (attempt in 1..120) {
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                        val editor = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+                            .getInstance().getActivitiesInStage(
+                                androidx.test.runner.lifecycle.Stage.RESUMED
+                            ).filterIsInstance<QuarantinedTextDraftActivity>().singleOrNull()
+                        if (editor != null) {
+                            val widgets = editorWidgets(editor.window.decorView)
+                            saved = widgets.filterIsInstance<TextView>().any {
+                                it.text.toString() ==
+                                    editor.getString(R.string.private_text_editor_saved)
+                            }
+                            if (saved) {
+                                assertTrue(widgets.filterIsInstance<Button>().single {
+                                    it.text.toString() ==
+                                        editor.getString(R.string.private_text_editor_save)
+                                }.isEnabled)
+                                assertEquals(answer,
+                                    widgets.filterIsInstance<EditText>().single().text.toString())
+                            }
+                        }
+                    }
+                    if (saved) break
+                    Thread.sleep(250)
+                }
+                assertTrue("Actual editor must acknowledge successful private save", saved)
+                assertTrue(ciphertext.isFile)
+                val sealed = ciphertext.readBytes()
+                assertTrue(sealed.size >= 30)
+                assertEquals(1, sealed[0].toInt())
+                assertEquals(12, sealed[1].toInt())
+                assertFalse("No plaintext answer in encrypted envelope",
+                    String(sealed, Charsets.ISO_8859_1).contains(answer))
+                val persisted = store.read(binding, paths)
+                assertTrue(persisted.hasSavedDraft)
+                assertEquals(mapOf(paths.single() to answer), persisted.answers)
+                assertFalse(persisted.canFinalize)
+                assertFalse(persisted.canSubmit)
+                assertEquals(binding, vault.read(activeProjectId(), pending.id, scope))
+
             }
             assertEquals(before.pendingWork.map { it.id }.toSet(),
                 connectedClient().load(project).pendingWork.map { it.id }.toSet())
@@ -740,6 +820,11 @@ class ConfiguredRecordPreparationUiTest {
     }
 
 
+
+    private fun editorWidgets(view: View): List<View> =
+        listOf(view) + if (view is android.view.ViewGroup) {
+            (0 until view.childCount).flatMap { editorWidgets(view.getChildAt(it)) }
+        } else emptyList()
 
     // Exercise the actual Android parser, not only the desktop unit-test
     // provider. These synthetic inputs do not resolve external resources.

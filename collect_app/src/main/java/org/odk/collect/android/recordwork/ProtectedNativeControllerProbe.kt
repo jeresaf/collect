@@ -115,7 +115,11 @@ internal class ProtectedNativeControllerProbe(
                     }
                 }
             }
-            visit(controller.getFormDef().children, 0)
+            val nativeForm = requireNotNull(controller.getFormDef()) {
+                "Native ODK controller did not retain its initialized form"
+            }
+            require(nativeForm === def) { "Native controller form identity changed" }
+            visit(nativeForm.children, 0)
             require(questionPaths == plan.candidates.map { it.targetPath }.toSet()) {
                 "Native questionnaire differs from explicitly reviewed target paths"
             }

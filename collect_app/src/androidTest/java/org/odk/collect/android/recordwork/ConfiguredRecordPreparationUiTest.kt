@@ -816,6 +816,79 @@ class ConfiguredRecordPreparationUiTest {
                 assertEquals(2, repeatedFresh.repeatRowsBeforeDeletion)
                 assertEquals(1, repeatedFresh.repeatRowsAfterDeletion)
                 assertEquals(originalFiles, snapshot())
+
+                // Native direct image answer references are qualified using
+                // real Android-generated JPEGs and the private AES-GCM store.
+                // No camera, ordinary ODK instance or plaintext file is used.
+                val media = ProtectedNativeImageIntake(
+                    context.cacheDir, context.noBackupFilesDir, settings
+                )
+                val photo = "/data/photo"
+                fun jpeg(color: Int): ByteArray {
+                    val bitmap = android.graphics.Bitmap.createBitmap(
+                        32, 32, android.graphics.Bitmap.Config.ARGB_8888
+                    )
+                    try {
+                        bitmap.eraseColor(color)
+                        return java.io.ByteArrayOutputStream().use { output ->
+                            assertTrue(bitmap.compress(
+                                android.graphics.Bitmap.CompressFormat.JPEG, 90, output
+                            ))
+                            output.toByteArray()
+                        }
+                    } finally {
+                        bitmap.recycle()
+                    }
+                }
+                val firstPhoto = jpeg(android.graphics.Color.RED)
+                val secondPhoto = jpeg(android.graphics.Color.BLUE)
+                assertEquals(null, media.inspect(activeProjectId(), binding, photo).directImageReceipt)
+                val firstReceipt = media.importSelectedImage(
+                    activeProjectId(), binding, photo, "image/jpeg", firstPhoto.inputStream()
+                )
+                assertEquals(firstPhoto.size, firstReceipt.bytes)
+                assertEquals(QuarantinedPrivateImageStore.digest(firstPhoto), firstReceipt.sha256)
+                assertFalse(firstReceipt.canSubmit)
+                assertFalse(firstReceipt.canFinalize)
+                val slot = dir.listFiles().orEmpty().single {
+                    it.name.startsWith("image-") && it.name.endsWith(".aesgcm")
+                }
+                val firstCipher = slot.readBytes()
+                assertEquals(1, firstCipher[0].toInt())
+                assertEquals(12, firstCipher[1].toInt())
+                assertFalse(firstCipher.contentEquals(firstPhoto))
+                val withFirstPhoto = snapshot()
+                assertTrue(runCatching {
+                    media.importSelectedImage(activeProjectId(), binding, photo,
+                        "image/png", firstPhoto.inputStream())
+                }.isFailure)
+                assertTrue(runCatching {
+                    media.importSelectedImage(activeProjectId(), binding, name,
+                        "image/jpeg", secondPhoto.inputStream())
+                }.isFailure)
+                assertEquals(withFirstPhoto, snapshot())
+                val secondReceipt = media.importSelectedImage(
+                    activeProjectId(), binding, photo, "image/jpeg", secondPhoto.inputStream()
+                )
+                assertEquals(QuarantinedPrivateImageStore.digest(secondPhoto), secondReceipt.sha256)
+                assertFalse(firstReceipt.sha256 == secondReceipt.sha256)
+                assertFalse(firstCipher.contentEquals(slot.readBytes()))
+                val reread = media.inspect(activeProjectId(), binding, photo)
+                assertEquals(secondReceipt, reread.directImageReceipt)
+                assertTrue(reread.nativeImageReferenceVerified)
+                assertFalse(reread.canUpload)
+                val store = QuarantinedPrivateImageStore(
+                    context.noBackupFilesDir, AndroidKeyStorePrivateDraftCipher()
+                )
+                assertEquals(true, store.withVerifiedImage(binding, photo, listOf(photo)) {
+                    receipt, bytes -> receipt == secondReceipt && bytes.contentEquals(secondPhoto)
+                })
+                media.clear(activeProjectId(), binding, photo)
+                assertFalse(slot.exists())
+                assertEquals(null, media.inspect(activeProjectId(), binding, photo).directImageReceipt)
+                assertEquals(originalFiles, snapshot())
+                firstPhoto.fill(0)
+                secondPhoto.fill(0)
                 assertFalse(evidence.canSave)
                 assertFalse(evidence.canFinalize)
                 assertFalse(evidence.canUpload)

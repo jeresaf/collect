@@ -695,6 +695,38 @@ class ConfiguredRecordPreparationUiTest {
                 assertEquals(setOf("/data/photo"), evidence.imagePaths)
                 assertEquals(setOf("/data/children"), evidence.repeatPaths)
                 assertEquals("/data/household_name", evidence.firstQuestionPath)
+                assertFalse(evidence.inMemoryAnswerVerified)
+                assertEquals(null, evidence.nextQuestionPath)
+                // Native answer entry must not register a draft, write XML
+                // or create an encrypted private scalar answer file. Capture
+                // the exact vault files before and after this RAM-only probe.
+                val dir = java.io.File(java.io.File(java.io.File(
+                    context.noBackupFilesDir, QuarantinedWorkDraftVault.VAULT_DIRECTORY),
+                    binding.projectId), binding.workId)
+                fun snapshot(): Map<String, String> = dir.walkTopDown()
+                    .filter { it.isFile }.associate { file ->
+                        file.relativeTo(dir).path to java.security.MessageDigest
+                            .getInstance("SHA-256").digest(file.readBytes())
+                            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+                    }
+                val originalFiles = snapshot()
+                val temporaryAnswer = "Synthetic native entry " + UUID.randomUUID()
+                val entered = probe.inspect(activeProjectId(), binding, temporaryAnswer)
+                assertTrue("Native answer must survive forward/back navigation",
+                    entered.inMemoryAnswerVerified)
+                assertEquals("/data/photo", entered.nextQuestionPath)
+                assertEquals(evidence.questionPaths, entered.questionPaths)
+                assertEquals(evidence.repeatPaths, entered.repeatPaths)
+                assertEquals(evidence.imagePaths, entered.imagePaths)
+                assertFalse(entered.canSave)
+                assertFalse(entered.canFinalize)
+                assertFalse(entered.canUpload)
+                // Another fresh native session must start blank, not reuse
+                // the discarded first session's answer or historical data.
+                val fresh = probe.inspect(activeProjectId(), binding,
+                    "Synthetic second session " + UUID.randomUUID())
+                assertTrue(fresh.inMemoryAnswerVerified)
+                assertEquals(originalFiles, snapshot())
                 assertFalse(evidence.canSave)
                 assertFalse(evidence.canFinalize)
                 assertFalse(evidence.canUpload)

@@ -812,6 +812,26 @@ class ConfiguredRecordPreparationUiTest {
                 assertFalse(persisted.canFinalize)
                 assertFalse(persisted.canSubmit)
                 assertEquals(binding, vault.read(activeProjectId(), pending.id, scope))
+                // Test-only checkpoint: identifiers and digests, never the
+                // answer itself. The second instrumentation process must
+                // reopen this exact work through the real Activity.
+                val checkpoint = java.io.File(context.noBackupFilesDir,
+                    "u06-editor-restart-checkpoint.properties")
+                assertFalse(checkpoint.exists())
+                val evidence = java.util.Properties().apply {
+                    setProperty("project", binding.projectId)
+                    setProperty("work", binding.workId)
+                    setProperty("reserved", binding.reservedInstanceId)
+                    setProperty("answerDigest", QuarantinedWorkDraftVault.sha256(answer))
+                    setProperty("cipherDigest", java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(sealed).joinToString("") { "%02x".format(it.toInt() and 0xff) })
+                    setProperty("pid", android.os.Process.myPid().toString())
+                }
+                java.io.FileOutputStream(checkpoint).use {
+                    evidence.store(it, "Synthetic editor restart checkpoint: no answer data")
+                    it.fd.sync()
+                }
+
 
             }
             assertEquals(before.pendingWork.map { it.id }.toSet(),

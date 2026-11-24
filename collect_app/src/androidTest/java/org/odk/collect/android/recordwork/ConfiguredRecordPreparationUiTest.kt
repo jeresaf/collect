@@ -663,6 +663,46 @@ class ConfiguredRecordPreparationUiTest {
             assertFalse(binding.canOpenEditor)
             assertEquals(candidateCount, binding.reviewedPaths)
             assertEquals(pending.targetFormVersionId, binding.targetFormVersionId)
+            if (!openEditor) {
+                // U06-T04E-03C1: actual mixed V2 target, after real UI review
+                // and encrypted approval persistence. The ordinary editor is
+                // NOT launched and no native instance is registered.
+                val settings = DaggerUtils.getComponent(context).settingsProvider()
+                val authorized = RecordWorkPreparationClient(settings)
+                    .authorizePrivateTextForm(activeProjectId(), binding)
+                val approvals = ProtectedMappingApprovalStore(
+                    context.noBackupFilesDir, AndroidKeyStorePrivateDraftCipher()
+                )
+                var approvalReady = false
+                for (attempt in 1..120) {
+                    if (approvals.read(binding, authorized.plan) != null) {
+                        approvalReady = true
+                        break
+                    }
+                    Thread.sleep(250)
+                }
+                assertTrue("Encrypted mapping approval required", approvalReady)
+                val probe = ProtectedNativeControllerProbe(
+                    context.cacheDir, context.noBackupFilesDir, settings
+                )
+                val evidence = probe.inspect(activeProjectId(), binding)
+                assertEquals(pending.id, evidence.workId)
+                assertEquals(binding.targetFormVersionId, evidence.targetFormVersionId)
+                assertEquals(binding.targetXFormSha256, evidence.targetXFormSha256)
+                assertEquals(setOf("/data/household_name", "/data/photo",
+                    "/data/children/child_name", "/data/children/child_age_text"),
+                    evidence.questionPaths)
+                assertEquals(setOf("/data/photo"), evidence.imagePaths)
+                assertEquals(setOf("/data/children"), evidence.repeatPaths)
+                assertEquals("/data/household_name", evidence.firstQuestionPath)
+                assertFalse(evidence.canSave)
+                assertFalse(evidence.canFinalize)
+                assertFalse(evidence.canUpload)
+                assertEquals(binding, vault.read(activeProjectId(), pending.id, scope))
+                assertFalse(context.cacheDir.listFiles().orEmpty().any {
+                    it.name.startsWith("recordwork-native-controller-")
+                })
+            }
             if (openEditor) {
                 assertEquals("1", binding.targetVersion)
                 // Wait for the stage callback, which runs only after encrypted

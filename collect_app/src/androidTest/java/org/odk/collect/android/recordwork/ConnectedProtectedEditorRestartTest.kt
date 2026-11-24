@@ -59,17 +59,32 @@ class ConnectedProtectedEditorRestartTest {
 
         phase("PROJECT_RESTORE")
         val component = DaggerUtils.getComponent(context)
-        var current: String? = null
-        for (attempt in 1..80) {
-            instrumentation.runOnMainSync {
-                current = component.currentProjectProvider().getCurrentProject().value?.uuid
-            }
-            if (current == project) break
-            Thread.sleep(250)
-        }
-        assertEquals("Original configured project must survive restart", project, current)
-        phase("ACTOR_SCOPE")
         val settings = component.settingsProvider()
+        // Before launching any UI, require the existing durable selection
+        // and project record. Never write settings or recreate the project.
+        phase("PERSISTED_PROJECT")
+        assertTrue("Original project selection must be persisted",
+            settings.getMetaSettings().getString(
+                org.odk.collect.settings.keys.MetaKeys.CURRENT_PROJECT_ID) == project)
+        assertTrue("Original project record must be persisted",
+            component.projectsRepository().get(project)?.uuid == project)
+
+        // The process-local StateFlow initially has a null default.
+        // ODK's ordinary MainMenuActivity constructs CurrentProjectViewModel,
+        // which invokes ProjectsDataService.update() and restores selection.
+        // Launch that real startup path rather than calling setCurrentProject
+        // or waiting on an uninitialized StateFlow.
+        phase("PROJECT_RESTORE")
+        ActivityScenario.launch(
+            org.odk.collect.android.mainmenu.MainMenuActivity::class.java
+        ).use { mainMenu ->
+            var restored = false
+            mainMenu.onActivity {
+                restored = component.currentProjectProvider().getCurrentProject().value?.uuid == project
+            }
+            assertTrue("Normal app startup must restore the original configured project", restored)
+        }
+        phase("ACTOR_SCOPE")
         val values = settings.getUnprotectedSettings(project)
         val url = values.getString(ProjectKeys.KEY_SERVER_URL).orEmpty()
         val username = values.getString(ProjectKeys.KEY_USERNAME).orEmpty()

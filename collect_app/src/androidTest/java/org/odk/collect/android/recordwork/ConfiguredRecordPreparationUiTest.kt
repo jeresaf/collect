@@ -562,7 +562,20 @@ class ConfiguredRecordPreparationUiTest {
                 }
                 // Explicitly REENTER every path: no amendment/old answers copied
                 // into an independent second visit.
-                onView(withText(R.string.mapping_review_reenter)).perform(click())
+                // MaterialAlertDialogBuilder.setItems uses an adapter-backed list.
+                // Resolve its first item inside the dialog and verify the exact
+                // action label before clicking; don't search the activity root.
+                androidx.test.espresso.Espresso.onData(org.hamcrest.Matchers.anything())
+                    .inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog())
+                    .atPosition(0)
+                    .check(matches(withText(R.string.mapping_review_reenter)))
+                    .perform(click())
+                scenario.onActivity { activity ->
+                    val rows = activity.findViewById<LinearLayout>(R.id.work_versions)
+                    val item = rows.getChildAt(index + 1) as Button
+                    assertTrue("Review action must be recorded for this target field",
+                        item.text.toString().endsWith("\n" + MappingDecision.REENTER.name))
+                }
             }
             scenario.onActivity { activity ->
                 val rows = activity.findViewById<LinearLayout>(R.id.work_versions)

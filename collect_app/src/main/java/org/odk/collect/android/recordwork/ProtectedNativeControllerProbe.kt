@@ -5,6 +5,7 @@ import org.javarosa.core.model.FormDef
 import org.javarosa.core.model.GroupDef
 import org.javarosa.core.model.IFormElement
 import org.javarosa.core.model.QuestionDef
+import org.javarosa.core.model.data.StringData
 import org.javarosa.core.model.instance.InstanceInitializationFactory
 import org.javarosa.core.model.instance.TreeReference
 import org.javarosa.form.api.FormEntryController
@@ -18,7 +19,7 @@ import java.util.UUID
 
 /**
  * First native editor integration boundary: authorize and inspect the actual
- * ODK JavaRosaFormController in an isolated read-only session. The controller
+ * ODK JavaRosaFormController in an isolated in-memory session. The controller
  * never escapes this method, has no instance file and is never registered in
  * FormsRepository or InstancesRepository. No ordinary FormFillingActivity,
  * save, finalize, attachment capture or upload is permitted by this probe.
@@ -31,6 +32,8 @@ internal data class ProtectedNativeControllerEvidence(
     val imagePaths: Set<String>,
     val repeatPaths: Set<String>,
     val firstQuestionPath: String,
+    val inMemoryAnswerVerified: Boolean = false,
+    val nextQuestionPath: String? = null,
     val canSave: Boolean = false,
     val canFinalize: Boolean = false,
     val canUpload: Boolean = false
@@ -45,7 +48,15 @@ internal class ProtectedNativeControllerProbe(
     private val noBackupRoot: File,
     private val settings: SettingsProvider
 ) {
-    fun inspect(projectId: String, binding: QuarantinedWorkDraft): ProtectedNativeControllerEvidence {
+    fun inspect(
+        projectId: String,
+        binding: QuarantinedWorkDraft,
+        firstTextAnswer: String? = null
+    ): ProtectedNativeControllerEvidence {
+        // This is a disposable controller exercise, not a draft save API.
+        require(firstTextAnswer == null ||
+            (firstTextAnswer.isNotBlank() && firstTextAnswer.length <= 16_384 &&
+                '\u0000' !in firstTextAnswer)) { "Invalid temporary native text answer" }
         require(binding.projectId == projectId &&
             binding.workType == RecordWorkType.FOLLOW_UP &&
             binding.validationTransfers == 0 &&
@@ -129,7 +140,7 @@ internal class ProtectedNativeControllerProbe(
                 repeatPaths.any { candidate.targetPath.startsWith(it + "/") }
             }) { "Native repeat inventory differs from review" }
             // Exercise the actual ODK controller's navigation to the first
-            // question without entering an answer or generating instance XML.
+            // question without generating instance XML.
             var first: String? = null
             for (attempt in 1..100) {
                 val event = controller.stepToNextEvent(true)
@@ -140,11 +151,58 @@ internal class ProtectedNativeControllerProbe(
                 if (event == FormEntryController.EVENT_END_OF_FORM) break
             }
             require(first != null && first in questionPaths)
+            var answerVerified = false
+            var next: String? = null
+            if (firstTextAnswer != null) {
+                // A direct scalar REENTER question only. No historical
+                // transfer, repeat mutation or media capture in this gate.
+                require(approval.decisions[first] == MappingDecision.REENTER &&
+                    first !in imagePaths &&
+                    repeatPaths.none { first.startsWith(it + "/") })
+                val index = controller.getFormIndex()
+                val ref = index.reference
+                val node = requireNotNull(def.instance.resolveReference(ref))
+                require(node.isLeaf && node.dataType == Constants.DATATYPE_TEXT)
+                require(controller.getAnswer(ref)?.value == null ||
+                    controller.getAnswer(ref)?.value == "") {
+                    "Independent visit must not contain a historical answer"
+                }
+                val result = controller.answerQuestion(index, StringData(firstTextAnswer))
+                require(result == FormEntryController.ANSWER_OK &&
+                    controller.getAnswer(ref)?.value == firstTextAnswer) {
+                    "Native ODK controller rejected or changed the entered answer"
+                }
+                // Navigate to the next genuine question, then return to the
+                // exact first native reference and prove the answer survived.
+                for (attempt in 1..100) {
+                    val event = controller.stepToNextEvent(true)
+                    if (event == FormEntryController.EVENT_QUESTION) {
+                        next = absolutePath(controller.getFormIndex().reference)
+                        break
+                    }
+                    if (event == FormEntryController.EVENT_END_OF_FORM) break
+                }
+                require(next != null && next != first && next in questionPaths)
+                var returned = false
+                for (attempt in 1..100) {
+                    val event = controller.stepToPreviousEvent()
+                    if (event == FormEntryController.EVENT_QUESTION &&
+                        controller.getFormIndex().reference == ref) {
+                        returned = true
+                        break
+                    }
+                    if (event == FormEntryController.EVENT_BEGINNING_OF_FORM) break
+                }
+                require(returned && controller.getAnswer(ref)?.value == firstTextAnswer) {
+                    "Native navigation did not retain the entered answer"
+                }
+                answerVerified = true
+            }
             require(controller.getInstanceFile() == null && !controller.isEditing())
             return ProtectedNativeControllerEvidence(
                 binding.workId, binding.targetFormVersionId,
                 binding.targetXFormSha256, questionPaths, imagePaths,
-                repeatPaths, first
+                repeatPaths, first, answerVerified, next
             )
         } finally {
             check(folder.deleteRecursively()) { "Native controller scratch cleanup failed" }

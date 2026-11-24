@@ -116,3 +116,11 @@ adb shell am force-stop "$APP_ID"
 run_one actualEditorRecoversSavedAnswerAfterForceStop \
   org.odk.collect.android.recordwork.ConnectedProtectedEditorRestartTest
 echo "U06-T04E-03B: actual protected editor reopened saved answer after force-stop; unchanged ciphertext and READY work."
+
+# Add the conditional target only after all earlier V1/V2 and force-stop
+# gates, so their catalogs and preservation assumptions stay identical.
+PGPASSWORD=synthetic-ci-only psql -v ON_ERROR_STOP=1 -h 127.0.0.1 \
+  -U odk_user -d odk_platform -f ci/u06-t04e03c4-conditional-form.sql
+adb shell pm clear "$APP_ID" >/dev/null
+run_one reviewedConditionalFollowUpValidatesNativeRelevanceAndCalculations "$ui_class"
+echo "U06-T04E-03C4: reviewed conditional target native validation PASS."

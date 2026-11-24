@@ -816,6 +816,64 @@ class ConfiguredRecordPreparationUiTest {
                 assertEquals(2, repeatedFresh.repeatRowsBeforeDeletion)
                 assertEquals(1, repeatedFresh.repeatRowsAfterDeletion)
                 assertEquals(originalFiles, snapshot())
+                // Exercise the exact native binary field with a real synthetic
+                // bitmap encrypted in the existing private image store.
+                val imagePath = "/data/photo"
+                val imageStore = QuarantinedPrivateImageStore(
+                    context.noBackupFilesDir, AndroidKeyStorePrivateDraftCipher()
+                )
+                fun syntheticPng(color: Int): ByteArray {
+                    val bitmap = android.graphics.Bitmap.createBitmap(16, 16,
+                        android.graphics.Bitmap.Config.ARGB_8888)
+                    try {
+                        bitmap.eraseColor(color)
+                        return java.io.ByteArrayOutputStream().use { stream ->
+                            assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,
+                                100, stream))
+                            stream.toByteArray()
+                        }
+                    } finally {
+                        bitmap.recycle()
+                    }
+                }
+                val png = syntheticPng(android.graphics.Color.RED)
+                val replacement = syntheticPng(android.graphics.Color.BLUE)
+                assertEquals(null, imageStore.receipt(binding, imagePath, listOf(imagePath)))
+                val firstImage = imageStore.importSelectedImage(binding, imagePath,
+                    listOf(imagePath), "image/png", png.inputStream())
+                assertEquals(QuarantinedPrivateImageStore.digest(png), firstImage.sha256)
+                val initialEncrypted = snapshot()
+                val nativeImage = probe.inspect(activeProjectId(), binding,
+                    "Synthetic image session " + UUID.randomUUID(), verifyStagedImage = true)
+                assertTrue(nativeImage.nativeImageBindingVerified)
+                assertFalse(nativeImage.canSave)
+                assertFalse(nativeImage.canFinalize)
+                assertFalse(nativeImage.canUpload)
+                assertEquals(initialEncrypted, snapshot())
+                // Bad MIME must fail without replacing the existing ciphertext.
+                assertTrue(runCatching {
+                    imageStore.importSelectedImage(binding, imagePath,
+                        listOf(imagePath), "image/jpeg", replacement.inputStream())
+                }.isFailure)
+                assertEquals(initialEncrypted, snapshot())
+                val replaced = imageStore.importSelectedImage(binding, imagePath,
+                    listOf(imagePath), "image/png", replacement.inputStream())
+                assertEquals(QuarantinedPrivateImageStore.digest(replacement), replaced.sha256)
+                assertTrue(firstImage.sha256 != replaced.sha256)
+                val replacedEncrypted = snapshot()
+                assertTrue(initialEncrypted != replacedEncrypted)
+                assertTrue(probe.inspect(activeProjectId(), binding,
+                    "Synthetic replacement session " + UUID.randomUUID(),
+                    verifyStagedImage = true).nativeImageBindingVerified)
+                assertEquals(replacedEncrypted, snapshot())
+                imageStore.clear(binding, imagePath, listOf(imagePath))
+                assertEquals(null, imageStore.receipt(binding, imagePath, listOf(imagePath)))
+                assertTrue(runCatching {
+                    probe.inspect(activeProjectId(), binding, "Synthetic missing asset",
+                        verifyStagedImage = true)
+                }.isFailure)
+                assertEquals(originalFiles, snapshot())
+
                 assertFalse(evidence.canSave)
                 assertFalse(evidence.canFinalize)
                 assertFalse(evidence.canUpload)

@@ -81,7 +81,7 @@ internal class ProtectedNativeControllerProbe(
             val entry = FormEntryController(FormEntryModel(def))
             def.initialize(true, InstanceInitializationFactory())
             val controller = JavaRosaFormController(folder, entry, null)
-            require(controller.instanceFile == null && !controller.isEditing)
+            require(controller.getInstanceFile() == null && !controller.isEditing())
             val questionPaths = linkedSetOf<String>()
             val imagePaths = linkedSetOf<String>()
             val repeatPaths = linkedSetOf<String>()
@@ -115,7 +115,7 @@ internal class ProtectedNativeControllerProbe(
                     }
                 }
             }
-            visit(controller.formDef.children, 0)
+            visit(controller.getFormDef().children, 0)
             require(questionPaths == plan.candidates.map { it.targetPath }.toSet()) {
                 "Native questionnaire differs from explicitly reviewed target paths"
             }
@@ -130,13 +130,13 @@ internal class ProtectedNativeControllerProbe(
             for (attempt in 1..100) {
                 val event = controller.stepToNextEvent(true)
                 if (event == FormEntryController.EVENT_QUESTION) {
-                    first = absolutePath(controller.formIndex.reference)
+                    first = absolutePath(controller.getFormIndex().reference)
                     break
                 }
                 if (event == FormEntryController.EVENT_END_OF_FORM) break
             }
             require(first != null && first in questionPaths)
-            require(controller.instanceFile == null && !controller.isEditing)
+            require(controller.getInstanceFile() == null && !controller.isEditing())
             return ProtectedNativeControllerEvidence(
                 binding.workId, binding.targetFormVersionId,
                 binding.targetXFormSha256, questionPaths, imagePaths,

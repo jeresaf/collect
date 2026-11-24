@@ -89,7 +89,7 @@ for method in \
   confirmedSecondVisitCreatesExactlyOneReadyWorkWithoutSubmittingObservation \
   serverReadyFollowUpWithoutLocalApprovalCannotOpenProtectedEditor \
   reviewedFollowUpStagesOnlyAfterEveryTargetFieldAndExplicitApproval \
-  approvedScalarFollowUpOpensBlankProtectedEditorWithoutUploadRights
+  approvedScalarFollowUpOpensAndSavesNewAnswersWithoutUploadRights
 do
   ui_output_file="/tmp/u06-ui-${method}.txt"
   adb shell pm clear "$APP_ID" >/dev/null

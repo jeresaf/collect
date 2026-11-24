@@ -26,6 +26,8 @@ run_one() {
   # Never dump test instrumentation output: it may contain private diagnostics.
   if ! grep -Eq '^OK \(1 test\)' <<<"$output" || grep -Eq '^FAILURES|^INSTRUMENTATION_FAILED' <<<"$output"; then
     echo "::error::Android process-boundary phase ${method} did not pass"
+    # Emit only the fixed-format recovery diagnostic, not raw output.
+    grep -Eo 'U06_RESTART_FAILURE phase=(CHECKPOINT|PROJECT_RESTORE|ACTOR_SCOPE|BINDING|CIPHERTEXT|LIVE_READY|EDITOR_REOPEN|POSTCONDITIONS) kind=(AssertionError|PreparationException|ReadOnlyRecordException|IllegalStateException|IllegalArgumentException|IOException|SecurityException|OtherException)' <<<"$output" | sort -u || true
     exit 1
   fi
   echo "Android instrumentation phase ${method}: PASS"

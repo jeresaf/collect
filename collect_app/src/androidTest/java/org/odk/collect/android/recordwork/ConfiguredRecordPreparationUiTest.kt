@@ -816,6 +816,96 @@ class ConfiguredRecordPreparationUiTest {
                 assertEquals(2, repeatedFresh.repeatRowsBeforeDeletion)
                 assertEquals(1, repeatedFresh.repeatRowsAfterDeletion)
                 assertEquals(originalFiles, snapshot())
+
+                // Native binary answer uses only a verified encrypted asset.
+                // Generate genuine, distinct JPEGs directly in RAM, never a
+                // historical attachment or plaintext temporary image file.
+                fun jpeg(color: Int): ByteArray {
+                    val bitmap = android.graphics.Bitmap.createBitmap(
+                        32, 32, android.graphics.Bitmap.Config.ARGB_8888)
+                    return try {
+                        bitmap.eraseColor(color)
+                        java.io.ByteArrayOutputStream().use { output ->
+                            assertTrue(bitmap.compress(
+                                android.graphics.Bitmap.CompressFormat.JPEG, 90, output))
+                            output.toByteArray()
+                        }
+                    } finally {
+                        bitmap.recycle()
+                    }
+                }
+                val photoPath = "/data/photo"
+                val imageFields = evidence.imagePaths.toList()
+                val images = QuarantinedPrivateImageStore(
+                    context.noBackupFilesDir, AndroidKeyStorePrivateDraftCipher())
+                val firstJpeg = jpeg(android.graphics.Color.RED)
+                val secondJpeg = jpeg(android.graphics.Color.BLUE)
+                fun authorizeImage() {
+                    val current = RecordWorkPreparationClient(settings)
+                        .authorizePrivateTextForm(activeProjectId(), binding)
+                    assertEquals(MappingDecision.REENTER,
+                        requireNotNull(approvals.read(binding, current.plan))
+                            .decisions[photoPath])
+                    assertEquals(imageFields.toSet(),
+                        probe.inspect(activeProjectId(), binding).imagePaths)
+                }
+                fun bindImage(expected: ProtectedImageReceipt) {
+                    val beforeBind = snapshot()
+                    val native = probe.inspect(activeProjectId(), binding,
+                        "Synthetic image session " + UUID.randomUUID(),
+                        stagedImagePath = photoPath)
+                    assertTrue(native.nativeImageBindingVerified)
+                    assertEquals(expected.sha256, native.verifiedImageSha256)
+                    assertFalse(native.canSave)
+                    assertFalse(native.canFinalize)
+                    assertFalse(native.canUpload)
+                    assertEquals(beforeBind, snapshot())
+                }
+                assertEquals(null, images.receipt(binding, photoPath, imageFields))
+                try {
+                    authorizeImage()
+                    val firstImage = images.importSelectedImage(binding, photoPath,
+                        imageFields, "image/jpeg", firstJpeg.inputStream())
+                    assertEquals(QuarantinedPrivateImageStore.digest(firstJpeg), firstImage.sha256)
+                    assertEquals(firstImage, images.receipt(binding, photoPath, imageFields))
+                    bindImage(firstImage)
+                    val staged = snapshot()
+                    val newFiles = staged.keys - originalFiles.keys
+                    assertEquals(1, newFiles.size)
+                    val encrypted = java.io.File(dir, newFiles.single())
+                    assertTrue(encrypted.name.endsWith(".aesgcm"))
+                    assertFalse(encrypted.readBytes().contentEquals(firstJpeg))
+                    assertEquals(1, encrypted.readBytes()[0].toInt())
+                    assertEquals(12, encrypted.readBytes()[1].toInt())
+                    authorizeImage()
+                    assertTrue(runCatching {
+                        images.importSelectedImage(binding, photoPath, imageFields,
+                            "image/png", secondJpeg.inputStream())
+                    }.isFailure)
+                    assertEquals(staged, snapshot())
+                    assertEquals(firstImage, images.receipt(binding, photoPath, imageFields))
+                    authorizeImage()
+                    val replacement = images.importSelectedImage(binding, photoPath,
+                        imageFields, "image/jpeg", secondJpeg.inputStream())
+                    assertEquals(QuarantinedPrivateImageStore.digest(secondJpeg), replacement.sha256)
+                    assertNotEquals(firstImage.sha256, replacement.sha256)
+                    assertEquals(replacement, images.receipt(binding, photoPath, imageFields))
+                    bindImage(replacement)
+                    assertEquals(staged.keys, snapshot().keys)
+                    authorizeImage()
+                    images.clear(binding, photoPath, imageFields)
+                    assertEquals(null, images.receipt(binding, photoPath, imageFields))
+                    assertTrue(runCatching {
+                        probe.inspect(activeProjectId(), binding,
+                            "Synthetic missing asset", stagedImagePath = photoPath)
+                    }.isFailure)
+                } finally {
+                    authorizeImage()
+                    images.clear(binding, photoPath, imageFields)
+                    firstJpeg.fill(0)
+                    secondJpeg.fill(0)
+                }
+                assertEquals(originalFiles, snapshot())
                 assertFalse(evidence.canSave)
                 assertFalse(evidence.canFinalize)
                 assertFalse(evidence.canUpload)

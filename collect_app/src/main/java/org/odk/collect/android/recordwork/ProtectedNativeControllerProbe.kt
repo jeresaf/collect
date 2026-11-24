@@ -7,6 +7,8 @@ import org.javarosa.core.model.GroupDef
 import org.javarosa.core.model.IFormElement
 import org.javarosa.core.model.QuestionDef
 import org.javarosa.core.model.data.StringData
+import org.javarosa.core.model.data.IntegerData
+import org.odk.collect.android.javarosawrapper.FailedValidationResult
 import org.javarosa.core.model.instance.InstanceInitializationFactory
 import org.javarosa.core.model.instance.TreeReference
 import org.javarosa.form.api.FormEntryController
@@ -45,6 +47,7 @@ internal data class ProtectedNativeControllerEvidence(
     val inMemoryRepeatVerified: Boolean = false,
     val repeatRowsBeforeDeletion: Int = 0,
     val repeatRowsAfterDeletion: Int = 0,
+    val conditionalValidationVerified: Boolean = false,
     val canSave: Boolean = false,
     val canFinalize: Boolean = false,
     val canUpload: Boolean = false
@@ -63,12 +66,14 @@ internal class ProtectedNativeControllerProbe(
         projectId: String,
         binding: QuarantinedWorkDraft,
         firstTextAnswer: String? = null,
-        repeatExercise: NativeRepeatExercise? = null
+        repeatExercise: NativeRepeatExercise? = null,
+        conditionalExercise: Boolean = false
     ): ProtectedNativeControllerEvidence {
         // This is a disposable controller exercise, not a draft save API.
         require(firstTextAnswer == null ||
             (firstTextAnswer.isNotBlank() && firstTextAnswer.length <= 16_384 &&
                 '\u0000' !in firstTextAnswer)) { "Invalid temporary native text answer" }
+        require(!conditionalExercise || (firstTextAnswer == null && repeatExercise == null))
         require(repeatExercise == null || firstTextAnswer != null) {
             "Repeat exercise requires the direct text navigation gate"
         }
@@ -322,12 +327,80 @@ internal class ProtectedNativeControllerProbe(
                 require(controller.getAnswer(directRef)?.value == firstTextAnswer)
                 repeatVerified = true
             }
+            var conditionalVerified = false
+            if (conditionalExercise) {
+                // A deliberately narrow qualification of direct native
+                // relevance, required/constraint validation and calculation.
+                // No save, serialization or form action is performed.
+                val gate = "/data/gate"
+                val count = "/data/count"
+                val total = "/data/total"
+                require(first == gate && questionPaths == setOf(gate, count, total) &&
+                    repeatPaths.isEmpty() && imagePaths.isEmpty() &&
+                    approval.decisions.values.all { it == MappingDecision.REENTER })
+                val byPath = plan.candidates.associateBy { it.targetPath }
+                require(MappingRisk.REQUIRED in requireNotNull(byPath[gate]).risks &&
+                    MappingRisk.RELEVANCE_OR_CONSTRAINT in requireNotNull(byPath[count]).risks &&
+                    MappingRisk.CALCULATION in requireNotNull(byPath[total]).risks)
+                val gateIndex = controller.getFormIndex()
+                fun ref(path: String) = TreeReference.rootRef().apply {
+                    path.removePrefix("/").split("/").forEach { add(it, 0) }
+                }
+                fun nextQuestion(): String? {
+                    for (attempt in 1..100) {
+                        val event = controller.stepToNextEvent(true)
+                        if (event == FormEntryController.EVENT_QUESTION)
+                            return absolutePath(controller.getFormIndex().reference)
+                        if (event == FormEntryController.EVENT_END_OF_FORM) return null
+                    }
+                    throw IllegalArgumentException("Native conditional navigation exceeded bound")
+                }
+                fun setGate(value: String) {
+                    require(controller.jumpToIndex(gateIndex) == FormEntryController.EVENT_QUESTION)
+                    require(controller.answerQuestion(gateIndex, StringData(value)) ==
+                        FormEntryController.ANSWER_OK)
+                }
+                require(controller.validateAnswers(false) is FailedValidationResult) {
+                    "Blank required gate must prevent validation"
+                }
+                require(controller.answerQuestion(gateIndex, StringData("invalid")) ==
+                    FormEntryController.ANSWER_CONSTRAINT_VIOLATED)
+                setGate("yes")
+                require(nextQuestion() == count)
+                val countIndex = controller.getFormIndex()
+                require(controller.validateAnswers(false) is FailedValidationResult) {
+                    "Relevant required count must prevent validation"
+                }
+                require(controller.answerQuestion(countIndex, IntegerData(0)) ==
+                    FormEntryController.ANSWER_CONSTRAINT_VIOLATED)
+                require(controller.answerQuestion(countIndex, IntegerData(11)) ==
+                    FormEntryController.ANSWER_CONSTRAINT_VIOLATED)
+                require(controller.answerQuestion(countIndex, IntegerData(3)) ==
+                    FormEntryController.ANSWER_OK)
+                require(controller.getAnswer(ref(count))?.value == 3)
+                require(controller.getAnswer(ref(total))?.value == 6) {
+                    "Native calculation did not recompute from accepted count"
+                }
+                require(controller.validateAnswers(false) !is FailedValidationResult)
+                setGate("no")
+                require(nextQuestion() != count) { "Irrelevant count must be skipped" }
+                require(controller.getAnswer(ref(total))?.value == 0)
+                require(controller.validateAnswers(false) !is FailedValidationResult)
+                setGate("yes")
+                require(nextQuestion() == count) { "Relevant count must reappear" }
+                val restoredIndex = controller.getFormIndex()
+                require(controller.answerQuestion(restoredIndex, IntegerData(5)) ==
+                    FormEntryController.ANSWER_OK)
+                require(controller.getAnswer(ref(total))?.value == 10)
+                require(controller.validateAnswers(false) !is FailedValidationResult)
+                conditionalVerified = true
+            }
             require(controller.getInstanceFile() == null && !controller.isEditing())
             return ProtectedNativeControllerEvidence(
                 binding.workId, binding.targetFormVersionId,
                 binding.targetXFormSha256, questionPaths, imagePaths,
                 repeatPaths, first, answerVerified, next,
-                repeatVerified, beforeDelete, afterDelete
+                repeatVerified, beforeDelete, afterDelete, conditionalVerified
             )
         } finally {
             check(folder.deleteRecursively()) { "Native controller scratch cleanup failed" }

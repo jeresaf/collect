@@ -589,7 +589,17 @@ class ConfiguredRecordPreparationUiTest {
                 assertTrue(stage.performClick())
             }
             assertEquals(null, vault.read(activeProjectId(), pending.id, scope))
-            onView(withText(android.R.string.ok)).perform(click())
+            // The Material positive button is transformed/themed, so its
+            // displayed label alone is not a stable Espresso selector.
+            // Require the actual quarantine confirmation dialog, then tap
+            // Android's positive button inside that same dialog root.
+            onView(withText(R.string.mapping_quarantine_title))
+                .inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog())
+                .check(matches(isDisplayed()))
+            onView(withId(android.R.id.button1))
+                .inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog())
+                .check(matches(isDisplayed()))
+                .perform(click())
             var staged: QuarantinedWorkDraft? = null
             for (attempt in 1..120) {
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync()

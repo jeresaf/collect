@@ -494,6 +494,50 @@ class ConfiguredRecordPreparationUiTest {
             it.type == RecordWorkType.FOLLOW_UP &&
                 it.visitKey?.startsWith("u06-ui-create-") == true
         }
+        reviewAndStageFollowUp(project, pending, openEditor = false)
+    }
+
+    /**
+     * U06-T04E-02B: qualify the actual private scalar editor only on an
+     * eligible scalar-only XForm. The V2 repeat/media form remains outside
+     * this editor's supported scope. The V1 published target is separately
+     * authorized by the server, even though its source is historical.
+     */
+    @Test
+    fun approvedScalarFollowUpOpensBlankProtectedEditorWithoutUploadRights() {
+        rule.startAtFirstLaunch()
+            .clickManuallyEnterProjectDetails()
+            .inputUrl("https://10.0.2.2:8443/v1/projects/81000000-0000-4000-8000-000000000001")
+            .inputUsername("u06-connected-owner")
+            .inputPassword("u06-disposable-only")
+            .addProject()
+        val project = "81000000-0000-4000-8000-000000000001"
+        val localProject = activeProjectId()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val client = RecordWorkPreparationClient(
+            DaggerUtils.getComponent(context).settingsProvider()
+        )
+        val target = "81000000-0000-4000-8000-000000000003"
+        assertTrue(client.targets(localProject, source, RecordWorkType.FOLLOW_UP)
+            .any { it.targetFormVersionId == target && it.version == "1" })
+        val visitKey = "u06-scalar-editor-" + UUID.randomUUID()
+        val created = client.create(localProject, NewRecordWork(
+            source, target, RecordWorkType.FOLLOW_UP,
+            "u06-scalar-editor-request-" + UUID.randomUUID(), visitKey
+        ))
+        val pending = connectedClient().load(project).pendingWork.single {
+            it.id == created.id
+        }
+        assertEquals(target, pending.targetFormVersionId)
+        assertEquals(visitKey, pending.visitKey)
+        reviewAndStageFollowUp(project, pending, openEditor = true)
+    }
+
+    private fun reviewAndStageFollowUp(
+        project: String, pending: RemoteVisitWork, openEditor: Boolean
+    ) {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val before = connectedClient().load(project)
         val scope = QuarantinedWorkDraftVault.sha256(
             activeProjectId() + "\n" +
                 RecordWorkApiPaths.fromProjectUrl(
@@ -618,6 +662,78 @@ class ConfiguredRecordPreparationUiTest {
             assertFalse(binding.canUpload)
             assertFalse(binding.canOpenEditor)
             assertEquals(candidateCount, binding.reviewedPaths)
+            assertEquals(pending.targetFormVersionId, binding.targetFormVersionId)
+            if (openEditor) {
+                assertEquals("1", binding.targetVersion)
+                // Wait for the stage callback, which runs only after encrypted
+                // approval persistence, not merely the vault manifest write.
+                var editorOffered = false
+                for (attempt in 1..120) {
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    scenario.onActivity { activity ->
+                        val rows = activity.findViewById<LinearLayout>(R.id.work_versions)
+                        editorOffered = (0 until rows.childCount)
+                            .map { rows.getChildAt(it) }.filterIsInstance<Button>()
+                            .any { it.text.toString() ==
+                                activity.getString(R.string.mapping_open_private_editor) }
+                    }
+                    if (editorOffered) break
+                    Thread.sleep(250)
+                }
+                assertTrue("Reviewed staging must offer protected editor navigation", editorOffered)
+                scenario.onActivity { activity ->
+                    val rows = activity.findViewById<LinearLayout>(R.id.work_versions)
+                    val launch = (0 until rows.childCount).map { rows.getChildAt(it) }
+                        .filterIsInstance<Button>().single { it.text.toString() ==
+                            activity.getString(R.string.mapping_open_private_editor) }
+                    assertTrue(launch.performClick())
+                }
+                // Actual private Activity must independently authorize the
+                // exact target against the genuine server on opening.
+                var editorReady = false
+                for (attempt in 1..120) {
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                        val resumed = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+                            .getInstance().getActivitiesInStage(
+                                androidx.test.runner.lifecycle.Stage.RESUMED
+                            ).filterIsInstance<QuarantinedTextDraftActivity>().singleOrNull()
+                        if (resumed != null) {
+                            val root = resumed.window.decorView
+                            fun descendants(view: View): List<View> =
+                                listOf(view) + if (view is android.view.ViewGroup) {
+                                    (0 until view.childCount).flatMap {
+                                        descendants(view.getChildAt(it))
+                                    }
+                                } else emptyList()
+                            val widgets = descendants(root)
+                            val save = widgets.filterIsInstance<Button>().singleOrNull {
+                                it.text.toString() ==
+                                    resumed.getString(R.string.private_text_editor_save)
+                            }
+                            if (save?.isEnabled == true) {
+                                val fields = widgets.filterIsInstance<EditText>()
+                                assertEquals("Exact scalar form has one editable question", 1, fields.size)
+                                assertTrue("Independent visit must start without old answers",
+                                    fields.single().text.isEmpty())
+                                assertTrue(widgets.filterIsInstance<TextView>().any {
+                                    it.text.toString() == resumed.getString(
+                                        R.string.private_text_editor_never_submit)
+                                })
+                                assertFalse(widgets.filterIsInstance<Button>().any {
+                                    it.visibility == View.VISIBLE && it.text.toString() ==
+                                        resumed.getString(R.string.mapping_approved_import_action)
+                                })
+                                editorReady = true
+                            }
+                        }
+                    }
+                    if (editorReady) break
+                    Thread.sleep(250)
+                }
+                assertTrue("Actual private scalar editor must open after renewed authorization",
+                    editorReady)
+            }
             assertEquals(before.pendingWork.map { it.id }.toSet(),
                 connectedClient().load(project).pendingWork.map { it.id }.toSet())
         }

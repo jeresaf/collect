@@ -48,6 +48,9 @@ internal data class ProtectedNativeControllerEvidence(
     val repeatRowsBeforeDeletion: Int = 0,
     val repeatRowsAfterDeletion: Int = 0,
     val conditionalValidationVerified: Boolean = false,
+    val directImagePath: String? = null,
+    val directImageReceipt: ProtectedImageReceipt? = null,
+    val nativeImageReferenceVerified: Boolean = false,
     val canSave: Boolean = false,
     val canFinalize: Boolean = false,
     val canUpload: Boolean = false
@@ -67,13 +70,15 @@ internal class ProtectedNativeControllerProbe(
         binding: QuarantinedWorkDraft,
         firstTextAnswer: String? = null,
         repeatExercise: NativeRepeatExercise? = null,
-        conditionalExercise: Boolean = false
+        conditionalExercise: Boolean = false,
+        directImagePath: String? = null
     ): ProtectedNativeControllerEvidence {
         // This is a disposable controller exercise, not a draft save API.
         require(firstTextAnswer == null ||
             (firstTextAnswer.isNotBlank() && firstTextAnswer.length <= 16_384 &&
                 '\u0000' !in firstTextAnswer)) { "Invalid temporary native text answer" }
-        require(!conditionalExercise || (firstTextAnswer == null && repeatExercise == null))
+        require(!conditionalExercise || (firstTextAnswer == null && repeatExercise == null && directImagePath == null))
+        require(directImagePath == null || (firstTextAnswer == null && repeatExercise == null))
         require(repeatExercise == null || firstTextAnswer != null) {
             "Repeat exercise requires the direct text navigation gate"
         }
@@ -395,12 +400,75 @@ internal class ProtectedNativeControllerProbe(
                 require(controller.validateAnswers(false) !is FailedValidationResult)
                 conditionalVerified = true
             }
+            var mediaReceipt: ProtectedImageReceipt? = null
+            var mediaVerified = false
+            if (directImagePath != null) {
+                require(directImagePath in imagePaths &&
+                    repeatPaths.none { directImagePath.startsWith(it + "/") } &&
+                    approval.decisions[directImagePath] == MappingDecision.REENTER) {
+                    "Only a reviewed direct native image field can receive a protected asset"
+                }
+                val candidate = plan.candidates.single { it.targetPath == directImagePath }
+                require(candidate.risks.none {
+                    it in setOf(MappingRisk.REPEAT, MappingRisk.DYNAMIC_SELECT,
+                        MappingRisk.CALCULATION, MappingRisk.RELEVANCE_OR_CONSTRAINT,
+                        MappingRisk.UNBOUND_FIELD)
+                })
+                var found = first == directImagePath
+                for (attempt in 1..100) {
+                    if (found) break
+                    val event = controller.stepToNextEvent(true)
+                    if (event == FormEntryController.EVENT_END_OF_FORM) break
+                    found = event == FormEntryController.EVENT_QUESTION &&
+                        absolutePath(controller.getFormIndex().reference) == directImagePath
+                }
+                require(found) { "Reviewed image question must be reachable" }
+                val index = controller.getFormIndex()
+                val ref = index.reference
+                val node = requireNotNull(def.instance.resolveReference(ref))
+                require(node.isLeaf && node.dataType == Constants.DATATYPE_BINARY)
+                require(controller.getAnswer(ref)?.value.let { it == null || it == "" }) {
+                    "Independent visit cannot inherit an image answer"
+                }
+                val store = QuarantinedPrivateImageStore(
+                    noBackupRoot, AndroidKeyStorePrivateDraftCipher()
+                )
+                mediaReceipt = store.withVerifiedImage(
+                    binding, directImagePath, listOf(directImagePath)
+                ) { receipt, bytes ->
+                    require(receipt.bytes == bytes.size &&
+                        receipt.sha256 == QuarantinedPrivateImageStore.digest(bytes))
+                    // ODK's FileAnswerDelegate also supplies StringData for
+                    // image answers. This is an opaque RAM-only identifier,
+                    // NOT a filesystem path or a sendable attachment filename.
+                    val token = "protected-" + QuarantinedWorkDraftVault.sha256(
+                        binding.reservedInstanceId + "\n" + directImagePath + "\n" +
+                            receipt.sha256
+                    )
+                    require(controller.answerQuestion(index, StringData(token)) ==
+                        FormEntryController.ANSWER_OK &&
+                        controller.getAnswer(ref)?.value == token)
+                    require(!File(folder, token).exists())
+                    require(controller.answerQuestion(index, null) ==
+                        FormEntryController.ANSWER_OK &&
+                        controller.getAnswer(ref)?.value.let { it == null || it == "" }) {
+                        "Native binary answer could not be cleared"
+                    }
+                    mediaVerified = true
+                    receipt
+                }
+                if (mediaReceipt == null) {
+                    require(controller.getAnswer(ref)?.value.let { it == null || it == "" })
+                    mediaVerified = true
+                }
+            }
             require(controller.getInstanceFile() == null && !controller.isEditing())
             return ProtectedNativeControllerEvidence(
                 binding.workId, binding.targetFormVersionId,
                 binding.targetXFormSha256, questionPaths, imagePaths,
                 repeatPaths, first, answerVerified, next,
-                repeatVerified, beforeDelete, afterDelete, conditionalVerified
+                repeatVerified, beforeDelete, afterDelete, conditionalVerified,
+                directImagePath, mediaReceipt, mediaVerified
             )
         } finally {
             check(folder.deleteRecursively()) { "Native controller scratch cleanup failed" }

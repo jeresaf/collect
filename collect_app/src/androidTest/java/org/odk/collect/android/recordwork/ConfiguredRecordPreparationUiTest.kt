@@ -533,8 +533,39 @@ class ConfiguredRecordPreparationUiTest {
         reviewAndStageFollowUp(project, pending, openEditor = true)
     }
 
+    @Test
+    fun reviewedConditionalFollowUpValidatesNativeRelevanceAndCalculations() {
+        rule.startAtFirstLaunch()
+            .clickManuallyEnterProjectDetails()
+            .inputUrl("https://10.0.2.2:8443/v1/projects/81000000-0000-4000-8000-000000000001")
+            .inputUsername("u06-connected-owner")
+            .inputPassword("u06-disposable-only")
+            .addProject()
+        val project = "81000000-0000-4000-8000-000000000001"
+        val localProject = activeProjectId()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val client = RecordWorkPreparationClient(
+            DaggerUtils.getComponent(context).settingsProvider()
+        )
+        val target = "81000000-0000-4000-8000-000000000019"
+        assertTrue(client.targets(localProject, source, RecordWorkType.FOLLOW_UP)
+            .any { it.targetFormVersionId == target && it.version == "3" })
+        val visitKey = "u06-conditional-" + UUID.randomUUID()
+        val created = client.create(localProject, NewRecordWork(
+            source, target, RecordWorkType.FOLLOW_UP,
+            "u06-conditional-request-" + UUID.randomUUID(), visitKey
+        ))
+        val pending = connectedClient().load(project).pendingWork.single {
+            it.id == created.id
+        }
+        assertEquals(target, pending.targetFormVersionId)
+        assertEquals(visitKey, pending.visitKey)
+        reviewAndStageFollowUp(project, pending, openEditor = false, conditionalExercise = true)
+    }
+
     private fun reviewAndStageFollowUp(
-        project: String, pending: RemoteVisitWork, openEditor: Boolean
+        project: String, pending: RemoteVisitWork, openEditor: Boolean,
+        conditionalExercise: Boolean = false
     ) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val before = connectedClient().load(project)
@@ -685,6 +716,34 @@ class ConfiguredRecordPreparationUiTest {
                 val probe = ProtectedNativeControllerProbe(
                     context.cacheDir, context.noBackupFilesDir, settings
                 )
+                if (conditionalExercise) {
+                    val dir = java.io.File(java.io.File(java.io.File(
+                        context.noBackupFilesDir, QuarantinedWorkDraftVault.VAULT_DIRECTORY),
+                        binding.projectId), binding.workId)
+                    fun snapshot(): Map<String, String> = dir.walkTopDown()
+                        .filter { it.isFile }.associate { file ->
+                            file.relativeTo(dir).path to java.security.MessageDigest
+                                .getInstance("SHA-256").digest(file.readBytes())
+                                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+                        }
+                    val original = snapshot()
+                    repeat(2) {
+                        val evidence = probe.inspect(activeProjectId(), binding,
+                            conditionalExercise = true)
+                        assertTrue(evidence.conditionalValidationVerified)
+                        assertEquals(setOf("/data/gate", "/data/count", "/data/total"),
+                            evidence.questionPaths)
+                        assertEquals("/data/gate", evidence.firstQuestionPath)
+                        assertFalse(evidence.canSave)
+                        assertFalse(evidence.canFinalize)
+                        assertFalse(evidence.canUpload)
+                    }
+                    assertEquals(original, snapshot())
+                    assertEquals(binding, vault.read(activeProjectId(), pending.id, scope))
+                    assertFalse(context.cacheDir.listFiles().orEmpty().any {
+                        it.name.startsWith("recordwork-native-controller-")
+                    })
+                } else {
                 val evidence = probe.inspect(activeProjectId(), binding)
                 assertEquals(pending.id, evidence.workId)
                 assertEquals(binding.targetFormVersionId, evidence.targetFormVersionId)
@@ -764,6 +823,7 @@ class ConfiguredRecordPreparationUiTest {
                 assertFalse(context.cacheDir.listFiles().orEmpty().any {
                     it.name.startsWith("recordwork-native-controller-")
                 })
+                }
             }
             if (openEditor) {
                 assertEquals("1", binding.targetVersion)

@@ -27,6 +27,26 @@ import java.util.Properties
 class ConnectedProtectedEditorRestartTest {
     @Test
     fun actualEditorRecoversSavedAnswerAfterForceStop() {
+        var phase = "CHECKPOINT"
+        try {
+            verifyRestart { phase = it }
+        } catch (failure: AssertionError) {
+            throw AssertionError("U06_RESTART_FAILURE phase=$phase kind=AssertionError")
+        } catch (failure: Exception) {
+            val kind = when (failure) {
+                is PreparationException -> "PreparationException"
+                is ReadOnlyRecordException -> "ReadOnlyRecordException"
+                is IllegalStateException -> "IllegalStateException"
+                is IllegalArgumentException -> "IllegalArgumentException"
+                is java.io.IOException -> "IOException"
+                is SecurityException -> "SecurityException"
+                else -> "OtherException"
+            }
+            throw AssertionError("U06_RESTART_FAILURE phase=$phase kind=$kind")
+        }
+    }
+
+    private fun verifyRestart(phase: (String) -> Unit) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val marker = File(context.noBackupFilesDir, "u06-editor-restart-checkpoint.properties")
@@ -37,6 +57,7 @@ class ConnectedProtectedEditorRestartTest {
         assertNotEquals("A distinct Android process is required",
             evidence.getProperty("pid"), android.os.Process.myPid().toString())
 
+        phase("PROJECT_RESTORE")
         val component = DaggerUtils.getComponent(context)
         var current: String? = null
         for (attempt in 1..80) {
@@ -47,6 +68,7 @@ class ConnectedProtectedEditorRestartTest {
             Thread.sleep(250)
         }
         assertEquals("Original configured project must survive restart", project, current)
+        phase("ACTOR_SCOPE")
         val settings = component.settingsProvider()
         val values = settings.getUnprotectedSettings(project)
         val url = values.getString(ProjectKeys.KEY_SERVER_URL).orEmpty()
@@ -54,6 +76,7 @@ class ConnectedProtectedEditorRestartTest {
         val scope = QuarantinedWorkDraftVault.sha256(
             project + "\n" + RecordWorkApiPaths.fromProjectUrl(url).records() + "\n" + username
         )
+        phase("BINDING")
         val vault = QuarantinedWorkDraftVault(context.noBackupFilesDir)
         val binding = requireNotNull(vault.read(project, work, scope))
         assertEquals(work, binding.workId)
@@ -63,13 +86,16 @@ class ConnectedProtectedEditorRestartTest {
         assertEquals("81000000-0000-4000-8000-000000000003", binding.targetFormVersionId)
         assertFalse(binding.canFinalize)
         assertFalse(binding.canUpload)
+        phase("CIPHERTEXT")
         val file = File(File(File(File(context.noBackupFilesDir,
             QuarantinedWorkDraftVault.VAULT_DIRECTORY), project), work),
             "private-answers.aesgcm")
         val before = file.readBytes()
         assertEquals(evidence.getProperty("cipherDigest"), digest(before))
+        phase("LIVE_READY")
         val pendingBefore = RecordWorkReadOnlyClient(settings).load(project).pendingWork
         assertTrue("Backend work must still be READY", pendingBefore.any { it.id == work })
+        phase("EDITOR_REOPEN")
         ActivityScenario.launch<QuarantinedTextDraftActivity>(
             QuarantinedTextDraftActivity.intentFor(context, project, work)
         ).use { scenario ->
@@ -101,6 +127,7 @@ class ConnectedProtectedEditorRestartTest {
             }
             assertTrue("Real protected editor must recover after new-process authorization", ready)
         }
+        phase("POSTCONDITIONS")
         assertArrayEquals("Opening must not rewrite saved ciphertext", before, file.readBytes())
         assertEquals(binding, vault.read(project, work, scope))
         assertEquals(pendingBefore.map { it.id }.toSet(),

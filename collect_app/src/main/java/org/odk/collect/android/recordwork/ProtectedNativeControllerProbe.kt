@@ -2,6 +2,7 @@ package org.odk.collect.android.recordwork
 
 import org.javarosa.core.model.Constants
 import org.javarosa.core.model.FormDef
+import org.javarosa.core.model.FormIndex
 import org.javarosa.core.model.GroupDef
 import org.javarosa.core.model.IFormElement
 import org.javarosa.core.model.QuestionDef
@@ -24,6 +25,13 @@ import java.util.UUID
  * FormsRepository or InstancesRepository. No ordinary FormFillingActivity,
  * save, finalize, attachment capture or upload is permitted by this probe.
  */
+internal data class NativeRepeatExercise(
+    val groupPath: String,
+    val rows: List<Map<String, String>>,
+    val editedFirstPath: String,
+    val editedFirstValue: String
+)
+
 internal data class ProtectedNativeControllerEvidence(
     val workId: String,
     val targetFormVersionId: String,
@@ -34,6 +42,9 @@ internal data class ProtectedNativeControllerEvidence(
     val firstQuestionPath: String,
     val inMemoryAnswerVerified: Boolean = false,
     val nextQuestionPath: String? = null,
+    val inMemoryRepeatVerified: Boolean = false,
+    val repeatRowsBeforeDeletion: Int = 0,
+    val repeatRowsAfterDeletion: Int = 0,
     val canSave: Boolean = false,
     val canFinalize: Boolean = false,
     val canUpload: Boolean = false
@@ -51,12 +62,16 @@ internal class ProtectedNativeControllerProbe(
     fun inspect(
         projectId: String,
         binding: QuarantinedWorkDraft,
-        firstTextAnswer: String? = null
+        firstTextAnswer: String? = null,
+        repeatExercise: NativeRepeatExercise? = null
     ): ProtectedNativeControllerEvidence {
         // This is a disposable controller exercise, not a draft save API.
         require(firstTextAnswer == null ||
             (firstTextAnswer.isNotBlank() && firstTextAnswer.length <= 16_384 &&
                 '\u0000' !in firstTextAnswer)) { "Invalid temporary native text answer" }
+        require(repeatExercise == null || firstTextAnswer != null) {
+            "Repeat exercise requires the direct text navigation gate"
+        }
         require(binding.projectId == projectId &&
             binding.workType == RecordWorkType.FOLLOW_UP &&
             binding.validationTransfers == 0 &&
@@ -198,11 +213,121 @@ internal class ProtectedNativeControllerProbe(
                 }
                 answerVerified = true
             }
+            var repeatVerified = false
+            var beforeDelete = 0
+            var afterDelete = 0
+            if (repeatExercise != null) {
+                val group = repeatExercise.groupPath
+                val parts = group.removePrefix("/").split("/")
+                require(repeatPaths == setOf(group) && parts.size == 2 &&
+                    parts.first() == def.instance.root.name) {
+                    "Only one directly bound top-level repeat is qualified"
+                }
+                val fields = questionPaths.filter { it.startsWith(group + "/") }.toSet()
+                require(fields.isNotEmpty() && fields.size <= 12 &&
+                    fields.all { path ->
+                        path.removePrefix(group + "/").let { it.isNotBlank() && '/' !in it } &&
+                            path !in imagePaths &&
+                            approval.decisions[path] == MappingDecision.REENTER
+                    }) { "Repeat exercise requires reviewed direct text fields" }
+                val rows = repeatExercise.rows
+                fun valid(value: String): Boolean =
+                    value.isNotBlank() && value.length <= 16_384 && '\u0000' !in value
+                require(rows.size == 2 && rows.all { row ->
+                    row.keys == fields && row.values.all(::valid)
+                } && fields.all { rows[0][it] != rows[1][it] } &&
+                    repeatExercise.editedFirstPath in fields &&
+                    valid(repeatExercise.editedFirstValue) &&
+                    repeatExercise.editedFirstValue != rows[0][repeatExercise.editedFirstPath] &&
+                    repeatExercise.editedFirstValue != rows[1][repeatExercise.editedFirstPath])
+                fun rowExists(row: Int): Boolean =
+                    def.instance.root.getChild(parts[1], row) != null
+                fun fieldRef(path: String, row: Int): TreeReference =
+                    TreeReference.rootRef().apply {
+                        add(parts[0], 0)
+                        add(parts[1], row)
+                        add(path.substringAfterLast('/'), 0)
+                    }
+                fun assertRows(expected: List<Map<String, String>>) {
+                    require(expected.indices.all(::rowExists) && !rowExists(expected.size)) {
+                        "Native repeat row count differs from expected"
+                    }
+                    expected.forEachIndexed { row, answers ->
+                        answers.forEach { (path, value) ->
+                            require(controller.getAnswer(fieldRef(path, row))?.value == value) {
+                                "Native repeat answer identity changed"
+                            }
+                        }
+                    }
+                }
+                // Native initialization may start with a blank row or with
+                // no concrete row, depending on the exact XForm template.
+                require(!rowExists(1)) { "Unexpected pre-existing repeat rows" }
+                val indices = linkedMapOf<Pair<Int, String>, FormIndex>()
+                var created = 0
+                for (attempt in 1..300) {
+                    val event = controller.stepToNextEvent(true)
+                    val index = controller.getFormIndex()
+                    if (event == FormEntryController.EVENT_PROMPT_NEW_REPEAT) {
+                        require(absolutePath(index.reference) == group)
+                        if (indices.size == rows.size * fields.size) break
+                        require(created < 2 && !rowExists(1)) {
+                            "Native repeat creation exceeds the exercise bound"
+                        }
+                        controller.newRepeat()
+                        created++
+                        continue
+                    }
+                    if (event == FormEntryController.EVENT_END_OF_FORM) break
+                    if (event != FormEntryController.EVENT_QUESTION) continue
+                    val path = absolutePath(index.reference)
+                    if (path !in fields) continue
+                    val row = index.reference.getMultiplicity(1)
+                    require(row in rows.indices)
+                    val key = row to path
+                    require(key !in indices) { "Duplicate native repeat field navigation" }
+                    val node = requireNotNull(def.instance.resolveReference(index.reference))
+                    require(node.isLeaf && node.dataType == Constants.DATATYPE_TEXT)
+                    require(controller.getAnswer(index.reference)?.value.let {
+                        it == null || it == ""
+                    }) { "New repeat row must start without historical values" }
+                    val value = requireNotNull(rows[row][path])
+                    require(controller.answerQuestion(index, StringData(value)) ==
+                        FormEntryController.ANSWER_OK)
+                    indices[key] = index
+                    if (indices.size == rows.size * fields.size) break
+                }
+                require(created in 1..2 && indices.size == rows.size * fields.size)
+                assertRows(rows)
+                beforeDelete = rows.size
+
+                val editIndex = requireNotNull(indices[0 to repeatExercise.editedFirstPath])
+                require(controller.jumpToIndex(editIndex) == FormEntryController.EVENT_QUESTION)
+                require(controller.answerQuestion(editIndex, StringData(repeatExercise.editedFirstValue)) ==
+                    FormEntryController.ANSWER_OK)
+                val edited = rows[0] + (repeatExercise.editedFirstPath to repeatExercise.editedFirstValue)
+                assertRows(listOf(edited, rows[1]))
+
+                // The ordinary ODK delete-repeat dialog invokes this same
+                // native operation from the current repeat question index.
+                val deleteIndex = requireNotNull(indices[1 to repeatExercise.editedFirstPath])
+                require(controller.jumpToIndex(deleteIndex) == FormEntryController.EVENT_QUESTION)
+                controller.deleteRepeat()
+                assertRows(listOf(edited))
+                afterDelete = 1
+                val directRef = TreeReference.rootRef().apply {
+                    add(parts[0], 0)
+                    add(first.substringAfterLast('/'), 0)
+                }
+                require(controller.getAnswer(directRef)?.value == firstTextAnswer)
+                repeatVerified = true
+            }
             require(controller.getInstanceFile() == null && !controller.isEditing())
             return ProtectedNativeControllerEvidence(
                 binding.workId, binding.targetFormVersionId,
                 binding.targetXFormSha256, questionPaths, imagePaths,
-                repeatPaths, first, answerVerified, next
+                repeatPaths, first, answerVerified, next,
+                repeatVerified, beforeDelete, afterDelete
             )
         } finally {
             check(folder.deleteRecursively()) { "Native controller scratch cleanup failed" }

@@ -48,6 +48,8 @@ internal data class ProtectedNativeControllerEvidence(
     val repeatRowsBeforeDeletion: Int = 0,
     val repeatRowsAfterDeletion: Int = 0,
     val conditionalValidationVerified: Boolean = false,
+    val nativeImageBindingVerified: Boolean = false,
+    val verifiedImageSha256: String? = null,
     val canSave: Boolean = false,
     val canFinalize: Boolean = false,
     val canUpload: Boolean = false
@@ -67,13 +69,15 @@ internal class ProtectedNativeControllerProbe(
         binding: QuarantinedWorkDraft,
         firstTextAnswer: String? = null,
         repeatExercise: NativeRepeatExercise? = null,
-        conditionalExercise: Boolean = false
+        conditionalExercise: Boolean = false,
+        stagedImagePath: String? = null
     ): ProtectedNativeControllerEvidence {
         // This is a disposable controller exercise, not a draft save API.
         require(firstTextAnswer == null ||
             (firstTextAnswer.isNotBlank() && firstTextAnswer.length <= 16_384 &&
                 '\u0000' !in firstTextAnswer)) { "Invalid temporary native text answer" }
-        require(!conditionalExercise || (firstTextAnswer == null && repeatExercise == null))
+        require(!conditionalExercise || (firstTextAnswer == null && repeatExercise == null && stagedImagePath == null))
+        require(stagedImagePath == null || (firstTextAnswer != null && repeatExercise == null))
         require(repeatExercise == null || firstTextAnswer != null) {
             "Repeat exercise requires the direct text navigation gate"
         }
@@ -395,12 +399,74 @@ internal class ProtectedNativeControllerProbe(
                 require(controller.validateAnswers(false) !is FailedValidationResult)
                 conditionalVerified = true
             }
+            var verifiedImageHash: String? = null
+            if (stagedImagePath != null) {
+                // Bind only a verified encrypted asset to a disposable native
+                // binary answer. A logical filename is NOT an exported file
+                // or a submission-ready attachment.
+                require(imagePaths == setOf(stagedImagePath) &&
+                    stagedImagePath == next &&
+                    approval.decisions[stagedImagePath] == MappingDecision.REENTER &&
+                    repeatPaths.none { stagedImagePath.startsWith(it + "/") })
+                val directIndex = controller.getFormIndex()
+                require(absolutePath(directIndex.reference) == first)
+                var imageIndex: FormIndex? = null
+                for (attempt in 1..100) {
+                    val event = controller.stepToNextEvent(true)
+                    if (event == FormEntryController.EVENT_QUESTION) {
+                        imageIndex = controller.getFormIndex()
+                        break
+                    }
+                    if (event == FormEntryController.EVENT_END_OF_FORM) break
+                }
+                val index = requireNotNull(imageIndex)
+                val ref = index.reference
+                require(absolutePath(ref) == stagedImagePath)
+                val leaf = requireNotNull(def.instance.resolveReference(ref))
+                require(leaf.isLeaf && leaf.dataType == Constants.DATATYPE_BINARY)
+                require(controller.getAnswer(ref)?.value.let { it == null || it == "" })
+                val store = QuarantinedPrivateImageStore(
+                    noBackupRoot, AndroidKeyStorePrivateDraftCipher()
+                )
+                verifiedImageHash = requireNotNull(store.withVerifiedImage(
+                    binding, stagedImagePath, imagePaths.toList()
+                ) { receipt, bytes ->
+                    require(receipt.fieldPath == stagedImagePath &&
+                        receipt.bytes == bytes.size &&
+                        receipt.sha256 == QuarantinedPrivateImageStore.digest(bytes) &&
+                        !receipt.canFinalize && !receipt.canSubmit)
+                    val extension = when (receipt.mime) {
+                        "image/jpeg" -> "jpg"
+                        "image/png" -> "png"
+                        "image/webp" -> "webp"
+                        else -> throw IllegalArgumentException("Unsupported protected image MIME")
+                    }
+                    val logicalName = "protected-" + receipt.sha256 + "." + extension
+                    // FileAnswerDelegate in the native ImageWidget uses
+                    // StringData for binary filenames. Never create that file.
+                    require(controller.answerQuestion(index, StringData(logicalName)) ==
+                        FormEntryController.ANSWER_OK &&
+                        controller.getAnswer(ref)?.value == logicalName)
+                    require(controller.jumpToIndex(directIndex) == FormEntryController.EVENT_QUESTION)
+                    require(controller.getAnswer(directIndex.reference)?.value == firstTextAnswer)
+                    require(controller.jumpToIndex(index) == FormEntryController.EVENT_QUESTION)
+                    require(controller.getAnswer(ref)?.value == logicalName)
+                    // Clear native reference only; the encrypted asset is
+                    // deliberately unchanged by this qualification probe.
+                    require(controller.answerQuestion(index, null) ==
+                        FormEntryController.ANSWER_OK)
+                    require(controller.getAnswer(ref)?.value.let { it == null || it == "" })
+                    require(!File(folder, logicalName).exists())
+                    receipt.sha256
+                }) { "Verified encrypted image required before native binding" }
+            }
             require(controller.getInstanceFile() == null && !controller.isEditing())
             return ProtectedNativeControllerEvidence(
                 binding.workId, binding.targetFormVersionId,
                 binding.targetXFormSha256, questionPaths, imagePaths,
                 repeatPaths, first, answerVerified, next,
-                repeatVerified, beforeDelete, afterDelete, conditionalVerified
+                repeatVerified, beforeDelete, afterDelete, conditionalVerified,
+                verifiedImageHash != null, verifiedImageHash
             )
         } finally {
             check(folder.deleteRecursively()) { "Native controller scratch cleanup failed" }

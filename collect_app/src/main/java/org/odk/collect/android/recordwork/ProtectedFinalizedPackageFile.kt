@@ -69,6 +69,22 @@ internal class ProtectedFinalizedPackageFile(
         }
     }
 
+    // Only the dedicated sender uses the decrypted published bytes, after
+    // exact canonical comparison and fresh current-generation authorization.
+    fun withVerifiedContent(expected: ByteArray, expectedCiphertextSha: String,
+                            consume: (ByteArray) -> Unit) {
+        val target = File(area, "finalized-" + generation + ".aesgcm")
+        require(target.isFile && target.canonicalFile == target.absoluteFile &&
+            !Files.isSymbolicLink(target.toPath()) && target.length() in 30..MAX_ENVELOPE.toLong())
+        val envelope = target.readBytes()
+        require(QuarantinedPrivateImageStore.digest(envelope) == expectedCiphertextSha)
+        val clear = cipher.open(envelope, aad)
+        try {
+            require(java.security.MessageDigest.isEqual(clear, expected))
+            consume(clear)
+        } finally { clear.fill(0) }
+    }
+
     private fun verify(file: File, expected: ByteArray): String {
         require(file.isFile && file.canonicalFile == file.absoluteFile &&
             !Files.isSymbolicLink(file.toPath()) && file.length() in 30..MAX_ENVELOPE.toLong())

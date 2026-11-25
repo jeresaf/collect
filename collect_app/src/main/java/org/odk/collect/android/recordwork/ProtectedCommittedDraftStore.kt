@@ -222,8 +222,10 @@ internal class ProtectedCommittedDraftStore(
 
     private fun finalizedPackage(
         projectId: String, binding: QuarantinedWorkDraft, expectedGeneration: String,
-        allowCreate: Boolean
+        allowCreate: Boolean,
+        consume: ((ProtectedPersistedPackage, ByteArray) -> Unit)? = null
     ): ProtectedPersistedPackage {
+        require(consume == null || !allowCreate)
         var canonical: ByteArray? = null
         try {
             val evidence = inspectNativeAttachmentPackage(projectId, binding, expectedGeneration) {
@@ -244,9 +246,20 @@ internal class ProtectedCommittedDraftStore(
                 val persistence = ProtectedFinalizedPackageFile(area, binding, expectedGeneration,
                     current.inventoryDigest)
                 val ciphertextDigest = persistence.verifyOrCreate(bytes, allowCreate)
-                ProtectedPersistedPackage(evidence, ciphertextDigest)
+                val persisted = ProtectedPersistedPackage(evidence, ciphertextDigest)
+                if (consume != null) persistence.withVerifiedContent(bytes, ciphertextDigest) {
+                    consume(persisted, it)
+                }
+                persisted
             }
         } finally { canonical?.fill(0) }
+    }
+
+    internal fun withFinalizedSubmissionContent(
+        projectId: String, binding: QuarantinedWorkDraft, generation: String,
+        consume: (ProtectedPersistedPackage, ByteArray) -> Unit
+    ) {
+        finalizedPackage(projectId, binding, generation, false, consume)
     }
 
     private fun inspectFinalization(

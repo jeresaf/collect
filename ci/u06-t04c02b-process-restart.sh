@@ -196,3 +196,8 @@ echo "U06-T04E-04E: graphical finalization confirmation, unsaved/dirty denial an
 adb shell am force-stop "$APP_ID"
 run_one finalizedSubmissionAdmissionBindsCurrentReadyWorkWithoutSending "$restart_class"
 echo "U06-T04E-05A: current finalized package submission admission, stale/corrupt denial and no transmission PASS."
+
+# Captured HTTPS multipart transport only; no actual backend POST yet.
+adb shell am force-stop "$APP_ID"
+run_one finalizedMultipartUsesExactPersistedBytesWithoutRealPost "$restart_class"
+echo "U06-T04E-05B: authenticated finalized multipart bytes, receipt and redirect/duplicate attempt denial PASS."

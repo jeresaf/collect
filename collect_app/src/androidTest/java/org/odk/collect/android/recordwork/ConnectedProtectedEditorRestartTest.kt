@@ -15,6 +15,10 @@ import org.odk.collect.android.R
 import org.odk.collect.android.injection.DaggerUtils
 import org.odk.collect.settings.keys.ProjectKeys
 import java.io.File
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.whenever
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.never
 import java.security.MessageDigest
 import java.util.Properties
 
@@ -1131,6 +1135,106 @@ class ConnectedProtectedEditorRestartTest {
         assertEquals(before.records.toSet(), after.records.toSet())
         assertEquals(before.pendingWork.toSet(), after.pendingWork.toSet())
         // Retain digest-only oracle for dedicated multipart sender.
+    }
+
+    @Test
+    fun finalizedMultipartUsesExactPersistedBytesWithoutRealPost() {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        val generation = state.required("generation")
+        val sha = state.required("packageDigest")
+        val saved = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+            .reopenFinalizedPackage(b.projectId, b, generation)
+        val remote = RecordWorkReadOnlyClient(state.settings)
+        val before = remote.load(b.projectId)
+        val latch = File(state.area, "submission-attempt.aesgcm")
+        val envelope = File(state.area, "finalized-" + generation + ".aesgcm")
+        val envelopeBefore = envelope.readBytes()
+        assertFalse(latch.exists())
+        val conn = mock<javax.net.ssl.HttpsURLConnection>()
+        val output = java.io.ByteArrayOutputStream()
+        whenever(conn.outputStream).thenReturn(output)
+        whenever(conn.responseCode).thenReturn(201)
+        whenever(conn.contentType).thenReturn("text/xml; charset=UTF-8")
+        val receipt = """<OpenRosaResponse xmlns="http://openrosa.org/http/response"><message>Submission received</message><status>201</status><instanceID>${b.reservedInstanceId}</instanceID></OpenRosaResponse>"""
+        whenever(conn.inputStream).thenReturn(receipt.byteInputStream())
+        var calls = 0
+        val sender = ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings) { url ->
+            calls++
+            assertEquals(RecordWorkApiPaths.fromProjectUrl(state.settings.getUnprotectedSettings(b.projectId)
+                .getString(ProjectKeys.KEY_SERVER_URL).orEmpty()).submission(), url.toString())
+            assertTrue(latch.isFile && latch.length() > 30)
+            conn
+        }
+        try {
+            assertTrue(runCatching { sender.send(b.projectId, b, generation, "0".repeat(64)) }.isFailure)
+            assertFalse(latch.exists())
+            val result = sender.send(b.projectId, b, generation, sha)
+            assertEquals(ProtectedTransportResult(201, true, b.reservedInstanceId, sha), result)
+            assertEquals(1, calls)
+            verify(conn).instanceFollowRedirects = false
+            verify(conn).requestMethod = "POST"
+            verify(conn).setRequestProperty("X-DataCollector-Work-Item-Id", b.workId)
+            verify(conn).setRequestProperty("X-OpenRosa-Version", "1.0")
+            val body = output.toByteArray()
+            verify(conn).setFixedLengthStreamingMode(body.size.toLong())
+            val latin = String(body, Charsets.ISO_8859_1)
+            val boundary = latin.substringBefore("\r\n").removePrefix("--")
+            verify(conn).setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            val segments = latin.split("--$boundary")
+            assertEquals("", segments.first())
+            assertEquals("--\r\n", segments.last())
+            val actual = linkedMapOf<String, Pair<String, ByteArray>>()
+            for (segment in segments.subList(1, segments.lastIndex)) {
+                val head = segment.substringBefore("\r\n\r\n")
+                val filename = Regex("filename=\"([^\"]+)\"").find(head)!!.groupValues[1]
+                val mime = head.substringAfter("Content-Type: ")
+                val payload = segment.substringAfter("\r\n\r\n").removeSuffix("\r\n")
+                    .toByteArray(Charsets.ISO_8859_1)
+                assertFalse(actual.containsKey(filename))
+                actual[filename] = mime to payload
+            }
+            val xml = actual.remove("submission.xml")!!
+            assertEquals("text/xml", xml.first)
+            assertEquals(saved.evidence.packaged.xml.xmlSha256, digest(xml.second))
+            assertEquals(saved.evidence.packaged.attachments.values.map { it.filename }.toSet(), actual.keys)
+            saved.evidence.packaged.attachments.values.forEach { part ->
+                val observed = actual.getValue(part.filename)
+                assertEquals(part.mime, observed.first)
+                assertEquals(part.bytes, observed.second.size)
+                assertEquals(part.sha256, digest(observed.second))
+            }
+            assertTrue(runCatching { sender.send(b.projectId, b, generation, sha) }.isFailure)
+            assertEquals(1, calls)
+            assertArrayEquals(envelopeBefore, envelope.readBytes())
+            // The only connection was a mock; no real POST occurred.
+            val after = remote.load(b.projectId)
+            assertEquals(before.records.toSet(), after.records.toSet())
+            assertEquals(before.pendingWork.toSet(), after.pendingWork.toSet())
+        } finally {
+            // CI-only cleanup of a mock attempt, never a product retry path.
+            if (latch.exists()) assertTrue(latch.delete())
+        }
+
+        // A real sender must never follow redirects or accept a non-201.
+        val redirect = mock<javax.net.ssl.HttpsURLConnection>()
+        whenever(redirect.outputStream).thenReturn(java.io.ByteArrayOutputStream())
+        whenever(redirect.responseCode).thenReturn(307)
+        var redirects = 0
+        try {
+            val blocked = ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings) {
+                redirects++
+                redirect
+            }.send(b.projectId, b, generation, sha)
+            assertEquals(ProtectedTransportResult(307, false, null, sha), blocked)
+            assertEquals(1, redirects)
+            verify(redirect).instanceFollowRedirects = false
+            verify(redirect, never()).inputStream
+            assertTrue(latch.isFile)
+        } finally { if (latch.exists()) assertTrue(latch.delete()) }
+        // Persisted work remains available for the real backend acceptance gate.
+        assertArrayEquals(envelopeBefore, envelope.readBytes())
     }
 
     private fun verifyRestart(phase: (String) -> Unit) {

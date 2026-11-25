@@ -170,3 +170,8 @@ echo "U06-T04E-03C6D3: mixed child UI saves, checkpoint publication and graphica
 adb shell am force-stop "$APP_ID"
 run_one competingCheckpointPublicationsRejectStaleWorkingState "$restart_class"
 echo "U06-T04E-03C6D3: competing publication and stale working text rejection PASS."
+
+# Finalization eligibility only; no serialization, native Instance or upload.
+adb shell am force-stop "$APP_ID"
+run_one finalizationEligibilityRequiresCompleteCurrentCommittedNativeModel "$restart_class"
+echo "U06-T04E-04A: strict native completeness, current generation and reserved instance identity eligibility PASS."

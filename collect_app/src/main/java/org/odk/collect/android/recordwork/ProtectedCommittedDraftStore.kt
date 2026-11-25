@@ -10,6 +10,20 @@ internal data class ProtectedCommittedDraft(
     val evidence: ProtectedCombinedRepeatEvidence
 )
 
+/** Ephemeral eligibility only; never a submission credential or native instance. */
+internal data class ProtectedFinalizationEligibility(
+    val workId: String,
+    val generation: String,
+    val reservedInstanceId: String,
+    val targetFormVersionId: String,
+    val inventoryDigest: String,
+    val evidence: ProtectedCombinedRepeatEvidence,
+    val canFinalize: Boolean = false,
+    val canUpload: Boolean = false
+) {
+    init { require(!canFinalize && !canUpload) }
+}
+
 /**
  * A committed generation is a read-only, independently authenticated copy of
  * one coherent working-draft state. Only the authenticated atomic pointer
@@ -121,6 +135,35 @@ internal class ProtectedCommittedDraftStore(
             verifiedGeneration(binding, area, pointer)
         }
         return ProtectedCommittedDraft(pointer.generation, evidence)
+    }
+
+    /**
+     * Check exact current generation, fully populated native questionnaire,
+     * and absence of newer working edits. No serialization or export.
+     */
+    fun verifyFinalizationEligibility(
+        projectId: String, binding: QuarantinedWorkDraft, expectedGeneration: String
+    ): ProtectedFinalizationEligibility {
+        authorize(projectId, binding)
+        val area = area(binding)
+        fun checkCurrent(): Pointer {
+            checkBinding(binding)
+            val current = requireNotNull(readPointer(binding, area))
+            require(current.generation == expectedGeneration) { "Stale committed generation" }
+            verifiedGeneration(binding, area, current)
+            require(inventoryDigest(inventory(work(root, binding))) == current.inventoryDigest) {
+                "Uncommitted working changes must be published first"
+            }
+            return current
+        }
+        val pointer = synchronized(lock) { checkCurrent() }
+        val evidence = ProtectedNativeRepeatImageProbe(
+            scratch, File(area, pointer.generation), settings
+        ).inspectCombined(projectId, binding, allowMixedDirect = true, requireComplete = true)
+        authorize(projectId, binding)
+        synchronized(lock) { require(checkCurrent() == pointer) }
+        return ProtectedFinalizationEligibility(binding.workId, pointer.generation,
+            binding.reservedInstanceId, binding.targetFormVersionId, pointer.inventoryDigest, evidence)
     }
 
     private fun candidateMarker(area: File, id: String): File {

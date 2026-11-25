@@ -210,7 +210,8 @@ class JavaRosaPrivateRepeatAnswerSession(
         receipts: Map<Pair<String, String>, ProtectedRepeatImageReceipt>,
         savedAnswers: Map<String, Map<String, String>> = emptyMap(),
         directAnswers: Map<String, String> = emptyMap(),
-        directReceipts: Map<String, ProtectedImageReceipt> = emptyMap()
+        directReceipts: Map<String, ProtectedImageReceipt> = emptyMap(),
+        requireComplete: Boolean = false
     ): Map<Pair<String, String>, Int> = withNativeTarget { form ->
         require(schema.groups.size == 1)
         val group = schema.groups.single()
@@ -221,6 +222,19 @@ class JavaRosaPrivateRepeatAnswerSession(
         })
         require(savedAnswers.keys.all { id -> active.any { it.rowId == id } } &&
             savedAnswers.values.all { it.keys == group.fields.map { f -> f.path }.toSet() })
+        if (requireComplete) {
+            // Deliberately stricter than generic XForms required semantics:
+            // all reviewed leaves in this bounded flat profile must be filled.
+            require(schema.directTextPaths.isNotEmpty() && schema.directImagePaths.isNotEmpty())
+            require(directAnswers.keys == schema.directTextPaths.toSet() &&
+                directAnswers.values.all { it.isNotBlank() } &&
+                directReceipts.keys == schema.directImagePaths.toSet())
+            require(savedAnswers.keys == active.map { it.rowId }.toSet() &&
+                savedAnswers.values.all { answers -> answers.values.all { it.isNotBlank() } })
+            require(receipts.keys == active.flatMap { row ->
+                group.imagePaths.map { row.rowId to it }
+            }.toSet())
+        }
         val root = form.instance.root.name
         val name = group.path.substringAfterLast('/')
         require(group.path == "/$root/$name")
@@ -324,6 +338,37 @@ class JavaRosaPrivateRepeatAnswerSession(
             require(form.instance.resolveReference(leaf)?.value?.value == token)
         }
         assertScalars()
+        if (requireComplete) {
+            // Exact root/metadata inventory; no hidden business fields or
+            // amendment deprecatedID admitted for an independent visit.
+            require(binding.workType == RecordWorkType.FOLLOW_UP &&
+                !binding.requiresDeprecatedId && binding.reservedInstanceId != binding.sourceInstanceId)
+            val rootNode = form.instance.root
+            val expectedRootNames = (schema.directTextPaths + schema.directImagePaths)
+                .map { it.substringAfterLast('/') }.toSet() + setOf(name, "meta")
+            require((0 until rootNode.numChildren).map { rootNode.getChildAt(it).name }.toSet() ==
+                expectedRootNames)
+            val meta = requireNotNull(rootNode.getChild("meta", 0))
+            require(meta.numChildren == 1 && meta.getChildAt(0).name == "instanceID")
+            val instanceRef = TreeReference.rootRef().apply {
+                add(root, 0)
+                add("meta", 0)
+                add("instanceID", 0)
+            }
+            val instance = requireNotNull(form.instance.resolveReference(instanceRef))
+            require(instance.isLeaf && instance.value == null)
+            require(binding.reservedInstanceId.startsWith("uuid:") &&
+                UUID.fromString(binding.reservedInstanceId.removePrefix("uuid:")).toString() ==
+                    binding.reservedInstanceId.removePrefix("uuid:"))
+            form.setValue(StringData(binding.reservedInstanceId), instanceRef, true)
+            require(form.instance.resolveReference(instanceRef)?.value?.value == binding.reservedInstanceId)
+            assertScalars()
+            for ((leaf, token) in references.values) {
+                require(token != null && form.instance.resolveReference(leaf)?.value?.value == token)
+            }
+            form.setValue(null, instanceRef, true)
+            require(form.instance.resolveReference(instanceRef)?.value == null)
+        }
         // Clearing these temporary references cannot touch encrypted assets
         // or change recovered scalar values in the same native instance tree.
         for ((leaf, token) in references.values) {

@@ -622,8 +622,116 @@ class ConnectedProtectedEditorRestartTest {
             assertTrue(pending.any { it.id == b.workId })
             assertEquals(state.required("pendingDigest"), QuarantinedWorkDraftVault.sha256(
                 pending.map { it.id }.sorted().joinToString("\n")))
-            assertTrue(state.marker.delete())
+            state.evidence.setProperty("generation", winner.generation)
+            java.io.FileOutputStream(state.marker).use {
+                state.evidence.store(it, "Synthetic finalization eligibility input")
+                it.fd.sync()
+            }
         } finally { executor.shutdownNow() }
+    }
+
+    @Test
+    fun finalizationEligibilityRequiresCompleteCurrentCommittedNativeModel() {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        val generations = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+        val probe = ProtectedNativeRepeatImageProbe(state.context.cacheDir, root, state.settings)
+        val previous = requireNotNull(generations.reopen(b.projectId, b))
+        assertEquals(state.required("generation"), previous.generation)
+        val workDir = File(File(File(root, QuarantinedWorkDraftVault.VAULT_DIRECTORY), b.projectId), b.workId)
+        val pointer = File(state.area, "current.aesgcm")
+        fun snapshot(dir: File) = dir.walkTopDown().filter { it.isFile }.associate {
+            it.relativeTo(dir).path to digest(it.readBytes())
+        }
+        val oldDir = File(state.area, previous.generation)
+        val old = snapshot(oldDir)
+        val initial = snapshot(workDir)
+        val initialPointer = digest(pointer.readBytes())
+        assertTrue(previous.evidence.imageOrdinals.isEmpty() && previous.evidence.directImageDigests.isEmpty())
+        assertTrue(runCatching {
+            generations.verifyFinalizationEligibility(b.projectId, b, previous.generation)
+        }.isFailure)
+        assertEquals(initial, snapshot(workDir))
+        assertEquals(initialPointer, digest(pointer.readBytes()))
+
+        val authorized = RecordWorkPreparationClient(state.settings).authorizePrivateTextForm(b.projectId, b)
+        val native = JavaRosaPrivateRepeatAnswerSession(state.context.cacheDir, b,
+            authorized.plan, authorized.targetXFormXml, true)
+        val cipher = AndroidKeyStorePrivateDraftCipher()
+        val rows = QuarantinedRepeatRowVault(root, cipher)
+        val images = QuarantinedRepeatImageStore(root, cipher, rows)
+        val direct = ProtectedNativeImageIntake(state.context.cacheDir, root, state.settings)
+        val group = native.schema.groups.single()
+        val active = rows.read(b, native.schema).active(group.path)
+        assertEquals(2, active.size)
+        fun png(color: Int): ByteArray {
+            val bitmap = android.graphics.Bitmap.createBitmap(16, 16, android.graphics.Bitmap.Config.ARGB_8888)
+            return try {
+                bitmap.eraseColor(color)
+                java.io.ByteArrayOutputStream().use { output ->
+                    assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output))
+                    output.toByteArray()
+                }
+            } finally { bitmap.recycle() }
+        }
+        val media = listOf(png(android.graphics.Color.GREEN), png(android.graphics.Color.RED),
+            png(android.graphics.Color.BLUE))
+        try {
+            val directPath = native.schema.directImagePaths.single()
+            val directReceipt = direct.importSelectedImage(b.projectId, b, directPath,
+                "image/png", media[0].inputStream())
+            active.forEachIndexed { index, row ->
+                val receipt = images.importSelectedImage(b, native, row.rowId,
+                    group.imagePaths.single(), "image/png", media[index + 1].inputStream())
+                assertEquals(digest(media[index + 1]), receipt.sha256)
+            }
+            val directText = native.schema.directTextPaths.single()
+            val values = EncryptedPrivateTextDraftStore(root, cipher).read(b, native.schema.directTextPaths).answers
+            val incomplete = mapOf(directText to "")
+            probe.saveDirectText(b.projectId, b, incomplete, values)
+            val dirty = snapshot(workDir)
+            assertTrue(runCatching {
+                generations.verifyFinalizationEligibility(b.projectId, b, previous.generation)
+            }.isFailure)
+            assertEquals(dirty, snapshot(workDir))
+            val blank = generations.commit(b.projectId, b, previous.generation)
+            assertTrue(runCatching {
+                generations.verifyFinalizationEligibility(b.projectId, b, blank.generation)
+            }.isFailure)
+            probe.saveDirectText(b.projectId, b, values, incomplete)
+            val complete = generations.commit(b.projectId, b, blank.generation)
+            val before = snapshot(workDir)
+            val committedDir = File(state.area, complete.generation)
+            val committedBefore = snapshot(committedDir)
+            val pointerBefore = digest(pointer.readBytes())
+            assertTrue(runCatching {
+                generations.verifyFinalizationEligibility(b.projectId, b, blank.generation)
+            }.isFailure)
+            val eligible = generations.verifyFinalizationEligibility(b.projectId, b, complete.generation)
+            assertEquals(b.workId, eligible.workId)
+            assertEquals(b.reservedInstanceId, eligible.reservedInstanceId)
+            assertNotEquals(b.sourceInstanceId, eligible.reservedInstanceId)
+            assertEquals(b.targetFormVersionId, eligible.targetFormVersionId)
+            assertEquals(complete.generation, eligible.generation)
+            assertEquals(complete.evidence, eligible.evidence)
+            assertEquals(mapOf(directPath to directReceipt.sha256), eligible.evidence.directImageDigests)
+            assertEquals(active.mapIndexed { index, row ->
+                (row.rowId to group.imagePaths.single()) to index
+            }.toMap(), eligible.evidence.imageOrdinals)
+            assertFalse(eligible.canFinalize || eligible.canUpload)
+            assertEquals(eligible, generations.verifyFinalizationEligibility(b.projectId, b, complete.generation))
+            assertEquals(before, snapshot(workDir))
+            assertEquals(committedBefore, snapshot(committedDir))
+            assertEquals(old, snapshot(oldDir))
+            assertEquals(pointerBefore, digest(pointer.readBytes()))
+            assertEquals(b, QuarantinedWorkDraftVault(root).read(b.projectId, b.workId, b.actorContextSha256))
+            val pending = RecordWorkReadOnlyClient(state.settings).load(b.projectId).pendingWork
+            assertTrue(pending.any { it.id == b.workId })
+            assertEquals(state.required("pendingDigest"), QuarantinedWorkDraftVault.sha256(
+                pending.map { it.id }.sorted().joinToString("\n")))
+            assertTrue(state.marker.delete())
+        } finally { media.forEach { it.fill(0) } }
     }
 
     private fun verifyRestart(phase: (String) -> Unit) {

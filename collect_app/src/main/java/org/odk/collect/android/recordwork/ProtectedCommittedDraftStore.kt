@@ -364,6 +364,7 @@ internal class ProtectedCommittedDraftStore(
     }
 
     private fun checkBinding(binding: QuarantinedWorkDraft) {
+        ProtectedSubmissionAttemptGuard.requireEditable(root, binding)
         require(QuarantinedWorkDraftVault(root).read(
             binding.projectId, binding.workId, binding.actorContextSha256) == binding)
     }

@@ -219,3 +219,5 @@ run_one submittedReceiptRecoversAfterForceStopAndRejectsCorruption "$restart_cla
 echo "U06-T04E-05D: authenticated durable submitted receipt, actual restart, corruption and edit/replay denial PASS."
 
 echo "U06-T04E-05E: explicit graphical submission, unsaved/cancel/partial-attempt denial, real acknowledged POST and read-only restarted submitted status PASS."
+
+echo "U06-T04E-06A: protected stale-session text/media/repeat/checkpoint editing denial, partial/receipt/symlink marker preservation and real graphical submission PASS."

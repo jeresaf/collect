@@ -115,6 +115,7 @@ class QuarantinedRepeatImageActivity : LocalizedActivity() {
             QuarantinedWorkDraftVault(noBackupFilesDir)
                 .read(projectId, workId, actorHash())
         ) { "Private work item binding missing" }
+        ProtectedSubmissionAttemptGuard.requireEditable(noBackupFilesDir, binding)
         val prepared = RecordWorkPreparationClient(settings)
             .authorizePrivateTextForm(projectId, binding)
         val mixed = intent.getBooleanExtra(QuarantinedCombinedDraftActivity.EXTRA_MIXED, false)

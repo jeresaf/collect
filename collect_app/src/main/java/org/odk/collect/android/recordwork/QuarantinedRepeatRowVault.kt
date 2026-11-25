@@ -152,6 +152,7 @@ class QuarantinedRepeatRowVault(
         binding: QuarantinedWorkDraft,
         schema: PrivateRepeatSchema
     ) {
+        ProtectedSubmissionAttemptGuard.requireEditable(noBackupRoot, binding)
         val active = requireNotNull(bindingVault.read(
             binding.projectId, binding.workId, binding.actorContextSha256
         )) { "Private work identity is not staged" }

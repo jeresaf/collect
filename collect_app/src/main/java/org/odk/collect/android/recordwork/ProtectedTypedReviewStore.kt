@@ -45,13 +45,13 @@ class ProtectedTypedReviewStore(
     private val cipher: PrivateDraftCipher,
     private val vault: QuarantinedWorkDraftVault = QuarantinedWorkDraftVault(noBackupRoot)
 ) {
-    @Synchronized
     fun save(
         binding: QuarantinedWorkDraft,
         plan: HistoricalMappingPlan,
         findings: List<TypedMappingFinding>,
         decisions: Map<String, TypedReviewDecision>
-    ): ProtectedTypedReview {
+    ): ProtectedTypedReview = synchronized(ProtectedDraftComponentLock.monitor) {
+        ProtectedSubmissionAttemptGuard.requireEditable(noBackupRoot, binding)
         val digest = validate(binding, plan, findings, decisions)
         val file = fileOf(binding)
         if (file.exists()) {
@@ -59,7 +59,7 @@ class ProtectedTypedReviewStore(
             require(existing.decisions == decisions && existing.findingDigest == digest) {
                 "Typed review is immutable; changing decisions needs a new authorized work item"
             }
-            return existing
+            return@synchronized existing
         }
         val approval = ProtectedTypedReview(
             UUID.randomUUID().toString(), System.currentTimeMillis(),
@@ -103,7 +103,7 @@ class ProtectedTypedReviewStore(
         } finally {
             data.fill(0)
         }
-        return requireNotNull(read(binding, plan, findings))
+        return@synchronized requireNotNull(read(binding, plan, findings))
     }
 
     @Synchronized

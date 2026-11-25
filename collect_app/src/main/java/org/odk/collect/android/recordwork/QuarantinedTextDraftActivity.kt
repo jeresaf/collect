@@ -163,6 +163,7 @@ class QuarantinedTextDraftActivity : LocalizedActivity() {
                 val binding = requireNotNull(
                     vault().read(projectId, workId, actorHash())
                 ) { "Protected work draft is not staged" }
+                ProtectedSubmissionAttemptGuard.requireEditable(noBackupFilesDir, binding)
                 val authorized = client().authorizePrivateTextForm(projectId, binding)
                 val native = JavaRosaPrivateScalarSession(
                     cacheDir, binding, authorized.plan, authorized.targetXFormXml

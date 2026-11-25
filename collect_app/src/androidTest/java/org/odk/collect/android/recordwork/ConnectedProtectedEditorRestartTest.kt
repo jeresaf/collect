@@ -1427,8 +1427,54 @@ class ConnectedProtectedEditorRestartTest {
                 .perform(androidx.test.espresso.action.ViewActions.click())
         }
         phase("UNCONFIRMED_UI")
+        val authorized = RecordWorkPreparationClient(state.settings).authorizePrivateTextForm(b.projectId, b)
+        val session = JavaRosaPrivateRepeatAnswerSession(state.context.cacheDir, b,
+            authorized.plan, authorized.targetXFormXml, true)
+        val group = session.schema.groups.single()
+        val cipher = AndroidKeyStorePrivateDraftCipher()
+        val rows = QuarantinedRepeatRowVault(root, cipher)
+        val row = rows.read(b, session.schema).active(group.path).first()
+        val direct = session.schema.directTextPaths
+        val images = session.schema.directImagePaths
+        val rowImage = group.imagePaths.first()
+        val directStore = EncryptedPrivateTextDraftStore(root, cipher)
+        val rowStore = QuarantinedRepeatAnswerStore(root, cipher)
+        val directImage = QuarantinedPrivateImageStore(root, cipher)
+        val repeatImage = QuarantinedRepeatImageStore(root, cipher)
+        val directValues = directStore.read(b, direct).answers
+        val rowValues = rowStore.read(b, session, row.rowId).values
+        assertFalse(ProtectedSubmissionAttemptGuard.hasAttempt(root, b))
         assertTrue(latch.createNewFile())
         try {
+            // Already-open child editors hold a valid native session; live
+            // READY alone cannot authorize another read or write.
+            assertTrue(ProtectedSubmissionAttemptGuard.hasAttempt(root, b))
+            ProtectedSubmissionAdmission.verifySnapshot(b, remote.load(b.projectId))
+            val blocked = listOf<() -> Unit>(
+                { directStore.save(b, directValues, direct) },
+                { directStore.saveIfAbsent(b, directValues, direct) },
+                { directStore.read(b, direct) },
+                { directImage.clear(b, images.single(), images) },
+                { directImage.importSelectedImage(b, images.single(), images, "image/png", byteArrayOf().inputStream()) },
+                { rows.addRow(b, session.schema, group.path, java.util.UUID.randomUUID().toString()) },
+                { rows.archiveRow(b, session.schema, row.rowId, java.util.UUID.randomUUID().toString()) },
+                { rowStore.save(b, session, row.rowId, rowValues) },
+                { repeatImage.clear(b, session, row.rowId, rowImage) },
+                { repeatImage.importSelectedImage(b, session, row.rowId, rowImage, "image/png", byteArrayOf().inputStream()) },
+                { store.commit(b.projectId, b, generation) },
+                { store.persistFinalizedPackage(b.projectId, b, generation) },
+                { store.reopenFinalizedPackage(b.projectId, b, generation) }
+            )
+            blocked.forEachIndexed { index, operation ->
+                val failure = runCatching(operation).exceptionOrNull()
+                assertTrue("Attempt guard operation $index",
+                    failure is IllegalArgumentException &&
+                        failure.message == "Submission attempt requires reconciliation")
+            }
+            assertEquals(workingBefore, inventory(work))
+            assertEquals(committedBefore, inventory(File(state.area, generation)))
+            assertArrayEquals(envelopeBefore, envelope.readBytes())
+            assertArrayEquals(pointerBefore, pointer.readBytes())
             ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
                 QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
             ).use { editor ->
@@ -1440,6 +1486,21 @@ class ConnectedProtectedEditorRestartTest {
             assertEquals(0L, latch.length())
             assertEquals(before.records.toSet(), remote.load(b.projectId).records.toSet())
         } finally { assertTrue(latch.delete()) } // CI-only synthetic marker cleanup.
+        for (name in listOf("submitted-receipt.aesgcm", ".submitted-receipt-write")) {
+            val marker = File(state.area, name)
+            assertTrue(marker.createNewFile())
+            try {
+                assertTrue(ProtectedSubmissionAttemptGuard.hasAttempt(root, b))
+                assertTrue(runCatching { directStore.save(b, directValues, direct) }.isFailure)
+            } finally { assertTrue(marker.delete()) }
+        }
+        java.nio.file.Files.createSymbolicLink(latch.toPath(), File(state.area, "nonexistent").toPath())
+        try {
+            assertTrue(ProtectedSubmissionAttemptGuard.hasAttempt(root, b))
+            assertTrue(runCatching { directStore.save(b, directValues, direct) }.isFailure)
+        } finally { java.nio.file.Files.delete(latch.toPath()) }
+        assertFalse(ProtectedSubmissionAttemptGuard.hasAttempt(root, b))
+        assertEquals(directValues, directStore.read(b, direct).answers)
         phase("CONFIRM_UI")
         ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
             QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)

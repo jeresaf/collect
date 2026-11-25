@@ -108,6 +108,7 @@ class QuarantinedTypedReviewActivity : LocalizedActivity() {
         require(bound.workType == RecordWorkType.AMENDMENT) {
             "Follow-up visits must not copy old data"
         }
+        ProtectedSubmissionAttemptGuard.requireEditable(noBackupFilesDir, bound)
         val authorized = RecordWorkPreparationClient(settings)
             .authorizeTypedReview(projectId, bound, cacheDir)
         return bound to authorized

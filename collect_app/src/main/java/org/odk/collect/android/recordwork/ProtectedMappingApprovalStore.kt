@@ -45,12 +45,12 @@ class ProtectedMappingApprovalStore(
     private val vault: QuarantinedWorkDraftVault =
         QuarantinedWorkDraftVault(noBackupRoot)
 ) {
-    @Synchronized
     fun save(
         binding: QuarantinedWorkDraft,
         plan: HistoricalMappingPlan,
         review: MappingReviewSnapshot
-    ): ProtectedMappingApproval {
+    ): ProtectedMappingApproval = synchronized(ProtectedDraftComponentLock.monitor) {
+        ProtectedSubmissionAttemptGuard.requireEditable(noBackupRoot, binding)
         verifyBinding(binding, plan)
         require(review.workId == binding.workId &&
             review.sourceXFormSha256 == binding.sourceXFormSha256 &&
@@ -66,7 +66,7 @@ class ProtectedMappingApprovalStore(
             require(prior.decisions == review.decisions) {
                 "Existing mapping approval cannot be silently changed or overwritten"
             }
-            return prior
+            return@synchronized prior
         }
 
         val approval = ProtectedMappingApproval(
@@ -102,7 +102,7 @@ class ProtectedMappingApprovalStore(
         } finally {
             bytes.fill(0)
         }
-        return requireNotNull(read(binding, plan)) {
+        return@synchronized requireNotNull(read(binding, plan)) {
             "Encrypted mapping approval did not survive authenticated readback"
         }
     }

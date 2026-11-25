@@ -120,6 +120,7 @@ class QuarantinedImageIntakeActivity : LocalizedActivity() {
         val binding = requireNotNull(
             vault().read(projectId, workId, actorHash())
         ) { "Private work binding missing" }
+        ProtectedSubmissionAttemptGuard.requireEditable(noBackupFilesDir, binding)
         val form = client().authorizePrivateTextForm(projectId, binding)
         val probe = JavaRosaPrivateImageFieldProbe(
             cacheDir, binding, form.plan, form.targetXFormXml

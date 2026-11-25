@@ -17,8 +17,6 @@ import org.odk.collect.settings.SettingsProvider
 import org.odk.collect.settings.keys.ProjectKeys
 import org.odk.collect.strings.localization.LocalizedActivity
 import java.util.concurrent.Executors
-import java.io.File
-import java.nio.file.Files
 
 /**
  * Protected working-copy editor and explicit checkpoint publication.
@@ -92,12 +90,7 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
     // attempt/receipt state first; never open answers on an uncertain attempt.
     private fun submittedDisplay(b: QuarantinedWorkDraft): Display? {
         val root = noBackupFilesDir.canonicalFile
-        val area = File(root, "recordwork-committed/${b.projectId}/${b.workId}")
-        if (!area.exists() && !Files.isSymbolicLink(area.toPath())) return null
-        val checked = ProtectedMultipartSubmission.submissionAttemptArea(root, b)
-        val markers = listOf("submission-attempt.aesgcm", "submitted-receipt.aesgcm",
-            ".submitted-receipt-write").map { File(checked, it) }
-        if (markers.none { it.exists() || Files.isSymbolicLink(it.toPath()) }) return null
+        if (!ProtectedSubmissionAttemptGuard.hasAttempt(root, b)) return null
         val receipt = runCatching {
             ProtectedSubmissionReceiptStore(root, settings).reopen(project, b)
         }.getOrNull()

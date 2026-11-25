@@ -205,6 +205,7 @@ class EncryptedPrivateTextDraftStore(
     }
 
     private fun verifyBinding(binding: QuarantinedWorkDraft) {
+        ProtectedSubmissionAttemptGuard.requireEditable(noBackupRoot, binding)
         val current = requireNotNull(vault.read(
             binding.projectId, binding.workId, binding.actorContextSha256
         )) { "Work-item binding is not present on this device" }

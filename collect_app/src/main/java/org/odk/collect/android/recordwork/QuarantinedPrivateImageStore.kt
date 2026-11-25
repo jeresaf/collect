@@ -155,6 +155,7 @@ class QuarantinedPrivateImageStore(
         fieldPath: String,
         permittedFields: List<String>
     ) {
+        ProtectedSubmissionAttemptGuard.requireEditable(noBackupRoot, binding)
         val active = requireNotNull(vault.read(
             binding.projectId, binding.workId, binding.actorContextSha256
         )) { "No authorized local work-item binding" }

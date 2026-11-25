@@ -746,6 +746,7 @@ class ConfiguredRecordPreparationUiTest {
                     val cipher = AndroidKeyStorePrivateDraftCipher()
                     val rows = QuarantinedRepeatRowVault(context.noBackupFilesDir, cipher)
                     val images = QuarantinedRepeatImageStore(context.noBackupFilesDir, cipher, rows)
+                    val answers = QuarantinedRepeatAnswerStore(context.noBackupFilesDir, cipher, rows)
                     val native = ProtectedNativeRepeatImageProbe(
                         context.cacheDir, context.noBackupFilesDir, settings)
                     val group = session.schema.groups.single()
@@ -754,6 +755,14 @@ class ConfiguredRecordPreparationUiTest {
                     val first = rows.addRow(binding, session.schema, group.path, UUID.randomUUID().toString())
                     val second = rows.addRow(binding, session.schema, group.path, UUID.randomUUID().toString())
                     assertTrue(first.rowId != second.rowId)
+                    val namePath = group.fields.single().path
+                    val firstName = "Synthetic member A " + UUID.randomUUID()
+                    val secondName = "Synthetic member B " + UUID.randomUUID()
+                    assertEquals(mapOf(namePath to firstName),
+                        answers.save(binding, session, first.rowId, mapOf(namePath to firstName)).values)
+                    assertEquals(mapOf(namePath to secondName),
+                        answers.save(binding, session, second.rowId, mapOf(namePath to secondName)).values)
+                    fun digest(value: String) = QuarantinedWorkDraftVault.sha256(value)
                     fun png(color: Int): ByteArray {
                         val bitmap = android.graphics.Bitmap.createBitmap(
                             16, 16, android.graphics.Bitmap.Config.ARGB_8888)
@@ -784,6 +793,13 @@ class ConfiguredRecordPreparationUiTest {
                         assertEquals(mapOf((first.rowId to path) to 0, (second.rowId to path) to 1),
                             native.inspect(activeProjectId(), binding))
                         assertEquals(before, snapshot())
+                        val combined = native.inspectCombined(activeProjectId(), binding)
+                        assertEquals(mapOf((first.rowId to path) to 0, (second.rowId to path) to 1),
+                            combined.imageOrdinals)
+                        assertEquals(mapOf(first.rowId to mapOf(namePath to digest(firstName)),
+                            second.rowId to mapOf(namePath to digest(secondName))),
+                            combined.savedRowAnswerDigests)
+                        assertEquals(before, snapshot())
                         rows.archiveRow(binding, session.schema, first.rowId, UUID.randomUUID().toString())
                         val afterArchive = snapshot()
                         assertTrue(runCatching {
@@ -795,6 +811,14 @@ class ConfiguredRecordPreparationUiTest {
                             receipt, bytes -> receipt == b && bytes.contentEquals(blue)
                         })
                         assertEquals(afterArchive, snapshot())
+                        assertTrue(runCatching {
+                            answers.read(binding, session, first.rowId)
+                        }.isFailure)
+                        val survivor = native.inspectCombined(activeProjectId(), binding)
+                        assertEquals(mapOf((second.rowId to path) to 0), survivor.imageOrdinals)
+                        assertEquals(mapOf(second.rowId to mapOf(namePath to digest(secondName))),
+                            survivor.savedRowAnswerDigests)
+                        assertEquals(afterArchive, snapshot())
                         val third = rows.addRow(binding, session.schema, group.path, UUID.randomUUID().toString())
                         assertTrue(third.rowId !in setOf(first.rowId, second.rowId))
                         assertEquals(null, images.receipt(binding, session, third.rowId, path))
@@ -802,8 +826,25 @@ class ConfiguredRecordPreparationUiTest {
                         assertEquals(mapOf((second.rowId to path) to 0),
                             native.inspect(activeProjectId(), binding))
                         assertEquals(afterAdd, snapshot())
-                        assertEquals(before.filterKeys { it.startsWith("repeat-image-") },
-                            afterAdd.filterKeys { it.startsWith("repeat-image-") })
+                        assertEquals(before.filterKeys { it.startsWith("repeat-image-") ||
+                            it.startsWith("repeat-answer-") },
+                            afterAdd.filterKeys { it.startsWith("repeat-image-") ||
+                                it.startsWith("repeat-answer-") })
+                        assertFalse(answers.read(binding, session, third.rowId).hasSavedAnswers)
+                        val editedName = "Synthetic updated member " + UUID.randomUUID()
+                        answers.save(binding, session, second.rowId, mapOf(namePath to editedName))
+                        val editedSnapshot = snapshot()
+                        repeat(2) {
+                            val fresh = ProtectedNativeRepeatImageProbe(
+                                context.cacheDir, context.noBackupFilesDir, settings)
+                                .inspectCombined(activeProjectId(), binding)
+                            assertEquals(mapOf((second.rowId to path) to 0), fresh.imageOrdinals)
+                            assertEquals(mapOf(second.rowId to mapOf(namePath to digest(editedName))),
+                                fresh.savedRowAnswerDigests)
+                        }
+                        assertEquals(editedSnapshot, snapshot())
+                        assertEquals(afterAdd.filterKeys { it.startsWith("repeat-image-") },
+                            editedSnapshot.filterKeys { it.startsWith("repeat-image-") })
                         assertEquals(binding, vault.read(activeProjectId(), pending.id, scope))
                     } finally {
                         red.fill(0)

@@ -9,6 +9,11 @@ import java.io.File
  * multiplicities are derived anew under the same process-local lock.
  * No native instance, attachment file, finalization or upload is created.
  */
+internal data class ProtectedCombinedRepeatEvidence(
+    val imageOrdinals: Map<Pair<String, String>, Int>,
+    val savedRowAnswerDigests: Map<String, Map<String, String>>
+)
+
 internal class ProtectedNativeRepeatImageProbe(
     private val scratch: File,
     private val root: File,
@@ -17,7 +22,14 @@ internal class ProtectedNativeRepeatImageProbe(
     fun inspect(
         projectId: String,
         binding: QuarantinedWorkDraft
-    ): Map<Pair<String, String>, Int> {
+    ): Map<Pair<String, String>, Int> =
+        inspectCombined(projectId, binding).imageOrdinals
+
+    /** Rebuild saved scalar values and authenticated images in the same native model. */
+    fun inspectCombined(
+        projectId: String,
+        binding: QuarantinedWorkDraft
+    ): ProtectedCombinedRepeatEvidence {
         require(binding.workType == RecordWorkType.FOLLOW_UP &&
             binding.validationTransfers == 0)
         val authorized = RecordWorkPreparationClient(settings)
@@ -47,7 +59,12 @@ internal class ProtectedNativeRepeatImageProbe(
                     }
                 }
             }
-            session.verifyImageReferences(inventory, receipts)
+            val saved = QuarantinedRepeatAnswerStore(root, cipher, rows)
+                .readAllSaved(binding, session)
+            val ordinals = session.verifyImageReferences(inventory, receipts, saved)
+            ProtectedCombinedRepeatEvidence(ordinals, saved.mapValues { (_, values) ->
+                values.mapValues { (_, value) -> QuarantinedWorkDraftVault.sha256(value) }
+            })
         }
     }
 }

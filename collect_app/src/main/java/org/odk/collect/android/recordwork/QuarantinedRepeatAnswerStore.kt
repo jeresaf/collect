@@ -100,6 +100,16 @@ class QuarantinedRepeatAnswerStore(
             )
         }
 
+    /** Reopen all saved active rows as one locked, native-validated read. */
+    internal fun readAllSaved(
+        binding: QuarantinedWorkDraft,
+        session: JavaRosaPrivateRepeatAnswerSession
+    ): Map<String, Map<String, String>> =
+        rowVault.withLockedCurrentInventory(binding, session.schema) { inventory ->
+            val saved = allActiveValues(binding, session.schema, inventory)
+            session.validate(inventory, saved).filterKeys { it in saved }
+        }
+
     /**
      * Archived row data cannot be reopened or mapped onto a new row. Its
      * ciphertext remains inaccessible under the permanent archived UUID

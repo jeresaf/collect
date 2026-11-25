@@ -206,7 +206,8 @@ class JavaRosaPrivateRepeatAnswerSession(
      */
     internal fun verifyImageReferences(
         inventory: ProtectedRepeatInventory,
-        receipts: Map<Pair<String, String>, ProtectedRepeatImageReceipt>
+        receipts: Map<Pair<String, String>, ProtectedRepeatImageReceipt>,
+        savedAnswers: Map<String, Map<String, String>> = emptyMap()
     ): Map<Pair<String, String>, Int> = withNativeTarget { form ->
         require(schema.groups.size == 1)
         val group = schema.groups.single()
@@ -215,6 +216,8 @@ class JavaRosaPrivateRepeatAnswerSession(
         require(receipts.keys.all { (id, path) ->
             active.any { it.rowId == id } && path in group.imagePaths
         })
+        require(savedAnswers.keys.all { id -> active.any { it.rowId == id } } &&
+            savedAnswers.values.all { it.keys == group.fields.map { f -> f.path }.toSet() })
         val root = form.instance.root.name
         val name = group.path.substringAfterLast('/')
         require(group.path == "/$root/$name")
@@ -228,6 +231,16 @@ class JavaRosaPrivateRepeatAnswerSession(
         require(initial.size <= 1 && initial.all { it.mult == 0 })
         val references = linkedMapOf<Pair<String, String>, Pair<TreeReference, String?>>()
         val ordinals = linkedMapOf<Pair<String, String>, Int>()
+        val scalars = mutableListOf<Triple<TreeReference, PrivateScalarType, IAnswerData?>>()
+        fun assertScalars() {
+            for ((leaf, type, answer) in scalars) {
+                val actual = form.instance.resolveReference(leaf)?.value?.value
+                require(if (answer == null) actual == null
+                    else actual != null && matches(type, answer.value, actual)) {
+                    "Recovered scalar answer changed in combined native model"
+                }
+            }
+        }
         for ((ordinal, row) in active.withIndex()) {
             val rowRef = TreeReference.rootRef().apply {
                 add(root, 0)
@@ -238,6 +251,24 @@ class JavaRosaPrivateRepeatAnswerSession(
             require(node.mult == ordinal && node.numChildren ==
                 group.fields.size + group.imagePaths.size)
             require((0 until node.numChildren).all { node.getChildAt(it).value == null })
+            for (field in group.fields) {
+                val leaf = TreeReference.rootRef().apply {
+                    add(root, 0)
+                    add(name, ordinal)
+                    add(field.path.substringAfterLast('/'), 0)
+                }
+                val native = requireNotNull(form.instance.resolveReference(leaf))
+                require(native.isLeaf && native.dataType == field.type.javaRosaType &&
+                    native.value == null)
+                val raw = savedAnswers[row.rowId]?.get(field.path).orEmpty()
+                require(raw.length <= MAX_TEXT && '\u0000' !in raw)
+                val answer = if (raw.isEmpty()) null else parse(field.type, raw).let {
+                    require(it.second == raw && form.evaluateConstraint(leaf, it.first))
+                    it.first
+                }
+                if (answer != null) form.setValue(answer, leaf, true)
+                scalars += Triple(leaf, field.type, answer)
+            }
             for (path in group.imagePaths) {
                 val key = row.rowId to path
                 val leaf = TreeReference.rootRef().apply {
@@ -272,11 +303,14 @@ class JavaRosaPrivateRepeatAnswerSession(
         for ((leaf, token) in references.values) {
             require(form.instance.resolveReference(leaf)?.value?.value == token)
         }
-        // Clearing these temporary references cannot touch encrypted assets.
+        assertScalars()
+        // Clearing these temporary references cannot touch encrypted assets
+        // or change recovered scalar values in the same native instance tree.
         for ((leaf, token) in references.values) {
             if (token != null) form.setValue(null, leaf, true)
             require(form.instance.resolveReference(leaf)?.value == null)
         }
+        assertScalars()
         require(ordinals.keys == receipts.keys)
         ordinals.toMap()
     }

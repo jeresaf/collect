@@ -29,6 +29,7 @@ run_one() {
     # Emit only the fixed-format recovery diagnostic, not raw output.
     grep -Eo 'U06_RESTART_FAILURE phase=(CHECKPOINT|PERSISTED_PROJECT|PROJECT_RESTORE|ACTOR_SCOPE|BINDING|CIPHERTEXT|LIVE_READY|EDITOR_REOPEN|POSTCONDITIONS) kind=(AssertionError|PreparationException|ReadOnlyRecordException|IllegalStateException|IllegalArgumentException|IOException|SecurityException|OtherException)' <<<"$output" | sort -u || true
     grep -Eo 'U06_MULTIPART_FAILURE phase=(SETUP|DECRYPTED_FRAME|CAPTURE_SETUP|WRONG_DIGEST|SEND|RECEIPT|HEADERS|MULTIPART|REPLAY|REDIRECT|WRONG_RECEIPT|POSTCONDITIONS) kind=(AssertionError|IllegalArgumentException|IllegalStateException|IOException|OtherException) line=-?[0-9]+ origin=(ProtectedMultipartSubmission|ProtectedCommittedDraftStore|ProtectedFinalizedPackageFile|ProtectedSubmissionAdmission|ProtectedNativePackageBuilder|RecordWorkPreparationClient|RecordWorkReadOnlyClient|AndroidKeyStorePrivateDraftCipher|Unknown):-?[0-9]+' <<<"$output" | sort -u || true
+    grep -Eo 'U06_NATIVE_POST_FAILURE phase=(SETUP|POST|ACK|RECONCILE|REPLAY|ORACLE) line=-?[0-9]+' <<<"$output" | sort -u || true
     exit 1
   fi
   echo "Android instrumentation phase ${method}: PASS"
@@ -202,3 +203,12 @@ echo "U06-T04E-05A: current finalized package submission admission, stale/corrup
 adb shell am force-stop "$APP_ID"
 run_one finalizedMultipartUsesExactPersistedBytesWithoutRealPost "$restart_class"
 echo "U06-T04E-05B: authenticated finalized multipart bytes, receipt and redirect/duplicate attempt denial PASS."
+
+# Preserve exact historic rows before the real native finalized POST.
+export PGPASSWORD=synthetic-ci-only
+python3 ci/u06-t04e05c-native-postflight.py before /tmp/u06-native-history.json
+adb shell am force-stop "$APP_ID"
+run_one actualFinalizedMultipartCreatesIndependentLinkedObservation "$restart_class"
+adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
+python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
+echo "U06-T04E-05C: actual Android HTTPS finalized submission and independent PostgreSQL exact-byte/link verification PASS."

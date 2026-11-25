@@ -1364,6 +1364,103 @@ class ConnectedProtectedEditorRestartTest {
         assertEquals(before.pendingWork.toSet(), after.pendingWork.toSet())
     }
 
+    @Test
+    fun actualFinalizedMultipartCreatesIndependentLinkedObservation() {
+        var phase = "SETUP"
+        try {
+            verifyActualFinalizedSubmission { phase = it }
+        } catch (failure: Throwable) {
+            val line = failure.stackTrace.firstOrNull {
+                it.className.startsWith(ConnectedProtectedEditorRestartTest::class.java.name)
+            }?.lineNumber ?: -1
+            throw AssertionError("U06_NATIVE_POST_FAILURE phase=$phase line=$line")
+        }
+    }
+
+    private fun verifyActualFinalizedSubmission(phase: (String) -> Unit) {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        val generation = state.required("generation")
+        val sha = state.required("packageDigest")
+        val store = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+        val saved = store.reopenFinalizedPackage(b.projectId, b, generation)
+        assertEquals(sha, saved.evidence.packaged.packageSha256)
+        assertEquals(3, saved.evidence.packaged.attachments.size)
+        assertEquals(2, saved.evidence.packaged.xml.repeatCount)
+        val latch = File(state.area, "submission-attempt.aesgcm")
+        val envelope = File(state.area, "finalized-" + generation + ".aesgcm")
+        val pointer = File(state.area, "current.aesgcm")
+        val envelopeBefore = envelope.readBytes()
+        val pointerBefore = pointer.readBytes()
+        val work = File(File(File(root, QuarantinedWorkDraftVault.VAULT_DIRECTORY),
+            b.projectId), b.workId)
+        fun inventory(dir: File) = dir.walkTopDown().filter { it.isFile }.associate {
+            it.relativeTo(dir).path to digest(it.readBytes())
+        }
+        val workingBefore = inventory(work)
+        val committedBefore = inventory(File(state.area, generation))
+        assertFalse(latch.exists())
+        val remote = RecordWorkReadOnlyClient(state.settings)
+        val before = remote.load(b.projectId)
+        ProtectedSubmissionAdmission.verifySnapshot(b, before)
+        val original = before.records.single { it.submissionId == b.sourceSubmissionId }
+        // The default production connection factory uses the app's project
+        // credentials and the disposable debug-only CA, not a test POST stub.
+        phase("POST")
+        val sender = ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
+        val result = sender.send(b.projectId, b, generation, sha)
+        phase("ACK")
+        assertEquals(ProtectedTransportResult(201, true, b.reservedInstanceId, sha), result)
+        assertTrue(latch.isFile && latch.length() > 30)
+        val latchBefore = latch.readBytes()
+        phase("RECONCILE")
+        val after = remote.load(b.projectId)
+        val child = after.records.single { it.instanceId == b.reservedInstanceId }
+        assertNotEquals(b.sourceSubmissionId, child.submissionId)
+        assertEquals(b.targetFormVersionId, child.formVersionId)
+        assertEquals(original.formId, child.formId)
+        assertEquals(before.records.toSet() + child, after.records.toSet())
+        assertEquals(original, after.records.single { it.submissionId == b.sourceSubmissionId })
+        assertEquals(before.pendingWork.filter { it.id != b.workId }.toSet(), after.pendingWork.toSet())
+        phase("REPLAY")
+        assertTrue(runCatching { sender.send(b.projectId, b, generation, sha) }.isFailure)
+        assertEquals(after.records.toSet(), remote.load(b.projectId).records.toSet())
+        assertArrayEquals(latchBefore, latch.readBytes())
+        assertArrayEquals(envelopeBefore, envelope.readBytes())
+        assertArrayEquals(pointerBefore, pointer.readBytes())
+        assertEquals(workingBefore, inventory(work))
+        assertEquals(committedBefore, inventory(File(state.area, generation)))
+        assertEquals(b, QuarantinedWorkDraftVault(root).read(b.projectId, b.workId, b.actorContextSha256))
+        phase("ORACLE")
+        val oracle = org.json.JSONObject()
+            .put("work", b.workId).put("source", b.sourceSubmissionId)
+            .put("child", child.submissionId).put("reserved", b.reservedInstanceId)
+            .put("target", b.targetFormVersionId).put("visit", b.visitKey)
+            .put("xmlSha256", saved.evidence.packaged.xml.xmlSha256)
+            .put("xmlBytes", saved.evidence.packaged.xml.xmlBytes)
+            .put("packageSha256", sha)
+        val attachments = org.json.JSONArray()
+        saved.evidence.packaged.attachments.values.sortedBy { it.filename }.forEach {
+            attachments.put(org.json.JSONObject().put("filename", it.filename)
+                .put("mime", it.mime).put("bytes", it.bytes).put("sha256", it.sha256))
+        }
+        oracle.put("attachments", attachments)
+        // Synthetic CI-only oracle: identifiers, lengths and hashes, never
+        // answers, credentials, XML or media bytes.
+        java.io.FileOutputStream(File(root, "u06-native-submission-oracle.json")).use {
+            it.write(oracle.toString().toByteArray(Charsets.UTF_8))
+            it.fd.sync()
+        }
+        state.evidence.setProperty("submittedChild", child.submissionId)
+        state.evidence.setProperty("attemptDigest", digest(latchBefore))
+        state.evidence.setProperty("submittedPid", android.os.Process.myPid().toString())
+        java.io.FileOutputStream(state.marker).use {
+            state.evidence.store(it, "Synthetic submitted observation identity")
+            it.fd.sync()
+        }
+    }
+
     private fun verifyRestart(phase: (String) -> Unit) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

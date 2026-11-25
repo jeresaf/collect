@@ -49,19 +49,19 @@ internal class ProtectedCommittedDraftStore(
                 }
                 require(candidate.mkdir())
                 val source = work(root, binding)
-                val inventory = inventory(source)
+                val capturedHashes = inventory(source)
                 val target = work(candidate, binding)
                 require(target.mkdirs())
-                for (name in inventory.keys) {
+                for (name in capturedHashes.keys) {
                     val bytes = File(source, name).readBytes()
-                    require(QuarantinedPrivateImageStore.digest(bytes) == inventory[name])
+                    require(QuarantinedPrivateImageStore.digest(bytes) == capturedHashes[name])
                     FileOutputStream(File(target, name)).use {
                         it.write(bytes)
                         it.fd.sync()
                     }
                 }
-                require(inventory(target) == inventory)
-                inventory
+                require(inventory(target) == capturedHashes)
+                capturedHashes
             }
             // Authorization and native reconstruction run outside the lock.
             val evidence = ProtectedNativeRepeatImageProbe(scratch, candidate, settings)
@@ -118,7 +118,7 @@ internal class ProtectedCommittedDraftStore(
     }
 
     private fun area(binding: QuarantinedWorkDraft): File {
-        val dir = File(File(File(root, "recordwork-committed"), binding.projectId), binding.workId)
+        val dir = File(File(File(root.canonicalFile, "recordwork-committed"), binding.projectId), binding.workId)
         synchronized(lock) {
             require(dir.isDirectory || dir.mkdirs())
             require(dir.canonicalFile == File(root.canonicalFile,
@@ -128,7 +128,7 @@ internal class ProtectedCommittedDraftStore(
     }
 
     private fun work(base: File, b: QuarantinedWorkDraft) =
-        File(File(File(base, QuarantinedWorkDraftVault.VAULT_DIRECTORY), b.projectId), b.workId)
+        File(File(File(base.canonicalFile, QuarantinedWorkDraftVault.VAULT_DIRECTORY), b.projectId), b.workId)
 
     private fun inventory(dir: File): Map<String, String> {
         require(dir.isDirectory && dir.canonicalFile == dir.absoluteFile)

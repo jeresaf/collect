@@ -139,7 +139,7 @@ class QuarantinedPrivateImageStore(
         binding: QuarantinedWorkDraft,
         fieldPath: String,
         permittedFields: List<String>
-    ) = synchronized(ProtectedDraftComponentLock.monitor) {
+    ): Unit = synchronized(ProtectedDraftComponentLock.monitor) {
         requireAllowed(binding, fieldPath, permittedFields)
         val file = slot(binding, fieldPath)
         if (file.exists()) {

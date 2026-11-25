@@ -136,8 +136,7 @@ internal class ProtectedMultipartSubmission(
     }
 
     private fun reserveAttempt(binding: QuarantinedWorkDraft, admission: ProtectedSubmissionAdmissionEvidence) {
-        val area = File(File(File(root, "recordwork-committed"), binding.projectId), binding.workId)
-        require(area.isDirectory && area.canonicalFile == area.absoluteFile) { "Invalid submission attempt directory" }
+        val area = submissionAttemptArea(root, binding)
         val marker = File(area, "submission-attempt.aesgcm")
         require(!Files.isSymbolicLink(marker.toPath()))
         val aad = ("DC_SUBMISSION_ATTEMPT_V1\n" + binding.projectId + "\n" +
@@ -151,6 +150,25 @@ internal class ProtectedMultipartSubmission(
             require(marker.createNewFile()) { "A prior submission attempt requires reconciliation" }
             FileOutputStream(marker).use { it.write(sealed); it.fd.sync() }
         } finally { clear.fill(0) }
+    }
+
+    // Normalize only the trusted Android no-backup root. Never normalize away
+    // symlinks or traversal introduced in the reserved subtree.
+    companion object {
+        internal fun submissionAttemptArea(root: File, binding: QuarantinedWorkDraft): File {
+            val canonicalRoot = root.canonicalFile
+            require(canonicalRoot.isDirectory)
+            require(binding.projectId.matches(Regex("[A-Za-z0-9_-]{1,128}")) &&
+                UUID.fromString(binding.workId).toString() == binding.workId)
+            val committed = File(canonicalRoot, "recordwork-committed")
+            val project = File(committed, binding.projectId)
+            val area = File(project, binding.workId)
+            for (dir in listOf(committed, project, area)) {
+                require(dir.isDirectory && !Files.isSymbolicLink(dir.toPath()) &&
+                    dir.canonicalFile == dir.absoluteFile) { "Invalid submission attempt directory" }
+            }
+            return area
+        }
     }
 
     private fun transmit(

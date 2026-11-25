@@ -1200,6 +1200,24 @@ class ConnectedProtectedEditorRestartTest {
         val envelopeBefore = envelope.readBytes()
         assertFalse(latch.exists())
         phase("DECRYPTED_FRAME")
+        // Android may supply an alias for the app-private no-backup root.
+        // The exact published subtree is still required, including no links.
+        val canonicalArea = state.area.canonicalFile
+        assertEquals(canonicalArea, ProtectedMultipartSubmission.submissionAttemptArea(root, b))
+        assertEquals(canonicalArea, ProtectedMultipartSubmission.submissionAttemptArea(
+            File(root, "."), b))
+        val hostile = File(root, "u06-attempt-path-negative-" + java.util.UUID.randomUUID())
+        try {
+            assertTrue(hostile.mkdir())
+            java.nio.file.Files.createSymbolicLink(File(hostile, "recordwork-committed").toPath(),
+                File(root, "recordwork-committed").canonicalFile.toPath())
+            assertTrue(runCatching {
+                ProtectedMultipartSubmission.submissionAttemptArea(hostile, b)
+            }.isFailure)
+        } finally {
+            java.nio.file.Files.deleteIfExists(File(hostile, "recordwork-committed").toPath())
+            assertTrue(hostile.delete())
+        }
         // Separately check the exact published bytes before transport.
         ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
             .withFinalizedSubmissionContent(b.projectId, b, generation) { reopened, bytes ->

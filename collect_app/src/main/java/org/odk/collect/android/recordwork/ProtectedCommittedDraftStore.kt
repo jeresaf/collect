@@ -76,7 +76,10 @@ internal class ProtectedCommittedDraftStore(
             beforePublish()
             synchronized(lock) {
                 checkBinding(binding)
-                require(readPointer(binding, area)?.generation == expectedGeneration)
+                val previous = readPointer(binding, area)
+                require(previous?.generation == expectedGeneration)
+                if (previous != null) verifiedGeneration(binding, area, previous)
+                recoverCandidates(binding, area, previous)
                 require(inventory(work(root, binding)) == captured) {
                     "Working draft changed during validation"
                 }
@@ -151,7 +154,7 @@ internal class ProtectedCommittedDraftStore(
             val id = marker.name.removePrefix(".candidate-").removeSuffix(".aesgcm")
             require(candidateMarker(area, id) == marker)
             val candidate = File(area, id)
-            if (candidate.absolutePath in activeCandidates) continue
+            if (id != current?.generation && candidate.absolutePath in activeCandidates) continue
             val clear = cipher.open(marker.readBytes(), markerAad(b, id))
             try { require(String(clear, Charsets.UTF_8) == id) }
             finally { clear.fill(0) }

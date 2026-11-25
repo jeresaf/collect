@@ -1409,7 +1409,69 @@ class ConnectedProtectedEditorRestartTest {
         // credentials and the disposable debug-only CA, not a test POST stub.
         phase("POST")
         val sender = ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
-        val receipt = sender.sendAndAcknowledge(b.projectId, b, generation, sha)
+        // Exercise the actual protected UI and production sender. A partial
+        // attempt must show a read-only unconfirmed state before the real POST.
+        fun visible(activity: android.app.Activity, views: List<View>, label: Int) =
+            views.filterIsInstance<TextView>().any { it.text.toString() == activity.getString(label) }
+        fun assertReadOnly(activity: android.app.Activity, views: List<View>) {
+            assertTrue(views.filterIsInstance<EditText>().isEmpty())
+            val buttons = views.filterIsInstance<Button>()
+            assertTrue(buttons.none { it.text.toString() == activity.getString(R.string.private_submission_action) })
+            assertTrue(buttons.none { it.text.toString() == activity.getString(R.string.private_combined_publish) })
+            assertTrue(buttons.any { it.text.toString() == activity.getString(R.string.private_submission_refresh) })
+        }
+        fun dialog(id: Int) {
+            androidx.test.espresso.Espresso.onView(
+                androidx.test.espresso.matcher.ViewMatchers.withId(id))
+                .inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog())
+                .perform(androidx.test.espresso.action.ViewActions.click())
+        }
+        phase("UNCONFIRMED_UI")
+        assertTrue(latch.createNewFile())
+        try {
+            ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+                QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+            ).use { editor ->
+                awaitUi(editor) { activity, views ->
+                    if (!visible(activity, views, R.string.private_submission_unconfirmed)) false
+                    else { assertReadOnly(activity, views); true }
+                }
+            }
+            assertEquals(0L, latch.length())
+            assertEquals(before.records.toSet(), remote.load(b.projectId).records.toSet())
+        } finally { assertTrue(latch.delete()) } // CI-only synthetic marker cleanup.
+        phase("CONFIRM_UI")
+        ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+            QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+        ).use { editor ->
+            awaitUi(editor) { activity, views ->
+                if (!visible(activity, views, R.string.private_finalization_complete)) false
+                else {
+                    val field = views.filterIsInstance<EditText>().single()
+                    val originalText = field.text.toString()
+                    field.setText("Synthetic unsaved submission edit")
+                    views.filterIsInstance<Button>().single {
+                        it.text.toString() == activity.getString(R.string.private_submission_action)
+                    }.performClick()
+                    assertTrue(visible(activity, views, R.string.private_combined_unsaved))
+                    field.setText(originalText)
+                    true
+                }
+            }
+            assertFalse(latch.exists())
+            clickButton(editor, R.string.private_submission_action)
+            dialog(android.R.id.button2)
+            assertFalse(latch.exists())
+            assertEquals(before.records.toSet(), remote.load(b.projectId).records.toSet())
+            phase("POST")
+            clickButton(editor, R.string.private_submission_action)
+            dialog(android.R.id.button1)
+            awaitUi(editor) { activity, views ->
+                if (!visible(activity, views, R.string.private_submission_complete)) false
+                else { assertReadOnly(activity, views); true }
+            }
+        }
+        val receipt = ProtectedSubmissionReceiptStore(root, state.settings).reopen(b.projectId, b)
         phase("ACK")
         assertEquals(b.reservedInstanceId, receipt.instanceId)
         assertEquals(sha, receipt.packageSha256)
@@ -1505,6 +1567,32 @@ class ConnectedProtectedEditorRestartTest {
         try { assertTrue(runCatching { store.reopen(b.projectId, b) }.isFailure) }
         finally { assertTrue(missing.renameTo(file)) }
         assertEquals(r, store.reopen(b.projectId, b))
+        // Actual graphical reopening after the process boundary, no edit UI.
+        ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+            QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+        ).use { editor ->
+            awaitUi(editor) { activity, views ->
+                val submitted = views.filterIsInstance<TextView>().any {
+                    it.text.toString() == activity.getString(R.string.private_submission_complete)
+                }
+                if (submitted) {
+                    assertTrue(views.filterIsInstance<EditText>().isEmpty())
+                    assertTrue(views.filterIsInstance<TextView>().any {
+                        it.text.toString() == activity.getString(R.string.private_submission_reference, r.submissionId)
+                    })
+                    assertTrue(views.filterIsInstance<Button>().none {
+                        it.text.toString() == activity.getString(R.string.private_submission_action)
+                    })
+                }
+                submitted
+            }
+            clickButton(editor, R.string.private_submission_refresh)
+            awaitUi(editor) { activity, views ->
+                views.filterIsInstance<TextView>().any {
+                    it.text.toString() == activity.getString(R.string.private_submission_complete)
+                }
+            }
+        }
         // READY-authorized edit/finalize/send must fail for completed work.
         assertTrue(runCatching {
             ProtectedNativeRepeatImageProbe(state.context.cacheDir, root, state.settings)

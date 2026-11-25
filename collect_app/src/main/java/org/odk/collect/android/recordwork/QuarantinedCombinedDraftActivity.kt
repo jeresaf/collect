@@ -17,6 +17,8 @@ import org.odk.collect.settings.SettingsProvider
 import org.odk.collect.settings.keys.ProjectKeys
 import org.odk.collect.strings.localization.LocalizedActivity
 import java.util.concurrent.Executors
+import java.io.File
+import java.nio.file.Files
 
 /**
  * Protected working-copy editor and explicit checkpoint publication.
@@ -40,7 +42,11 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
         val activeRows: Int,
         val committed: ProtectedCommittedDraft?,
         val finalization: ProtectedCommittedDraftStore.FinalizationState?,
-        val eligibilityChecked: Boolean? = null
+        val eligibilityChecked: Boolean? = null,
+        val packageSha256: String? = null,
+        val submissionAttempted: Boolean = false,
+        val receipt: ProtectedSubmittedReceipt? = null,
+        val submissionCheckFailed: Boolean = false
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,9 +88,26 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
     private fun checkpoints() = ProtectedCommittedDraftStore(cacheDir, noBackupFilesDir, settings)
     private fun probe() = ProtectedNativeRepeatImageProbe(cacheDir, noBackupFilesDir, settings)
 
+    // Completed work no longer has READY permission. Check protected
+    // attempt/receipt state first; never open answers on an uncertain attempt.
+    private fun submittedDisplay(b: QuarantinedWorkDraft): Display? {
+        val root = noBackupFilesDir.canonicalFile
+        val area = File(root, "recordwork-committed/${b.projectId}/${b.workId}")
+        if (!area.exists() && !Files.isSymbolicLink(area.toPath())) return null
+        val checked = ProtectedMultipartSubmission.submissionAttemptArea(root, b)
+        val markers = listOf("submission-attempt.aesgcm", "submitted-receipt.aesgcm",
+            ".submitted-receipt-write").map { File(checked, it) }
+        if (markers.none { it.exists() || Files.isSymbolicLink(it.toPath()) }) return null
+        val receipt = runCatching {
+            ProtectedSubmissionReceiptStore(root, settings).reopen(project, b)
+        }.getOrNull()
+        return Display(b, emptyMap(), 0, null, null, submissionAttempted = true, receipt = receipt)
+    }
+
     private fun load(): Display {
         val b = binding()
         require(b.workType == RecordWorkType.FOLLOW_UP && b.validationTransfers == 0)
+        submittedDisplay(b)?.let { return it }
         val form = RecordWorkPreparationClient(settings).authorizePrivateTextForm(project, b)
         val cipher = AndroidKeyStorePrivateDraftCipher()
         val approval = requireNotNull(ProtectedMappingApprovalStore(noBackupFilesDir, cipher)
@@ -98,10 +121,14 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
         val count = QuarantinedRepeatRowVault(noBackupFilesDir, cipher)
             .read(b, session.schema).active(group.path).size
         val committed = checkpoints().reopen(project, b)
+        val finalization = committed?.let { checkpoints().finalizationState(project, b, it.generation) }
+        val packageSha = if (finalization == ProtectedCommittedDraftStore.FinalizationState.FINALIZED) {
+            checkpoints().reopenFinalizedPackage(project, b, requireNotNull(committed).generation)
+                .evidence.packaged.packageSha256
+        } else null
+        submittedDisplay(b)?.let { return it }
         return Display(b, session.schema.directTextPaths.associateWith { values[it].orEmpty() },
-            count, committed, committed?.let {
-                checkpoints().finalizationState(project, b, it.generation)
-            })
+            count, committed, finalization, packageSha256 = packageSha)
     }
 
     private fun clear() {
@@ -111,9 +138,9 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
         display = null
     }
 
-    private fun perform(action: () -> Display) {
+    private fun perform(progress: Int = R.string.private_combined_checking, action: () -> Display) {
         clear()
-        status.setText(R.string.private_combined_checking)
+        status.setText(progress)
         val request = ++token
         worker.execute {
             val outcome = runCatching(action)
@@ -153,6 +180,19 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
 
     private fun render(state: Display) {
         display = state
+        if (state.submissionAttempted) {
+            val receipt = state.receipt
+            if (receipt != null) {
+                status.setText(R.string.private_submission_complete)
+                content.addView(TextView(this).apply {
+                    text = getString(R.string.private_submission_reference, receipt.submissionId)
+                })
+            } else {
+                status.setText(R.string.private_submission_unconfirmed)
+            }
+            button(R.string.private_submission_refresh) { perform { load() } }
+            return
+        }
         status.text = if (state.committed == null) getString(R.string.private_combined_no_checkpoint)
             else getString(R.string.private_combined_checkpoint, state.committed.generation)
         for ((path, value) in state.values) {
@@ -251,6 +291,35 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
                 refreshed.copy(eligibilityChecked = result.isSuccess)
             }
         }.isEnabled = state.finalization == ProtectedCommittedDraftStore.FinalizationState.NOT_FINALIZED
+        if (state.submissionCheckFailed) {
+            content.addView(TextView(this).apply { setText(R.string.private_submission_check_failed) })
+        }
+        button(R.string.private_submission_action) {
+            if (!requireSaved(state) || display !== state) return@button
+            val generation = state.committed?.generation ?: return@button
+            val sha = state.packageSha256 ?: return@button
+            AlertDialog.Builder(this)
+                .setTitle(R.string.private_submission_action)
+                .setMessage(R.string.private_submission_confirm)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    if (display === state && requireSaved(state)) {
+                        perform(R.string.private_submission_sending) {
+                            require(binding() == state.binding)
+                            val outcome = runCatching {
+                                ProtectedMultipartSubmission(cacheDir, noBackupFilesDir, settings)
+                                    .sendAndAcknowledge(project, state.binding, generation, sha)
+                            }
+                            val refreshed = load()
+                            if (outcome.isSuccess) {
+                                require(refreshed.receipt == outcome.getOrThrow())
+                            }
+                            refreshed.copy(submissionCheckFailed = outcome.isFailure)
+                        }
+                    }
+                }.show()
+        }.isEnabled = state.finalization == ProtectedCommittedDraftStore.FinalizationState.FINALIZED &&
+            state.packageSha256 != null
         button(R.string.private_combined_reload) {
             if (requireSaved(state)) perform { load() }
         }

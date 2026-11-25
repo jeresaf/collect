@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="private_combined_open">Open protected combined draft</string>
-    <string name="private_combined_warning">Working changes, committed checkpoints and finalized observations are separate. Finalization stores an encrypted package only; no record is submitted.</string>
+    <string name="private_combined_warning">Working changes, committed checkpoints and finalized observations are separate. Finalization stores an encrypted package. Submission requires separate confirmation.</string>
     <string name="private_combined_checking">Checking protected draft…</string>
     <string name="private_combined_denied">Protected draft unavailable. Changes may remain in the working copy. Recheck the project and server permission.</string>
     <string name="private_combined_no_checkpoint">No committed checkpoint</string>
@@ -21,4 +21,12 @@
     <string name="private_finalization_action">Finalize observation</string>
     <string name="private_finalization_check">Check finalization eligibility</string>
     <string name="private_finalization_confirm">Finalize this exact committed checkpoint and store the encrypted observation and photographs? This does not submit the observation.</string>
+    <string name="private_submission_action">Submit observation</string>
+    <string name="private_submission_confirm">Send this exact finalized observation and its photographs to the authorized server? After submission begins, editing and another submission from this screen are blocked until the result is verified.</string>
+    <string name="private_submission_sending">Submitting and verifying observation…</string>
+    <string name="private_submission_complete">Submitted and verified on the server. Editing and resubmission are blocked.</string>
+    <string name="private_submission_reference">Server submission reference: %1$s</string>
+    <string name="private_submission_unconfirmed">Submission status could not be verified. The protected observation is retained. Do not resubmit or edit. Refresh status when connected.</string>
+    <string name="private_submission_refresh">Refresh submission status</string>
+    <string name="private_submission_check_failed">Submission was not verified. Review the current state and server permission before proceeding.</string>
 </resources>

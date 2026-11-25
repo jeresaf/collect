@@ -100,8 +100,15 @@ class QuarantinedRepeatRowsActivity : LocalizedActivity() {
         ) { "Private work binding missing" }
         val prepared = RecordWorkPreparationClient(settings)
             .authorizePrivateTextForm(projectId, bound)
+        val mixed = intent.getBooleanExtra(QuarantinedCombinedDraftActivity.EXTRA_MIXED, false)
+        if (mixed) {
+            require(bound.workType == RecordWorkType.FOLLOW_UP && bound.validationTransfers == 0)
+            val approval = requireNotNull(ProtectedMappingApprovalStore(
+                noBackupFilesDir, AndroidKeyStorePrivateDraftCipher()).read(bound, prepared.plan))
+            require(approval.decisions.values.all { it == MappingDecision.REENTER })
+        }
         val schema = JavaRosaPrivateRepeatStructureProbe(
-            cacheDir, bound, prepared.plan, prepared.targetXFormXml
+            cacheDir, bound, prepared.plan, prepared.targetXFormXml, mixed
         ).schema
         return Authorized(bound, schema)
     }
@@ -175,7 +182,8 @@ class QuarantinedRepeatRowsActivity : LocalizedActivity() {
                         startActivity(
                             QuarantinedRepeatAnswerActivity.intentFor(
                                 this@QuarantinedRepeatRowsActivity,
-                                projectId, workId, repeatRow.rowId
+                                projectId, workId, repeatRow.rowId,
+                                intent.getBooleanExtra(QuarantinedCombinedDraftActivity.EXTRA_MIXED, false)
                             )
                         )
                     }
@@ -188,7 +196,8 @@ class QuarantinedRepeatRowsActivity : LocalizedActivity() {
                             startActivity(
                                 QuarantinedRepeatImageActivity.intentFor(
                                     this@QuarantinedRepeatRowsActivity,
-                                    projectId, workId, repeatRow.rowId
+                                    projectId, workId, repeatRow.rowId,
+                                intent.getBooleanExtra(QuarantinedCombinedDraftActivity.EXTRA_MIXED, false)
                                 )
                             )
                         }
@@ -274,10 +283,12 @@ class QuarantinedRepeatRowsActivity : LocalizedActivity() {
         const val EXTRA_PROJECT = "recordwork.repeat.project"
         const val EXTRA_WORK = "recordwork.repeat.work"
 
-        fun intentFor(context: Context, projectId: String, workId: String) =
+        fun intentFor(context: Context, projectId: String, workId: String,
+            mixed: Boolean = false) =
             Intent(context, QuarantinedRepeatRowsActivity::class.java)
                 .putExtra(EXTRA_PROJECT, projectId)
                 .putExtra(EXTRA_WORK, workId)
+                .putExtra(QuarantinedCombinedDraftActivity.EXTRA_MIXED, mixed)
 
         private fun validUuid(value: String) =
             runCatching { UUID.fromString(value).toString() == value }

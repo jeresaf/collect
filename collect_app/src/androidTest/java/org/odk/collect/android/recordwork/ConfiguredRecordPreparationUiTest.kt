@@ -837,7 +837,71 @@ class ConfiguredRecordPreparationUiTest {
                         val generations = ProtectedCommittedDraftStore(
                             context.cacheDir, context.noBackupFilesDir, settings)
                         assertNull(generations.reopen(activeProjectId(), binding))
-                        val initialCommit = generations.commit(activeProjectId(), binding, null)
+                        // Real app entry control, not a direct test-only commit.
+                        var launchReady = false
+                        for (attempt in 1..120) {
+                            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                            scenario.onActivity { activity ->
+                                val controls = activity.findViewById<LinearLayout>(R.id.work_versions)
+                                launchReady = (0 until controls.childCount).map { controls.getChildAt(it) }
+                                    .filterIsInstance<Button>().any {
+                                        it.text.toString() == activity.getString(R.string.private_combined_open)
+                                    }
+                            }
+                            if (launchReady) break
+                            Thread.sleep(250)
+                        }
+                        assertTrue(launchReady)
+                        ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+                            QuarantinedCombinedDraftActivity.intentFor(context, activeProjectId(), binding.workId)
+                        ).use { editor ->
+                            fun awaitButton(label: Int) {
+                                var ready = false
+                                for (attempt in 1..120) {
+                                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                                    editor.onActivity { activity ->
+                                        ready = editorWidgets(activity.window.decorView)
+                                            .filterIsInstance<Button>().any {
+                                                it.text.toString() == activity.getString(label) && it.isEnabled
+                                            }
+                                    }
+                                    if (ready) break
+                                    Thread.sleep(250)
+                                }
+                                assertTrue(ready)
+                            }
+                            awaitButton(R.string.private_combined_publish)
+                            editor.onActivity { activity ->
+                                val widgets = editorWidgets(activity.window.decorView)
+                                assertEquals(household, widgets.filterIsInstance<EditText>().single().text.toString())
+                                assertTrue(widgets.filterIsInstance<TextView>().any {
+                                    it.text.toString() == activity.getString(R.string.private_combined_no_checkpoint)
+                                })
+                                widgets.filterIsInstance<Button>().single {
+                                    it.text.toString() == activity.getString(R.string.private_combined_publish)
+                                }.performClick()
+                            }
+                            onView(withId(android.R.id.button2))
+                                .inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog()).perform(click())
+                            assertNull(generations.reopen(activeProjectId(), binding))
+                            editor.onActivity { activity ->
+                                editorWidgets(activity.window.decorView).filterIsInstance<Button>().single {
+                                    it.text.toString() == activity.getString(R.string.private_combined_publish)
+                                }.performClick()
+                            }
+                            onView(withId(android.R.id.button1))
+                                .inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog()).perform(click())
+                            awaitButton(R.string.private_combined_publish)
+                            val saved = requireNotNull(generations.reopen(activeProjectId(), binding))
+                            editor.onActivity { activity ->
+                                assertTrue(editorWidgets(activity.window.decorView)
+                                    .filterIsInstance<TextView>().any {
+                                        it.text.toString() == activity.getString(
+                                            R.string.private_combined_checkpoint, saved.generation)
+                                    })
+                            }
+                        }
+                        val initialCommit = requireNotNull(generations.reopen(activeProjectId(), binding))
                         assertEquals(evidence, initialCommit.evidence)
                         assertEquals(initialCommit, generations.reopen(activeProjectId(), binding))
                         assertEquals(before, snapshot())

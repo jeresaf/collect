@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="private_combined_open">Open protected combined draft</string>
+    <string name="private_combined_warning">Working changes and committed checkpoints are separate. Nothing here finalizes or submits a record.</string>
+    <string name="private_combined_checking">Checking protected draft…</string>
+    <string name="private_combined_denied">Protected draft unavailable. Changes may remain in the working copy. Recheck the project and server permission.</string>
+    <string name="private_combined_no_checkpoint">No committed checkpoint</string>
+    <string name="private_combined_checkpoint">Committed checkpoint: %1$s</string>
+    <string name="private_combined_save_text">Save working text answers</string>
+    <string name="private_combined_unsaved">Save working text answers before continuing.</string>
+    <string name="private_combined_rows">Active repeat rows: %1$d</string>
+    <string name="private_combined_publish">Commit saved working draft</string>
+    <string name="private_combined_confirm">Publish a validated checkpoint of the saved working answers and photos? This does not submit the record.</string>
+    <string name="private_combined_reload">Reload protected draft</string>
+</resources>

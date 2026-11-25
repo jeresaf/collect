@@ -155,6 +155,9 @@ the specific language governing permissions and limitations under the License.
             android:name=".recordwork.QuarantinedImageIntakeActivity"
             android:exported="false" />
         <activity
+            android:name=".recordwork.QuarantinedCombinedDraftActivity"
+            android:exported="false" />
+        <activity
             android:name=".recordwork.QuarantinedRepeatRowsActivity"
             android:exported="false" />
         <activity

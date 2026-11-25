@@ -396,6 +396,21 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
                                         )
                                     }
                                 })
+                                if (binding.workType == RecordWorkType.FOLLOW_UP &&
+                                    binding.validationTransfers == 0 &&
+                                    plan.candidates.any { MappingRisk.REPEAT in it.risks } &&
+                                    plan.candidates.any { MappingRisk.MEDIA in it.risks &&
+                                        MappingRisk.REPEAT !in it.risks } &&
+                                    snapshot.decisions.values.all { it == MappingDecision.REENTER }) {
+                                    versions.addView(Button(this@RecordWorkPrepareActivity).apply {
+                                        isAllCaps = false
+                                        setText(R.string.private_combined_open)
+                                        setOnClickListener {
+                                            startActivity(QuarantinedCombinedDraftActivity.intentFor(
+                                                this@RecordWorkPrepareActivity, projectId, binding.workId))
+                                        }
+                                    })
+                                }
                                 // Native historical typed mapping review is
                                 // separately guarded, encrypted and inert.
                                 if (binding.workType == RecordWorkType.AMENDMENT) {

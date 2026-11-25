@@ -125,8 +125,15 @@ class QuarantinedRepeatAnswerActivity : LocalizedActivity() {
         ) { "Protected work item not staged" }
         val prepared = RecordWorkPreparationClient(settings)
             .authorizePrivateTextForm(projectId, binding)
+        val mixed = intent.getBooleanExtra(QuarantinedCombinedDraftActivity.EXTRA_MIXED, false)
+        if (mixed) {
+            require(binding.workType == RecordWorkType.FOLLOW_UP && binding.validationTransfers == 0)
+            val approval = requireNotNull(ProtectedMappingApprovalStore(
+                noBackupFilesDir, AndroidKeyStorePrivateDraftCipher()).read(binding, prepared.plan))
+            require(approval.decisions.values.all { it == MappingDecision.REENTER })
+        }
         val session = JavaRosaPrivateRepeatAnswerSession(
-            cacheDir, binding, prepared.plan, prepared.targetXFormXml
+            cacheDir, binding, prepared.plan, prepared.targetXFormXml, mixed
         )
         val ledger = QuarantinedRepeatRowVault(
             noBackupFilesDir, AndroidKeyStorePrivateDraftCipher()
@@ -328,11 +335,13 @@ class QuarantinedRepeatAnswerActivity : LocalizedActivity() {
             context: Context,
             projectId: String,
             workId: String,
-            rowId: String
+            rowId: String,
+            mixed: Boolean = false
         ): Intent = Intent(context, QuarantinedRepeatAnswerActivity::class.java)
             .putExtra(EXTRA_PROJECT, projectId)
             .putExtra(EXTRA_WORK, workId)
             .putExtra(EXTRA_ROW, rowId)
+            .putExtra(QuarantinedCombinedDraftActivity.EXTRA_MIXED, mixed)
 
         private fun validUuid(value: String) =
             runCatching { UUID.fromString(value).toString() == value }

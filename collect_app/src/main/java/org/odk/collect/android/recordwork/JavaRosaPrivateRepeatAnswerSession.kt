@@ -212,9 +212,11 @@ class JavaRosaPrivateRepeatAnswerSession(
         directAnswers: Map<String, String> = emptyMap(),
         directReceipts: Map<String, ProtectedImageReceipt> = emptyMap(),
         requireComplete: Boolean = false,
-        onSerialized: ((ProtectedNativeXmlEvidence) -> Unit)? = null
+        onSerialized: ((ProtectedNativeXmlEvidence, ByteArray) -> Unit)? = null,
+        useAttachmentNames: Boolean = false
     ): Map<Pair<String, String>, Int> = withNativeTarget { form ->
         require(onSerialized == null || requireComplete)
+        require(!useAttachmentNames || onSerialized != null)
         require(schema.groups.size == 1)
         val group = schema.groups.single()
         val active = inventory.active(group.path)
@@ -261,8 +263,10 @@ class JavaRosaPrivateRepeatAnswerSession(
             val receipt = directReceipts[path]
             val token = receipt?.let {
                 require(it.fieldPath == path && !it.canFinalize && !it.canSubmit)
-                "protected-" + QuarantinedWorkDraftVault.sha256(
+                val opaque = "protected-" + QuarantinedWorkDraftVault.sha256(
                     binding.reservedInstanceId + "\n" + path + "\n" + it.sha256)
+                if (useAttachmentNames) ProtectedNativePackageBuilder.filename(
+                    binding, "direct" to path, it.mime, it.sha256) else opaque
             }
             if (token != null) form.setValue(StringData(token), leaf, true)
             references["direct" to path] = leaf to token
@@ -319,10 +323,12 @@ class JavaRosaPrivateRepeatAnswerSession(
                 val token = receipt?.let {
                     require(it.rowId == row.rowId && it.fieldPath == path &&
                         !it.canFinalize && !it.canUpload)
-                    "protected-" + QuarantinedWorkDraftVault.sha256(
+                    val opaque = "protected-" + QuarantinedWorkDraftVault.sha256(
                         binding.reservedInstanceId + "\n" + row.rowId + "\n" +
                             path + "\n" + it.sha256
                     )
+                    if (useAttachmentNames) ProtectedNativePackageBuilder.filename(
+                        binding, key, it.mime, it.sha256) else opaque
                 }
                 if (token != null) {
                     form.setValue(StringData(token), leaf, true)
@@ -400,7 +406,8 @@ class JavaRosaPrivateRepeatAnswerSession(
                         }
                     }
                     onSerialized(ProtectedNativeXmlVerifier.verify(bytes, binding, root, name,
-                        expectedDirect, expectedRows, references.mapValues { requireNotNull(it.value.second) }))
+                        expectedDirect, expectedRows, references.mapValues { requireNotNull(it.value.second) },
+                        useAttachmentNames), bytes)
                 } finally { bytes.fill(0) }
             }
             form.setValue(null, instanceRef, true)

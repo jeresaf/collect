@@ -143,22 +143,42 @@ internal class ProtectedCommittedDraftStore(
      */
     fun verifyFinalizationEligibility(
         projectId: String, binding: QuarantinedWorkDraft, expectedGeneration: String
-    ): ProtectedFinalizationEligibility = inspectFinalization(projectId, binding, expectedGeneration, null)
+    ): ProtectedFinalizationEligibility = inspectFinalization(projectId, binding, expectedGeneration, null, null)
 
     fun verifyNativeXmlSerialization(
         projectId: String, binding: QuarantinedWorkDraft, expectedGeneration: String
     ): ProtectedCommittedXmlEvidence {
         var xml: ProtectedNativeXmlEvidence? = null
-        val eligibility = inspectFinalization(projectId, binding, expectedGeneration) {
+        val eligibility = inspectFinalization(projectId, binding, expectedGeneration, null) { evidence, _ ->
             check(xml == null)
-            xml = it
+            xml = evidence
         }
         return ProtectedCommittedXmlEvidence(eligibility, requireNotNull(xml))
     }
 
+    fun verifyNativeAttachmentPackage(
+        projectId: String, binding: QuarantinedWorkDraft, expectedGeneration: String
+    ): ProtectedCommittedPackageEvidence {
+        ProtectedNativePackageBuilder(binding, expectedGeneration).use { builder ->
+            var packaged: ProtectedNativePackageEvidence? = null
+            val eligibility = inspectFinalization(projectId, binding, expectedGeneration, builder) { evidence, bytes ->
+                check(packaged == null)
+                packaged = builder.finish(evidence, bytes)
+            }
+            val result = requireNotNull(packaged)
+            require(result.attachments.keys == eligibility.evidence.imageOrdinals.keys +
+                eligibility.evidence.directImageDigests.keys.map { "direct" to it })
+            require(result.attachments.filterKeys { it.first == "direct" }.all { (key, part) ->
+                eligibility.evidence.directImageDigests[key.second] == part.sha256
+            })
+            return ProtectedCommittedPackageEvidence(eligibility, result)
+        }
+    }
+
     private fun inspectFinalization(
         projectId: String, binding: QuarantinedWorkDraft, expectedGeneration: String,
-        onSerialized: ((ProtectedNativeXmlEvidence) -> Unit)?
+        packageBuilder: ProtectedNativePackageBuilder?,
+        onSerialized: ((ProtectedNativeXmlEvidence, ByteArray) -> Unit)?
     ): ProtectedFinalizationEligibility {
         authorize(projectId, binding)
         val area = area(binding)
@@ -176,7 +196,7 @@ internal class ProtectedCommittedDraftStore(
         val evidence = ProtectedNativeRepeatImageProbe(
             scratch, File(area, pointer.generation), settings
         ).inspectCombined(projectId, binding, allowMixedDirect = true, requireComplete = true,
-            onSerialized = onSerialized)
+            onSerialized = onSerialized, packageBuilder = packageBuilder)
         authorize(projectId, binding)
         synchronized(lock) { require(checkCurrent() == pointer) }
         return ProtectedFinalizationEligibility(binding.workId, pointer.generation,

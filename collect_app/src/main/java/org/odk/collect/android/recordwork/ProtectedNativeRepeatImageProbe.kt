@@ -62,9 +62,11 @@ internal class ProtectedNativeRepeatImageProbe(
         binding: QuarantinedWorkDraft,
         allowMixedDirect: Boolean = false,
         requireComplete: Boolean = false,
-        onSerialized: ((ProtectedNativeXmlEvidence) -> Unit)? = null
+        onSerialized: ((ProtectedNativeXmlEvidence, ByteArray) -> Unit)? = null,
+        packageBuilder: ProtectedNativePackageBuilder? = null
     ): ProtectedCombinedRepeatEvidence {
         require(!requireComplete || allowMixedDirect)
+        require(packageBuilder == null || requireComplete && onSerialized != null)
         require(binding.workType == RecordWorkType.FOLLOW_UP &&
             binding.validationTransfers == 0)
         val authorized = RecordWorkPreparationClient(settings)
@@ -92,6 +94,8 @@ internal class ProtectedNativeRepeatImageProbe(
                             receipt.bytes == bytes.size &&
                             receipt.sha256 == QuarantinedPrivateImageStore.digest(bytes))
                         receipts[row.rowId to path] = receipt
+                        packageBuilder?.add(row.rowId to path, receipt.mime, receipt.bytes,
+                            receipt.sha256, bytes)
                     }
                 }
             }
@@ -107,10 +111,13 @@ internal class ProtectedNativeRepeatImageProbe(
                     receipt, bytes ->
                     require(receipt.sha256 == QuarantinedPrivateImageStore.digest(bytes))
                     directImages[path] = receipt
+                    packageBuilder?.add("direct" to path, receipt.mime, receipt.bytes,
+                        receipt.sha256, bytes)
                 }
             }
             val ordinals = session.verifyImageReferences(
-                inventory, receipts, saved, direct, directImages, requireComplete, onSerialized)
+                inventory, receipts, saved, direct, directImages, requireComplete, onSerialized,
+                useAttachmentNames = packageBuilder != null)
             ProtectedCombinedRepeatEvidence(ordinals, saved.mapValues { (_, values) ->
                 values.mapValues { (_, value) -> QuarantinedWorkDraftVault.sha256(value) }
             }, direct.mapValues { (_, value) -> QuarantinedWorkDraftVault.sha256(value) },

@@ -30,7 +30,8 @@ internal object ProtectedNativeXmlVerifier {
         group: String,
         direct: Map<String, String>,
         rows: List<Map<String, String>>,
-        references: Map<Pair<String, String>, String>
+        references: Map<Pair<String, String>, String>,
+        useAttachmentNames: Boolean = false
     ): ProtectedNativeXmlEvidence {
         require(bytes.size in 1..8_388_608)
         val parser = Xml.newPullParser()
@@ -95,8 +96,10 @@ internal object ProtectedNativeXmlVerifier {
         require(parser.eventType == XmlPullParser.END_TAG && parser.name == root &&
             meta && index == rows.size && seen == direct.keys)
         require(nextTag() == XmlPullParser.END_DOCUMENT)
+        val pattern = if (useAttachmentNames) Regex("protected-[0-9a-f]{64}\\.(jpg|png|webp)")
+            else Regex("protected-[0-9a-f]{64}")
         require(references.values.toSet().size == references.size &&
-            references.values.all { it.matches(Regex("protected-[0-9a-f]{64}")) })
+            references.values.all { it.matches(pattern) })
         return ProtectedNativeXmlEvidence(QuarantinedPrivateImageStore.digest(bytes), bytes.size,
             index, references.mapValues { QuarantinedWorkDraftVault.sha256(it.value) })
     }

@@ -746,8 +746,68 @@ class ConnectedProtectedEditorRestartTest {
             assertEquals(before, snapshot(workDir))
             assertEquals(committedBefore, snapshot(committedDir))
             assertEquals(pointerBefore, digest(pointer.readBytes()))
+            assertTrue(runCatching {
+                generations.verifyNativeAttachmentPackage(b.projectId, b, blank.generation)
+            }.isFailure)
+            val pack = generations.verifyNativeAttachmentPackage(b.projectId, b, complete.generation)
+            assertEquals(eligible, pack.eligibility)
+            val expectedMedia = mapOf(("direct" to directPath) to media[0]) +
+                active.mapIndexed { index, row ->
+                    (row.rowId to group.imagePaths.single()) to media[index + 1]
+                }.toMap()
+            assertEquals(expectedMedia.keys, pack.packaged.attachments.keys)
+            assertEquals(3, pack.packaged.attachments.values.map { it.filename }.toSet().size)
+            assertEquals(expectedMedia.mapValues { digest(it.value) },
+                pack.packaged.attachments.mapValues { it.value.sha256 })
+            assertEquals(expectedMedia.mapValues { it.value.size },
+                pack.packaged.attachments.mapValues { it.value.bytes })
+            assertTrue(pack.packaged.attachments.values.all { it.mime == "image/png" &&
+                it.filename.matches(Regex("protected-[0-9a-f]{64}\\.png")) })
+            assertEquals(pack.packaged.attachments.mapValues {
+                QuarantinedWorkDraftVault.sha256(it.value.filename)
+            }, pack.packaged.xml.mediaReferenceDigests)
+            assertEquals(pack.packaged.xml.xmlBytes.toLong() + media.sumOf { it.size.toLong() },
+                pack.packaged.totalContentBytes)
+            assertEquals(pack, generations.verifyNativeAttachmentPackage(b.projectId, b, complete.generation))
+            assertNotEquals(xml.xml.xmlSha256, pack.packaged.xml.xmlSha256)
+
+            // Independent negative package-builder tests on synthetic bytes,
+            // without reading or exporting any real household data.
+            val syntheticXml = "<synthetic/>".toByteArray()
+            val slot = "direct" to directPath
+            val name = ProtectedNativePackageBuilder.filename(b, slot, "image/png", digest(media[0]))
+            val syntheticEvidence = ProtectedNativeXmlEvidence(digest(syntheticXml), syntheticXml.size, 0,
+                mapOf(slot to QuarantinedWorkDraftVault.sha256(name)))
+            ProtectedNativePackageBuilder(b, complete.generation).use { builder ->
+                assertTrue(runCatching { builder.finish(syntheticEvidence, syntheticXml) }.isFailure)
+                assertTrue(runCatching {
+                    builder.add(slot, "image/jpeg", media[0].size, digest(media[0]), media[0])
+                }.isFailure)
+                assertTrue(runCatching {
+                    builder.add(slot, "image/png", media[0].size, digest(media[1]), media[0])
+                }.isFailure)
+                builder.add(slot, "image/png", media[0].size, digest(media[0]), media[0])
+                assertTrue(runCatching {
+                    builder.add(slot, "image/png", media[0].size, digest(media[0]), media[0])
+                }.isFailure)
+                assertTrue(runCatching {
+                    builder.finish(syntheticEvidence.copy(mediaReferenceDigests = mapOf(
+                        slot to QuarantinedWorkDraftVault.sha256("wrong.png"))), syntheticXml)
+                }.isFailure)
+                assertTrue(runCatching {
+                    builder.finish(syntheticEvidence.copy(mediaReferenceDigests = emptyMap()), syntheticXml)
+                }.isFailure)
+                assertTrue(runCatching {
+                    builder.finish(syntheticEvidence, "<changed/>".toByteArray())
+                }.isFailure)
+                assertEquals(1, builder.finish(syntheticEvidence, syntheticXml).attachments.size)
+            }
+            assertEquals(before, snapshot(workDir))
+            assertEquals(committedBefore, snapshot(committedDir))
+            assertEquals(pointerBefore, digest(pointer.readBytes()))
             state.evidence.setProperty("generation", complete.generation)
-            state.evidence.setProperty("xmlDigest", xml.xml.xmlSha256)
+            state.evidence.setProperty("packageDigest", pack.packaged.packageSha256)
+            state.evidence.setProperty("xmlDigest", pack.packaged.xml.xmlSha256)
             java.io.FileOutputStream(state.marker).use {
                 state.evidence.store(it, "Synthetic native serialization evidence")
                 it.fd.sync()

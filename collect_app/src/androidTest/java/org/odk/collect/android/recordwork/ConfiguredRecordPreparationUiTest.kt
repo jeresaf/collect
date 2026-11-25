@@ -64,7 +64,9 @@ class ConfiguredRecordPreparationUiTest {
 
     @Test
     fun historicalRecordOffersIndependentVisitButNeverAmendment() {
+        android.util.Log.i("U06_UI_PHASE", "HISTORICAL_TEST_ENTER")
         configureProject()
+        android.util.Log.i("U06_UI_PHASE", "HISTORICAL_PROJECT_CONFIGURED")
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val projectId = activeProjectId()
         val record = RemoteRecord(
@@ -96,9 +98,13 @@ class ConfiguredRecordPreparationUiTest {
                 assertFalse(activity.findViewById<TextView>(R.id.work_status)
                     .text.toString().contains("PRIVATE_ANSWER"))
             }
+            android.util.Log.i("U06_UI_PHASE", "HISTORICAL_ACTIVITY_LAUNCHED")
             scenario.onActivity(::assertRendered)
+            android.util.Log.i("U06_UI_PHASE", "HISTORICAL_INITIAL_ASSERTIONS_PASSED")
             scenario.recreate()
+            android.util.Log.i("U06_UI_PHASE", "HISTORICAL_ACTIVITY_RECREATED")
             scenario.onActivity(::assertRendered)
+            android.util.Log.i("U06_UI_PHASE", "HISTORICAL_RECREATED_ASSERTIONS_PASSED")
         }
     }
 
@@ -1654,12 +1660,17 @@ class ConfiguredRecordPreparationUiTest {
     }
 
     private fun configureProject() {
-        rule.startAtFirstLaunch()
-            .clickManuallyEnterProjectDetails()
-            .inputUrl("https://example.com/v1/projects/81000000-0000-4000-8000-000000000001")
-            .inputUsername("u06-ui-test-owner")
-            .inputPassword("disposable-test-only")
-            .addProject()
+        android.util.Log.i("U06_UI_PHASE", "CONFIG_OPEN_MANUAL")
+        val dialog = rule.startAtFirstLaunch().clickManuallyEnterProjectDetails()
+        android.util.Log.i("U06_UI_PHASE", "CONFIG_INPUT_URL")
+        val url = dialog.inputUrl("https://example.com/v1/projects/81000000-0000-4000-8000-000000000001")
+        android.util.Log.i("U06_UI_PHASE", "CONFIG_INPUT_USERNAME")
+        val user = url.inputUsername("u06-ui-test-owner")
+        android.util.Log.i("U06_UI_PHASE", "CONFIG_INPUT_PASSWORD")
+        val password = user.inputPassword("disposable-test-only")
+        android.util.Log.i("U06_UI_PHASE", "CONFIG_ADD_PROJECT")
+        password.addProject()
+        android.util.Log.i("U06_UI_PHASE", "CONFIG_PROJECT_ADDED")
     }
 
     private fun activeProjectId(): String {

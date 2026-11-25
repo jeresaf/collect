@@ -58,7 +58,8 @@ internal class ProtectedNativePackageBuilder(
         mediaBytes += count
     }
 
-    fun finish(xml: ProtectedNativeXmlEvidence, bytes: ByteArray): ProtectedNativePackageEvidence {
+    fun finish(xml: ProtectedNativeXmlEvidence, bytes: ByteArray,
+               onCanonical: ((ByteArray) -> Unit)? = null): ProtectedNativePackageEvidence {
         check(!closed && !finished)
         require(bytes.size == xml.xmlBytes && bytes.isNotEmpty() &&
             QuarantinedPrivateImageStore.digest(bytes) == xml.xmlSha256)
@@ -74,11 +75,15 @@ internal class ProtectedNativePackageBuilder(
         val digest = MessageDigest.getInstance("SHA-256")
         // No transport-specific multipart boundary or temporary cleartext
         // files. Length framing and stable name ordering define this proof.
-        val sink = object : OutputStream() {
-            override fun write(b: Int) = Unit
-            override fun write(b: ByteArray, off: Int, len: Int) = Unit
+        val buffer = if (onCanonical == null) null else object : java.io.ByteArrayOutputStream() {
+            fun wipe() { buf.fill(0); reset() }
         }
-        DataOutputStream(DigestOutputStream(sink, digest)).use { out ->
+        val sink = object : OutputStream() {
+            override fun write(b: Int) { buffer?.write(b) }
+            override fun write(b: ByteArray, off: Int, len: Int) { buffer?.write(b, off, len) }
+        }
+        try {
+            DataOutputStream(DigestOutputStream(sink, digest)).use { out ->
             out.writeUTF("DC_NATIVE_PACKAGE_V1")
             out.writeUTF(binding.projectId)
             out.writeUTF(binding.actorContextSha256)
@@ -98,7 +103,15 @@ internal class ProtectedNativePackageBuilder(
                 out.writeInt(part.content.size)
                 out.write(part.content)
             }
-        }
+            }
+            buffer?.let {
+                val canonical = it.toByteArray()
+                try {
+                    require(canonical.size <= 13 * 1024 * 1024 - 30)
+                    requireNotNull(onCanonical).invoke(canonical)
+                } finally { canonical.fill(0) }
+            }
+        } finally { buffer?.wipe() }
         finished = true
         val sha = digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
         return ProtectedNativePackageEvidence(xml, parts.mapValues { it.value.evidence },

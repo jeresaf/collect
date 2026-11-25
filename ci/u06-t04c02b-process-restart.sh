@@ -177,3 +177,10 @@ run_one finalizationEligibilityRequiresCompleteCurrentCommittedNativeModel "$res
 echo "U06-T04E-04A: strict native completeness, current generation and reserved instance identity eligibility PASS."
 echo "U06-T04E-04B: native in-memory XML serialization and independent exact-tree validation PASS."
 echo "U06-T04E-04C: native attachment filenames, authenticated bytes and exact package reconciliation PASS."
+
+# Finalized envelope publication and real process restart, no pm clear.
+adb shell am force-stop "$APP_ID"
+run_one persistFinalizedPackageAndRejectCorruption "$restart_class"
+adb shell am force-stop "$APP_ID"
+run_one finalizedPackageRecoversAfterForceStop "$restart_class"
+echo "U06-T04E-04D: encrypted finalized package publication, corruption rejection and actual force-stop recovery PASS."

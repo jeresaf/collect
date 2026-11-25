@@ -815,6 +815,104 @@ class ConnectedProtectedEditorRestartTest {
         } finally { media.forEach { it.fill(0) } }
     }
 
+    @Test
+    fun persistFinalizedPackageAndRejectCorruption() {
+        val state = publicationContext()
+        val b = state.binding
+        val generations = ProtectedCommittedDraftStore(state.context.cacheDir,
+            state.context.noBackupFilesDir, state.settings)
+        val id = state.required("generation")
+        val expected = generations.verifyNativeAttachmentPackage(b.projectId, b, id)
+        assertEquals(state.required("packageDigest"), expected.packaged.packageSha256)
+        val file = File(state.area, "finalized-" + id + ".aesgcm")
+        val pending = File(state.area, ".finalized-write-" + id)
+        assertFalse(file.exists() || pending.exists())
+        assertTrue(runCatching { generations.reopenFinalizedPackage(b.projectId, b, id) }.isFailure)
+        // Model an unpublished encrypted temp without granting it authority.
+        pending.writeBytes(byteArrayOf(1, 2, 3))
+        assertTrue(runCatching { generations.reopenFinalizedPackage(b.projectId, b, id) }.isFailure)
+        assertFalse(file.exists())
+        val saved = generations.persistFinalizedPackage(b.projectId, b, id)
+        assertEquals(expected, saved.evidence)
+        assertFalse(saved.canUpload)
+        assertFalse(pending.exists())
+        val original = file.readBytes()
+        assertEquals(saved.ciphertextSha256, digest(original))
+        assertEquals(saved, generations.persistFinalizedPackage(b.projectId, b, id))
+        assertArrayEquals(original, file.readBytes())
+        assertEquals(saved, generations.reopenFinalizedPackage(b.projectId, b, id))
+        assertTrue(runCatching {
+            generations.persistFinalizedPackage(b.projectId, b, state.required("historical"))
+        }.isFailure)
+        val altered = original.copyOf().apply { this[lastIndex] = (this[lastIndex].toInt() xor 1).toByte() }
+        file.writeBytes(altered)
+        try {
+            assertTrue(runCatching { generations.reopenFinalizedPackage(b.projectId, b, id) }.isFailure)
+            assertTrue(runCatching { generations.persistFinalizedPackage(b.projectId, b, id) }.isFailure)
+            assertArrayEquals(altered, file.readBytes())
+        } finally { file.writeBytes(original) }
+        assertEquals(saved, generations.reopenFinalizedPackage(b.projectId, b, id))
+        val work = File(File(File(state.context.noBackupFilesDir,
+            QuarantinedWorkDraftVault.VAULT_DIRECTORY), b.projectId), b.workId)
+        val committed = File(state.area, id)
+        fun record(prefix: String, dir: File) {
+            dir.walkTopDown().filter { it.isFile }.forEach {
+                state.evidence.setProperty(prefix + it.relativeTo(dir).path, digest(it.readBytes()))
+            }
+        }
+        record("finalWorking.", work)
+        record("finalCommitted.", committed)
+        state.evidence.setProperty("finalizedDigest", saved.ciphertextSha256)
+        state.evidence.setProperty("finalizedPid", android.os.Process.myPid().toString())
+        state.evidence.setProperty("pointerDigest", digest(File(state.area, "current.aesgcm").readBytes()))
+        java.io.FileOutputStream(state.marker).use {
+            state.evidence.store(it, "Synthetic finalized package restart oracle")
+            it.fd.sync()
+        }
+    }
+
+    @Test
+    fun finalizedPackageRecoversAfterForceStop() {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        val id = state.required("generation")
+        assertNotEquals(state.required("finalizedPid"), android.os.Process.myPid().toString())
+        val file = File(state.area, "finalized-" + id + ".aesgcm")
+        val before = file.readBytes()
+        assertEquals(state.required("finalizedDigest"), digest(before))
+        val pointer = File(state.area, "current.aesgcm")
+        assertEquals(state.required("pointerDigest"), digest(pointer.readBytes()))
+        val store = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+        val reopened = store.reopenFinalizedPackage(b.projectId, b, id)
+        assertEquals(state.required("packageDigest"), reopened.evidence.packaged.packageSha256)
+        assertEquals(state.required("xmlDigest"), reopened.evidence.packaged.xml.xmlSha256)
+        assertEquals(state.required("finalizedDigest"), reopened.ciphertextSha256)
+        assertEquals(b.reservedInstanceId, reopened.evidence.eligibility.reservedInstanceId)
+        assertEquals(3, reopened.evidence.packaged.attachments.size)
+        assertFalse(reopened.canUpload)
+        assertEquals(reopened, store.persistFinalizedPackage(b.projectId, b, id))
+        assertArrayEquals(before, file.readBytes())
+        val work = File(File(File(root, QuarantinedWorkDraftVault.VAULT_DIRECTORY),
+            b.projectId), b.workId)
+        fun checkSnapshot(prefix: String, dir: File) {
+            val expected = state.evidence.stringPropertyNames().filter { it.startsWith(prefix) }
+                .associate { it.removePrefix(prefix) to state.required(it) }
+            assertEquals(expected, dir.walkTopDown().filter { it.isFile }.associate {
+                it.relativeTo(dir).path to digest(it.readBytes())
+            })
+        }
+        checkSnapshot("finalWorking.", work)
+        checkSnapshot("finalCommitted.", File(state.area, id))
+        assertEquals(state.required("pointerDigest"), digest(pointer.readBytes()))
+        assertEquals(b, QuarantinedWorkDraftVault(root).read(b.projectId, b.workId, b.actorContextSha256))
+        val pending = RecordWorkReadOnlyClient(state.settings).load(b.projectId).pendingWork
+        assertTrue(pending.any { it.id == b.workId })
+        assertEquals(state.required("pendingDigest"), QuarantinedWorkDraftVault.sha256(
+            pending.map { it.id }.sorted().joinToString("\n")))
+        // Retain digest-only state for the graphical finalization gate.
+    }
+
     private fun verifyRestart(phase: (String) -> Unit) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

@@ -28,7 +28,10 @@ interface PrivateDraftCipher {
 }
 
 /** Android Keystore key is non-exportable and tied to this app installation. */
-class AndroidKeyStorePrivateDraftCipher : PrivateDraftCipher {
+class AndroidKeyStorePrivateDraftCipher(
+    private val maxEnvelope: Int = MAX_ENVELOPE
+) : PrivateDraftCipher {
+    init { require(maxEnvelope in MAX_ENVELOPE..(13 * 1024 * 1024)) }
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         val existing = store.getKey(ALIAS, null) as? SecretKey
@@ -46,6 +49,7 @@ class AndroidKeyStorePrivateDraftCipher : PrivateDraftCipher {
 
     @Synchronized
     override fun seal(cleartext: ByteArray, associatedData: ByteArray): ByteArray {
+        require(cleartext.size <= maxEnvelope - 30)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key())
         cipher.updateAAD(associatedData)
@@ -60,7 +64,7 @@ class AndroidKeyStorePrivateDraftCipher : PrivateDraftCipher {
 
     @Synchronized
     override fun open(envelope: ByteArray, associatedData: ByteArray): ByteArray {
-        require(envelope.size in 30..MAX_ENVELOPE && envelope[0] == VERSION.toByte() &&
+        require(envelope.size in 30..maxEnvelope && envelope[0] == VERSION.toByte() &&
             envelope[1].toInt() == GCM_IV_BYTES) {
             "Corrupt encrypted draft envelope"
         }

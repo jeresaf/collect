@@ -158,12 +158,18 @@ internal class ProtectedCommittedDraftStore(
 
     fun verifyNativeAttachmentPackage(
         projectId: String, binding: QuarantinedWorkDraft, expectedGeneration: String
+    ): ProtectedCommittedPackageEvidence =
+        inspectNativeAttachmentPackage(projectId, binding, expectedGeneration, null)
+
+    private fun inspectNativeAttachmentPackage(
+        projectId: String, binding: QuarantinedWorkDraft, expectedGeneration: String,
+        onCanonical: ((ByteArray) -> Unit)?
     ): ProtectedCommittedPackageEvidence {
         ProtectedNativePackageBuilder(binding, expectedGeneration).use { builder ->
             var packaged: ProtectedNativePackageEvidence? = null
             val eligibility = inspectFinalization(projectId, binding, expectedGeneration, builder) { evidence, bytes ->
                 check(packaged == null)
-                packaged = builder.finish(evidence, bytes)
+                packaged = builder.finish(evidence, bytes, onCanonical)
             }
             val result = requireNotNull(packaged)
             require(result.attachments.keys == eligibility.evidence.imageOrdinals.keys +
@@ -173,6 +179,48 @@ internal class ProtectedCommittedDraftStore(
             })
             return ProtectedCommittedPackageEvidence(eligibility, result)
         }
+    }
+
+    /**
+     * The native package remains quarantined. Reopen rederives the exact
+     * authorized current package and compares its complete authenticated bytes.
+     * This is not independent recovery when the committed source is missing.
+     */
+    fun persistFinalizedPackage(
+        projectId: String, binding: QuarantinedWorkDraft, expectedGeneration: String
+    ): ProtectedPersistedPackage = finalizedPackage(projectId, binding, expectedGeneration, true)
+
+    fun reopenFinalizedPackage(
+        projectId: String, binding: QuarantinedWorkDraft, expectedGeneration: String
+    ): ProtectedPersistedPackage = finalizedPackage(projectId, binding, expectedGeneration, false)
+
+    private fun finalizedPackage(
+        projectId: String, binding: QuarantinedWorkDraft, expectedGeneration: String,
+        allowCreate: Boolean
+    ): ProtectedPersistedPackage {
+        var canonical: ByteArray? = null
+        try {
+            val evidence = inspectNativeAttachmentPackage(projectId, binding, expectedGeneration) {
+                check(canonical == null)
+                canonical = it.copyOf()
+            }
+            val bytes = requireNotNull(canonical)
+            require(QuarantinedPrivateImageStore.digest(bytes) == evidence.packaged.packageSha256)
+            authorize(projectId, binding)
+            val area = area(binding)
+            return synchronized(lock) {
+                checkBinding(binding)
+                val current = requireNotNull(readPointer(binding, area))
+                require(current.generation == expectedGeneration &&
+                    current.inventoryDigest == evidence.eligibility.inventoryDigest)
+                verifiedGeneration(binding, area, current)
+                require(inventoryDigest(inventory(work(root, binding))) == current.inventoryDigest)
+                val persistence = ProtectedFinalizedPackageFile(area, binding, expectedGeneration,
+                    current.inventoryDigest)
+                val ciphertextDigest = persistence.verifyOrCreate(bytes, allowCreate)
+                ProtectedPersistedPackage(evidence, ciphertextDigest)
+            }
+        } finally { canonical?.fill(0) }
     }
 
     private fun inspectFinalization(

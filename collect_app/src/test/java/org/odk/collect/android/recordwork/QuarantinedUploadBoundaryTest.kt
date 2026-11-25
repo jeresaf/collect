@@ -30,6 +30,13 @@ class QuarantinedUploadBoundaryTest {
         }
     }
 
+    @Test fun committedAndFinalizedPathsCannotBeUploaded() {
+        for (path in listOf(
+            "/tmp/recordwork-committed/project/work/finalized-id.aesgcm",
+            "/tmp/recordwork-committed/../instances/fake.xml"
+        )) reject { QuarantinedUploadBoundary.ensureOrdinaryUploadAllowed(path) }
+    }
+
     @Test fun rawTraversalContainingReservedVaultIsAlsoDenied() {
         reject {
             QuarantinedUploadBoundary.ensureOrdinaryUploadAllowed(

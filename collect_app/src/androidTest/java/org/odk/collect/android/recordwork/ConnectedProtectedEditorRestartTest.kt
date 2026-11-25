@@ -1050,6 +1050,89 @@ class ConnectedProtectedEditorRestartTest {
             pending.map { it.id }.sorted().joinToString("\n")))
     }
 
+    @Test
+    fun finalizedSubmissionAdmissionBindsCurrentReadyWorkWithoutSending() {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        val id = state.required("generation")
+        val sha = state.required("packageDigest")
+        val file = File(state.area, "finalized-" + id + ".aesgcm")
+        val pointer = File(state.area, "current.aesgcm")
+        val original = file.readBytes()
+        val pointerDigest = digest(pointer.readBytes())
+        val work = File(File(File(root, QuarantinedWorkDraftVault.VAULT_DIRECTORY),
+            b.projectId), b.workId)
+        fun snapshot(dir: File) = dir.walkTopDown().filter { it.isFile }.associate {
+            it.relativeTo(dir).path to digest(it.readBytes())
+        }
+        val workingBefore = snapshot(work)
+        val committedBefore = snapshot(File(state.area, id))
+        val remote = RecordWorkReadOnlyClient(state.settings)
+        val before = remote.load(b.projectId)
+        val gate = ProtectedSubmissionAdmission(state.context.cacheDir, root, state.settings)
+        val admission = gate.inspect(b.projectId, b, id, sha)
+        assertEquals(b.projectId, admission.projectId)
+        assertEquals(b.actorContextSha256, admission.actorContextSha256)
+        assertEquals(b.workId, admission.workId)
+        assertEquals(b.sourceSubmissionId, admission.sourceSubmissionId)
+        assertEquals(b.sourceInstanceId, admission.sourceInstanceId)
+        assertEquals(b.targetFormVersionId, admission.targetFormVersionId)
+        assertEquals(b.targetVersion, admission.targetVersion)
+        assertEquals(b.visitKey, admission.visitKey)
+        assertEquals(b.reservedInstanceId, admission.reservedInstanceId)
+        assertNotEquals(admission.sourceInstanceId, admission.reservedInstanceId)
+        assertEquals(id, admission.generation)
+        assertEquals(sha, admission.packageSha256)
+        assertEquals(digest(original), admission.ciphertextSha256)
+        assertEquals(RecordWorkApiPaths.fromProjectUrl(
+            state.settings.getUnprotectedSettings(b.projectId).getString(ProjectKeys.KEY_SERVER_URL).orEmpty()
+        ).submission(), admission.endpoint)
+        assertEquals("X-DataCollector-Work-Item-Id", admission.workHeaderName)
+        assertEquals(b.workId, admission.workHeaderValue)
+        assertFalse(admission.canUpload)
+        assertEquals(admission, gate.inspect(b.projectId, b, id, sha))
+        assertTrue(runCatching { gate.inspect(b.projectId, b, id, "0".repeat(64)) }.isFailure)
+        assertTrue(runCatching { gate.inspect(b.projectId, b, state.required("historical"), sha) }.isFailure)
+        assertTrue(runCatching {
+            gate.inspect(b.projectId, b.copy(actorContextSha256 = "0".repeat(64)), id, sha)
+        }.isFailure)
+        assertTrue(runCatching {
+            gate.inspect(b.projectId, b.copy(reservedInstanceId = b.sourceInstanceId), id, sha)
+        }.isFailure)
+        assertTrue(runCatching {
+            gate.inspect(b.projectId, b.copy(visitKey = "wrong-visit"), id, sha)
+        }.isFailure)
+        val pending = before.pendingWork.single { it.id == b.workId }
+        fun rejectRemote(snapshot: RemoteRecordSnapshot) {
+            assertTrue(runCatching { ProtectedSubmissionAdmission.verifySnapshot(b, snapshot) }.isFailure)
+        }
+        rejectRemote(before.copy(pendingWork = before.pendingWork.filter { it.id != b.workId }))
+        rejectRemote(before.copy(pendingWork = before.pendingWork.filter { it.id != b.workId } +
+            pending.copy(targetFormVersionId = java.util.UUID.randomUUID().toString())))
+        rejectRemote(before.copy(pendingWork = before.pendingWork.filter { it.id != b.workId } +
+            pending.copy(visitKey = "wrong-visit")))
+        rejectRemote(before.copy(records = before.records.filter { it.submissionId != b.sourceSubmissionId }))
+        rejectRemote(before.copy(records = before.records + before.records.single {
+            it.submissionId == b.sourceSubmissionId
+        }.copy(submissionId = java.util.UUID.randomUUID().toString(), instanceId = b.reservedInstanceId)))
+        val tampered = original.copyOf().apply { this[lastIndex] = (this[lastIndex].toInt() xor 1).toByte() }
+        file.writeBytes(tampered)
+        try {
+            assertTrue(runCatching { gate.inspect(b.projectId, b, id, sha) }.isFailure)
+            assertArrayEquals(tampered, file.readBytes())
+        } finally { file.writeBytes(original) }
+        assertEquals(admission, gate.inspect(b.projectId, b, id, sha))
+        assertArrayEquals(original, file.readBytes())
+        assertEquals(pointerDigest, digest(pointer.readBytes()))
+        assertEquals(workingBefore, snapshot(work))
+        assertEquals(committedBefore, snapshot(File(state.area, id)))
+        val after = remote.load(b.projectId)
+        assertEquals(before.records.toSet(), after.records.toSet())
+        assertEquals(before.pendingWork.toSet(), after.pendingWork.toSet())
+        // Retain digest-only oracle for dedicated multipart sender.
+    }
+
     private fun verifyRestart(phase: (String) -> Unit) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

@@ -19,7 +19,8 @@ object QuarantinedUploadBoundary {
         // The quarantine rule only concerns an actual path to reserved data.
         if (instanceFilePath.isNullOrBlank()) return
         val parsed = File(instanceFilePath)
-        val directory = QuarantinedWorkDraftVault.VAULT_DIRECTORY
+        val reservedDirectories = setOf(QuarantinedWorkDraftVault.VAULT_DIRECTORY,
+            "recordwork-committed")
         // Do not normalize away a "recordwork-drafts/../" traversal: deny
         // either raw or canonical references to the reserved vault segment.
         val rawSegments = parsed.path.replace('\\', '/').split('/')
@@ -29,7 +30,8 @@ object QuarantinedUploadBoundary {
             // Unreadable/hostile path is not safe to upload.
             throw FormUploadException("Cannot resolve instance path")
         }
-        if (directory in rawSegments || directory in canonicalSegments) {
+        if (rawSegments.any { it in reservedDirectories } ||
+            canonicalSegments.any { it in reservedDirectories }) {
             throw FormUploadException(
                 "Quarantined record work cannot use the ordinary ODK uploader"
             )

@@ -191,3 +191,8 @@ run_one graphicalFinalizationConfirmsCurrentGeneration "$restart_class"
 adb shell am force-stop "$APP_ID"
 run_one graphicalFinalizedStatusRecoversAfterForceStop "$restart_class"
 echo "U06-T04E-04E: graphical finalization confirmation, unsaved/dirty denial and restarted finalized status PASS."
+
+# Fresh authenticated admission only: do not POST the finalized observation.
+adb shell am force-stop "$APP_ID"
+run_one finalizedSubmissionAdmissionBindsCurrentReadyWorkWithoutSending "$restart_class"
+echo "U06-T04E-05A: current finalized package submission admission, stale/corrupt denial and no transmission PASS."

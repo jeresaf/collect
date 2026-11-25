@@ -1501,6 +1501,79 @@ class ConnectedProtectedEditorRestartTest {
         } finally { java.nio.file.Files.delete(latch.toPath()) }
         assertFalse(ProtectedSubmissionAttemptGuard.hasAttempt(root, b))
         assertEquals(directValues, directStore.read(b, direct).answers)
+        phase("RECONCILIATION_INSPECTION")
+        val reconciliation = ProtectedSubmissionReceiptStore(root, state.settings)
+        val receiptPath = File(state.area, "submitted-receipt.aesgcm")
+        assertFalse(receiptPath.exists())
+        // CI-only authentic attempt fixture, using the exact sender wire format.
+        // No network write is made; the real work remains READY.
+        val aad = listOf("DC_SUBMISSION_ATTEMPT_V1", b.projectId,
+            b.actorContextSha256, b.workId).joinToString("\n").toByteArray(Charsets.UTF_8)
+        val clear = listOf(generation, sha, digest(envelopeBefore), b.reservedInstanceId,
+            b.targetFormVersionId).joinToString("\n").toByteArray(Charsets.UTF_8)
+        val syntheticAttempt = try { cipher.seal(clear, aad) } finally { clear.fill(0) }
+        assertTrue(latch.createNewFile())
+        try {
+            latch.writeBytes(syntheticAttempt)
+            val ready = reconciliation.inspectAttempt(b.projectId, b)
+            assertEquals(ProtectedReconciliationState.READY_WITHOUT_VISIBLE_RECORD, ready.state)
+            assertEquals(generation, ready.generation)
+            assertEquals(sha, ready.packageSha256)
+            assertEquals(digest(syntheticAttempt), ready.attemptSha256)
+            assertNull(ready.submissionId)
+            assertFalse(ready.canEdit || ready.canUpload)
+            assertFalse(receiptPath.exists())
+            assertArrayEquals(syntheticAttempt, latch.readBytes())
+            assertEquals(before, remote.load(b.projectId))
+            assertTrue(runCatching {
+                reconciliation.inspectAttempt(b.projectId, b.copy(actorContextSha256 = "0".repeat(64)))
+            }.isFailure)
+            val corrupt = syntheticAttempt.copyOf().apply { this[lastIndex] = (this[lastIndex].toInt() xor 1).toByte() }
+            latch.writeBytes(corrupt)
+            assertTrue(runCatching { reconciliation.inspectAttempt(b.projectId, b) }.isFailure)
+            assertArrayEquals(corrupt, latch.readBytes())
+            latch.writeBytes(syntheticAttempt)
+            val badEnvelope = envelopeBefore.copyOf().apply { this[lastIndex] = (this[lastIndex].toInt() xor 1).toByte() }
+            envelope.writeBytes(badEnvelope)
+            try {
+                assertTrue(runCatching { reconciliation.inspectAttempt(b.projectId, b) }.isFailure)
+                assertArrayEquals(badEnvelope, envelope.readBytes())
+            } finally { envelope.writeBytes(envelopeBefore) }
+            assertFalse(receiptPath.exists())
+            assertArrayEquals(syntheticAttempt, latch.readBytes())
+        } finally { assertTrue(latch.delete()) } // CI-only fixture, never production recovery.
+        assertTrue(runCatching { reconciliation.inspectAttempt(b.projectId, b) }.isFailure)
+        val pending = before.pendingWork.single { it.id == b.workId }
+        val sourceRecord = before.records.single { it.submissionId == b.sourceSubmissionId }
+        val fakeChild = sourceRecord.copy(submissionId = java.util.UUID.randomUUID().toString(),
+            instanceId = b.reservedInstanceId, formVersionId = b.targetFormVersionId)
+        fun classification(snapshot: RemoteRecordSnapshot) =
+            ProtectedSubmissionReceiptStore.classifySnapshot(b, snapshot).first
+        assertEquals(ProtectedReconciliationState.INDETERMINATE,
+            classification(before.copy(pendingWork = before.pendingWork.filter { it.id != b.workId })))
+        assertEquals(ProtectedReconciliationState.INDETERMINATE,
+            classification(before.copy(records = before.records.filter { it.submissionId != b.sourceSubmissionId })))
+        assertEquals(ProtectedReconciliationState.CONFLICT,
+            classification(before.copy(records = before.records + sourceRecord)))
+        assertEquals(ProtectedReconciliationState.CONFLICT,
+            classification(before.copy(pendingWork = before.pendingWork + pending)))
+        assertEquals(ProtectedReconciliationState.CONFLICT,
+            classification(before.copy(records = before.records + fakeChild)))
+        val completed = before.copy(pendingWork = before.pendingWork.filter { it.id != b.workId })
+        assertEquals(ProtectedReconciliationState.CONFLICT,
+            classification(completed.copy(records = completed.records +
+                fakeChild.copy(formVersionId = sourceRecord.formVersionId))))
+        assertEquals(ProtectedReconciliationState.CONFLICT,
+            classification(completed.copy(records = completed.records + fakeChild +
+                fakeChild.copy(submissionId = java.util.UUID.randomUUID().toString()))))
+        assertEquals(ProtectedReconciliationState.CONFLICT,
+            classification(before.copy(pendingWork = before.pendingWork.map {
+                if (it.id == b.workId) it.copy(visitKey = "wrong-visit") else it
+            })))
+        assertArrayEquals(envelopeBefore, envelope.readBytes())
+        assertArrayEquals(pointerBefore, pointer.readBytes())
+        assertEquals(workingBefore, inventory(work))
+        assertEquals(committedBefore, inventory(File(state.area, generation)))
         phase("CONFIRM_UI")
         ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
             QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
@@ -1550,6 +1623,26 @@ class ConnectedProtectedEditorRestartTest {
         assertEquals(before.records.toSet() + child, after.records.toSet())
         assertEquals(original, after.records.single { it.submissionId == b.sourceSubmissionId })
         assertEquals(before.pendingWork.filter { it.id != b.workId }.toSet(), after.pendingWork.toSet())
+        phase("RECONCILIATION_INSPECTION")
+        // Simulate missing acknowledgement locally after the actual server
+        // commit. Inspection must corroborate the source timeline but must
+        // not write a new receipt, unlock editing or retransmit.
+        val receiptBytes = receiptPath.readBytes()
+        val heldReceipt = File(state.area, ".ci-held-receipt-for-inspection")
+        assertTrue(receiptPath.renameTo(heldReceipt))
+        try {
+            val linked = reconciliation.inspectAttempt(b.projectId, b)
+            assertEquals(ProtectedReconciliationState.LINKED_RECORD_VISIBLE, linked.state)
+            assertEquals(child.submissionId, linked.submissionId)
+            assertEquals(generation, linked.generation)
+            assertEquals(sha, linked.packageSha256)
+            assertEquals(digest(latchBefore), linked.attemptSha256)
+            assertFalse(linked.canEdit || linked.canUpload)
+            assertFalse(receiptPath.exists())
+            assertArrayEquals(latchBefore, latch.readBytes())
+            assertEquals(after, remote.load(b.projectId))
+        } finally { assertTrue(heldReceipt.renameTo(receiptPath)) }
+        assertArrayEquals(receiptBytes, receiptPath.readBytes())
         phase("REPLAY")
         assertTrue(runCatching { sender.send(b.projectId, b, generation, sha) }.isFailure)
         assertEquals(after.records.toSet(), remote.load(b.projectId).records.toSet())

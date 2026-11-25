@@ -116,7 +116,7 @@ class RecordWorkReadOnlyClient(
             it.getString("submissionId") == child.submissionId ||
                 it.getString("instanceId") == binding.reservedInstanceId
         }
-        val item = matching.single()
+        val item = matching.singleOrNull() ?: return false
         return item.getString("submissionId") == child.submissionId &&
             item.getString("instanceId") == binding.reservedInstanceId &&
             item.getString("formId") == child.formId &&

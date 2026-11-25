@@ -17,6 +17,26 @@ internal data class ProtectedSubmittedReceipt(
     init { require(!canEdit && !canUpload) }
 }
 
+/** Read-only reconciliation evidence, never a receipt or permission to retry. */
+internal enum class ProtectedReconciliationState {
+    LINKED_RECORD_VISIBLE, READY_WITHOUT_VISIBLE_RECORD, INDETERMINATE, CONFLICT
+}
+
+internal data class ProtectedReconciliationEvidence(
+    val state: ProtectedReconciliationState,
+    val generation: String,
+    val packageSha256: String,
+    val attemptSha256: String,
+    val submissionId: String? = null,
+    val canEdit: Boolean = false,
+    val canUpload: Boolean = false
+) {
+    init {
+        require(!canEdit && !canUpload)
+        require((state == ProtectedReconciliationState.LINKED_RECORD_VISIBLE) == (submissionId != null))
+    }
+}
+
 /** Receipt publication after a verified 201 and authenticated server link.
  * No READY authorization is assumed after completion; no plaintext is saved.
  * Online reopen is mandatory, and missing/corrupt records fail closed.
@@ -80,6 +100,69 @@ internal class ProtectedSubmissionReceiptStore(
                 attempt(area, binding).copy(submissionId = receipt.submissionId) == receipt)
             receipt
         }
+
+    /**
+     * No write, no READY editor authorization, no POST and no automatic
+     * acknowledgement. A bounded listing cannot prove server nonacceptance.
+     * Corrupt/missing evidence or failed auth/network throws; callers must
+     * preserve the attempt rather than interpret an exception as absence.
+     */
+    fun inspectAttempt(projectId: String, binding: QuarantinedWorkDraft): ProtectedReconciliationEvidence =
+        synchronized(ProtectedDraftComponentLock.monitor) {
+            checkAccount(projectId, binding)
+            val area = ProtectedMultipartSubmission.submissionAttemptArea(root, binding)
+            val original = attempt(area, binding)
+            val remote = RecordWorkReadOnlyClient(settings)
+            val snapshot = remote.load(projectId)
+            val (state, child) = classifySnapshot(binding, snapshot)
+            val finalState = if (state == ProtectedReconciliationState.LINKED_RECORD_VISIBLE &&
+                !remote.completedVisit(projectId, binding, requireNotNull(child))) {
+                ProtectedReconciliationState.CONFLICT
+            } else state
+            // Repeat the bounded snapshot; do not return a positive finding
+            // across a changing server record or account context.
+            val repeated = remote.load(projectId)
+            require(snapshot.records.size == repeated.records.size &&
+                snapshot.pendingWork.size == repeated.pendingWork.size &&
+                snapshot.records.toSet() == repeated.records.toSet() &&
+                snapshot.pendingWork.toSet() == repeated.pendingWork.toSet()) {
+                "Server record context changed during reconciliation"
+            }
+            checkAccount(projectId, binding)
+            require(attempt(area, binding) == original)
+            ProtectedReconciliationEvidence(finalState, original.generation,
+                original.packageSha256, original.attemptSha256,
+                if (finalState == ProtectedReconciliationState.LINKED_RECORD_VISIBLE) child?.submissionId else null)
+        }
+
+    companion object {
+        /** Metadata classification only; LINKED requires separate timeline corroboration. */
+        internal fun classifySnapshot(b: QuarantinedWorkDraft, snapshot: RemoteRecordSnapshot):
+            Pair<ProtectedReconciliationState, RemoteRecord?> {
+            val records = snapshot.records
+            val pending = snapshot.pendingWork
+            val conflict = ProtectedReconciliationState.CONFLICT to null
+            val unknown = ProtectedReconciliationState.INDETERMINATE to null
+            if (records.map { it.submissionId }.toSet().size != records.size ||
+                pending.map { it.id }.toSet().size != pending.size) return conflict
+            val source = records.singleOrNull { it.submissionId == b.sourceSubmissionId }
+                ?: return unknown
+            if (source.instanceId != b.sourceInstanceId) return conflict
+            val children = records.filter { it.instanceId == b.reservedInstanceId }
+            val work = pending.singleOrNull { it.id == b.workId }
+            if (work != null && (work.sourceSubmissionId != b.sourceSubmissionId ||
+                    work.targetFormVersionId != b.targetFormVersionId ||
+                    work.type != RecordWorkType.FOLLOW_UP || work.visitKey != b.visitKey)) return conflict
+            if (children.size > 1) return conflict
+            val child = children.singleOrNull()
+            if (child != null) {
+                if (work != null || child.submissionId == source.submissionId ||
+                    child.formId != source.formId || child.formVersionId != b.targetFormVersionId) return conflict
+                return ProtectedReconciliationState.LINKED_RECORD_VISIBLE to child
+            }
+            return if (work == null) unknown else ProtectedReconciliationState.READY_WITHOUT_VISIBLE_RECORD to null
+        }
+    }
 
     private fun checkAccount(projectId: String, b: QuarantinedWorkDraft) {
         val values = settings.getUnprotectedSettings(projectId)

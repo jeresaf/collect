@@ -31,7 +31,9 @@ data class PrivateRepeatSchema(
     val groups: List<PrivateRepeatGroup>,
     val canSaveAnswers: Boolean = false,
     val canFinalize: Boolean = false,
-    val canUpload: Boolean = false
+    val canUpload: Boolean = false,
+    val directTextPaths: List<String> = emptyList(),
+    val directImagePaths: List<String> = emptyList()
 ) {
     init {
         require(!canSaveAnswers && !canFinalize && !canUpload) {
@@ -51,7 +53,8 @@ class JavaRosaPrivateRepeatStructureProbe(
     private val scratchRoot: File,
     private val binding: QuarantinedWorkDraft,
     private val plan: HistoricalMappingPlan,
-    private val targetXFormXml: String
+    private val targetXFormXml: String,
+    private val allowMixedDirect: Boolean = false
 ) {
     val schema: PrivateRepeatSchema
 
@@ -101,10 +104,44 @@ class JavaRosaPrivateRepeatStructureProbe(
                 }) { "Only simple top-level repeat groups are supported" }
             // Any non-repeat group in a native FormDef could conceal a
             // nested repeat or unreviewed question. Refuse such layouts.
-            require(topLevel.all { it is GroupDef && it.getRepeat() }) {
-                "Repeat identity gate requires flat top-level repeat-only controls"
+            require(topLevel.all { (it is GroupDef && it.getRepeat()) ||
+                (allowMixedDirect && it is QuestionDef) }) {
+                "Only flat native controls are qualified"
             }
             val rootName = def.instance.root.name
+            val directText = mutableListOf<String>()
+            val directImages = mutableListOf<String>()
+            for (question in topLevel.filterIsInstance<QuestionDef>()) {
+                val ref = question.bind?.reference as? TreeReference
+                    ?: throw IllegalArgumentException("Unbound direct question")
+                require(ref.size() == 2 && ref.getName(0) == rootName &&
+                    NAME.matches(ref.getName(1)) && question.dynamicChoices == null)
+                val path = "/$rootName/" + ref.getName(1)
+                val candidate = plan.candidates.single { it.targetPath == path }
+                require(candidate.risks.none { it in setOf(MappingRisk.REPEAT,
+                    MappingRisk.DYNAMIC_SELECT, MappingRisk.CALCULATION,
+                    MappingRisk.RELEVANCE_OR_CONSTRAINT, MappingRisk.UNBOUND_FIELD,
+                    MappingRisk.STATIC_SELECT, MappingRisk.CHOICE_LIST_CHANGED) })
+                val node = requireNotNull(def.instance.root.getChild(ref.getName(1), 0))
+                require(node.isLeaf && node.value == null)
+                if (MappingRisk.MEDIA in candidate.risks) {
+                    require(question.controlType == Constants.CONTROL_IMAGE_CHOOSE &&
+                        node.dataType == Constants.DATATYPE_BINARY)
+                    directImages += path
+                } else {
+                    require(question.controlType == Constants.CONTROL_INPUT &&
+                        node.dataType == Constants.DATATYPE_TEXT)
+                    directText += path
+                }
+            }
+            if (allowMixedDirect) {
+                require(directText.size in 1..5 && directImages.size in 1..2 &&
+                    (directText + directImages).distinct().size ==
+                        directText.size + directImages.size &&
+                    (directText + directImages).toSet() ==
+                        plan.candidates.filter { MappingRisk.REPEAT !in it.risks }
+                            .map { it.targetPath }.toSet())
+            }
             nativeRepeats.map { group ->
                 val groupRef = group.bind?.reference as? TreeReference
                     ?: throw IllegalArgumentException("Native repeat group is unbound")
@@ -195,7 +232,8 @@ class JavaRosaPrivateRepeatStructureProbe(
                     "Every reviewed repeat path must belong to one native group"
                 }
             }.let { groups ->
-                PrivateRepeatSchema(binding.workId, binding.targetXFormSha256, groups)
+                PrivateRepeatSchema(binding.workId, binding.targetXFormSha256, groups,
+                    directTextPaths = directText.toList(), directImagePaths = directImages.toList())
             }
         }
     }

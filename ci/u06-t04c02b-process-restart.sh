@@ -137,3 +137,10 @@ adb shell am force-stop "$APP_ID"
 run_one combinedRepeatDraftRecoversAfterForceStop \
   org.odk.collect.android.recordwork.ConnectedProtectedEditorRestartTest
 echo "U06-T04E-03C6B: combined repeat answers and images recovered after force-stop; ciphertext and READY work unchanged."
+
+# Seed V5 only after repeat-only force-stop recovery completes.
+PGPASSWORD=synthetic-ci-only psql -v ON_ERROR_STOP=1 -h 127.0.0.1 \
+  -U odk_user -d odk_platform -f ci/u06-t04e03c6c-mixed-form.sql
+adb shell pm clear "$APP_ID" >/dev/null
+run_one reviewedMixedDraftRebuildsDirectAndRepeatAnswersAndImages "$ui_class"
+echo "U06-T04E-03C6C: direct and repeat scalars and binary references rebuilt together PASS."

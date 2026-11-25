@@ -33,13 +33,14 @@ class JavaRosaPrivateRepeatAnswerSession(
     private val scratchRoot: File,
     private val binding: QuarantinedWorkDraft,
     private val plan: HistoricalMappingPlan,
-    private val targetXFormXml: String
+    private val targetXFormXml: String,
+    allowMixedDirect: Boolean = false
 ) {
     // No caller-supplied schema shortcut. Every editor session derives its
     // authorized repeat inventory from a fresh exact native JavaRosa probe.
     val schema: PrivateRepeatSchema =
         JavaRosaPrivateRepeatStructureProbe(
-            scratchRoot, binding, plan, targetXFormXml
+            scratchRoot, binding, plan, targetXFormXml, allowMixedDirect
         ).schema
 
     init {
@@ -207,7 +208,9 @@ class JavaRosaPrivateRepeatAnswerSession(
     internal fun verifyImageReferences(
         inventory: ProtectedRepeatInventory,
         receipts: Map<Pair<String, String>, ProtectedRepeatImageReceipt>,
-        savedAnswers: Map<String, Map<String, String>> = emptyMap()
+        savedAnswers: Map<String, Map<String, String>> = emptyMap(),
+        directAnswers: Map<String, String> = emptyMap(),
+        directReceipts: Map<String, ProtectedImageReceipt> = emptyMap()
     ): Map<Pair<String, String>, Int> = withNativeTarget { form ->
         require(schema.groups.size == 1)
         val group = schema.groups.single()
@@ -232,6 +235,22 @@ class JavaRosaPrivateRepeatAnswerSession(
         val references = linkedMapOf<Pair<String, String>, Pair<TreeReference, String?>>()
         val ordinals = linkedMapOf<Pair<String, String>, Int>()
         val scalars = mutableListOf<Triple<TreeReference, PrivateScalarType, IAnswerData?>>()
+        scalars.addAll(applyDirectText(form, directAnswers))
+        require(directReceipts.keys.all { it in schema.directImagePaths })
+        for (path in schema.directImagePaths) {
+            val leaf = directRef(form, path)
+            val field = requireNotNull(form.instance.resolveReference(leaf))
+            require(field.isLeaf && field.value == null &&
+                field.dataType == org.javarosa.core.model.Constants.DATATYPE_BINARY)
+            val receipt = directReceipts[path]
+            val token = receipt?.let {
+                require(it.fieldPath == path && !it.canFinalize && !it.canSubmit)
+                "protected-" + QuarantinedWorkDraftVault.sha256(
+                    binding.reservedInstanceId + "\n" + path + "\n" + it.sha256)
+            }
+            if (token != null) form.setValue(StringData(token), leaf, true)
+            references["direct" to path] = leaf to token
+        }
         fun assertScalars() {
             for ((leaf, type, answer) in scalars) {
                 val actual = form.instance.resolveReference(leaf)?.value?.value
@@ -298,7 +317,8 @@ class JavaRosaPrivateRepeatAnswerSession(
         }
         require(form.instance.root.getChildrenWithName(name).orEmpty()
             .count { it.mult != TreeReference.INDEX_TEMPLATE } == active.size)
-        require(references.values.mapNotNull { it.second }.toSet().size == receipts.size)
+        require(references.values.mapNotNull { it.second }.toSet().size ==
+            receipts.size + directReceipts.size)
         // Read all rows after all writes, not just immediately after a write.
         for ((leaf, token) in references.values) {
             require(form.instance.resolveReference(leaf)?.value?.value == token)
@@ -313,6 +333,44 @@ class JavaRosaPrivateRepeatAnswerSession(
         assertScalars()
         require(ordinals.keys == receipts.keys)
         ordinals.toMap()
+    }
+
+    internal fun validateDirectText(values: Map<String, String>): Map<String, String> =
+        withNativeTarget { form ->
+            require(values.keys == schema.directTextPaths.toSet() && values.isNotEmpty())
+            applyDirectText(form, values)
+            values.toMap()
+        }
+
+    private fun directRef(form: FormDef, path: String): TreeReference =
+        TreeReference.rootRef().apply {
+            require(path.startsWith("/" + form.instance.root.name + "/") &&
+                path.removePrefix("/" + form.instance.root.name + "/").let {
+                    it.isNotBlank() && '/' !in it
+                })
+            add(form.instance.root.name, 0)
+            add(path.substringAfterLast('/'), 0)
+        }
+
+    private fun applyDirectText(
+        form: FormDef, values: Map<String, String>
+    ): List<Triple<TreeReference, PrivateScalarType, IAnswerData?>> {
+        require(values.isEmpty() || values.keys == schema.directTextPaths.toSet())
+        return schema.directTextPaths.map { path ->
+            val leaf = directRef(form, path)
+            val field = requireNotNull(form.instance.resolveReference(leaf))
+            require(field.isLeaf && field.value == null &&
+                field.dataType == PrivateScalarType.TEXT.javaRosaType)
+            val value = values[path].orEmpty()
+            require(value.length <= MAX_TEXT && '\u0000' !in value)
+            val answer = if (value.isEmpty()) null else StringData(value)
+            if (answer != null) {
+                require(form.evaluateConstraint(leaf, answer))
+                form.setValue(answer, leaf, true)
+                require(form.instance.resolveReference(leaf)?.value?.value == value)
+            }
+            Triple(leaf, PrivateScalarType.TEXT, answer)
+        }
     }
 
     private fun parse(type: PrivateScalarType, raw: String): Pair<IAnswerData, String> =

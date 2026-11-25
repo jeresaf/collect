@@ -11,7 +11,9 @@ import java.io.File
  */
 internal data class ProtectedCombinedRepeatEvidence(
     val imageOrdinals: Map<Pair<String, String>, Int>,
-    val savedRowAnswerDigests: Map<String, Map<String, String>>
+    val savedRowAnswerDigests: Map<String, Map<String, String>>,
+    val directAnswerDigests: Map<String, String> = emptyMap(),
+    val directImageDigests: Map<String, String> = emptyMap()
 )
 
 internal class ProtectedNativeRepeatImageProbe(
@@ -25,10 +27,30 @@ internal class ProtectedNativeRepeatImageProbe(
     ): Map<Pair<String, String>, Int> =
         inspectCombined(projectId, binding).imageOrdinals
 
+    /** Narrow direct text save; exact mixed target and complete review are mandatory. */
+    fun saveDirectText(
+        projectId: String, binding: QuarantinedWorkDraft, values: Map<String, String>
+    ) {
+        require(binding.workType == RecordWorkType.FOLLOW_UP && binding.validationTransfers == 0)
+        val authorized = RecordWorkPreparationClient(settings)
+            .authorizePrivateTextForm(projectId, binding)
+        val cipher = AndroidKeyStorePrivateDraftCipher()
+        val approval = requireNotNull(ProtectedMappingApprovalStore(root, cipher)
+            .read(binding, authorized.plan))
+        require(approval.decisions.values.all { it == MappingDecision.REENTER })
+        val session = JavaRosaPrivateRepeatAnswerSession(
+            scratch, binding, authorized.plan, authorized.targetXFormXml, true)
+        val validated = session.validateDirectText(values)
+        val store = EncryptedPrivateTextDraftStore(root, cipher)
+        store.save(binding, validated, session.schema.directTextPaths)
+        require(store.read(binding, session.schema.directTextPaths).answers == validated)
+    }
+
     /** Rebuild saved scalar values and authenticated images in the same native model. */
     fun inspectCombined(
         projectId: String,
-        binding: QuarantinedWorkDraft
+        binding: QuarantinedWorkDraft,
+        allowMixedDirect: Boolean = false
     ): ProtectedCombinedRepeatEvidence {
         require(binding.workType == RecordWorkType.FOLLOW_UP &&
             binding.validationTransfers == 0)
@@ -38,11 +60,12 @@ internal class ProtectedNativeRepeatImageProbe(
         val approval = requireNotNull(ProtectedMappingApprovalStore(root, cipher)
             .read(binding, authorized.plan))
         val session = JavaRosaPrivateRepeatAnswerSession(
-            scratch, binding, authorized.plan, authorized.targetXFormXml)
+            scratch, binding, authorized.plan, authorized.targetXFormXml, allowMixedDirect)
         require(session.schema.groups.size == 1)
         val group = session.schema.groups.single()
         require(group.imagePaths.isNotEmpty() &&
-            (group.fields.map { it.path } + group.imagePaths).all {
+            (group.fields.map { it.path } + group.imagePaths +
+                session.schema.directTextPaths + session.schema.directImagePaths).all {
                 approval.decisions[it] == MappingDecision.REENTER
             })
         val rows = QuarantinedRepeatRowVault(root, cipher)
@@ -61,10 +84,23 @@ internal class ProtectedNativeRepeatImageProbe(
             }
             val saved = QuarantinedRepeatAnswerStore(root, cipher, rows)
                 .readAllSaved(binding, session)
-            val ordinals = session.verifyImageReferences(inventory, receipts, saved)
+            val direct = if (session.schema.directTextPaths.isEmpty()) emptyMap()
+                else EncryptedPrivateTextDraftStore(root, cipher)
+                    .read(binding, session.schema.directTextPaths).answers
+            val directImages = linkedMapOf<String, ProtectedImageReceipt>()
+            val directStore = QuarantinedPrivateImageStore(root, cipher)
+            for (path in session.schema.directImagePaths) {
+                directStore.withVerifiedImage(binding, path, session.schema.directImagePaths) {
+                    receipt, bytes ->
+                    require(receipt.sha256 == QuarantinedPrivateImageStore.digest(bytes))
+                    directImages[path] = receipt
+                }
+            }
+            val ordinals = session.verifyImageReferences(inventory, receipts, saved, direct, directImages)
             ProtectedCombinedRepeatEvidence(ordinals, saved.mapValues { (_, values) ->
                 values.mapValues { (_, value) -> QuarantinedWorkDraftVault.sha256(value) }
-            })
+            }, direct.mapValues { (_, value) -> QuarantinedWorkDraftVault.sha256(value) },
+                directImages.mapValues { (_, receipt) -> receipt.sha256 })
         }
     }
 }

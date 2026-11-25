@@ -586,10 +586,32 @@ class ConfiguredRecordPreparationUiTest {
         reviewAndStageFollowUp(project, pending, openEditor = false, repeatImageExercise = true)
     }
 
+    @Test
+    fun reviewedMixedDraftRebuildsDirectAndRepeatAnswersAndImages() {
+        rule.startAtFirstLaunch()
+            .clickManuallyEnterProjectDetails()
+            .inputUrl("https://10.0.2.2:8443/v1/projects/81000000-0000-4000-8000-000000000001")
+            .inputUsername("u06-connected-owner")
+            .inputPassword("u06-disposable-only")
+            .addProject()
+        val project = "81000000-0000-4000-8000-000000000001"
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val client = RecordWorkPreparationClient(DaggerUtils.getComponent(context).settingsProvider())
+        val target = "81000000-0000-4000-8000-000000000021"
+        assertTrue(client.targets(activeProjectId(), source, RecordWorkType.FOLLOW_UP)
+            .any { it.targetFormVersionId == target && it.version == "5" })
+        val created = client.create(activeProjectId(), NewRecordWork(
+            source, target, RecordWorkType.FOLLOW_UP,
+            "u06-mixed-request-" + UUID.randomUUID(), "u06-mixed-" + UUID.randomUUID()))
+        val pending = connectedClient().load(project).pendingWork.single { it.id == created.id }
+        reviewAndStageFollowUp(project, pending, openEditor = false, mixedExercise = true)
+    }
+
     private fun reviewAndStageFollowUp(
         project: String, pending: RemoteVisitWork, openEditor: Boolean,
         conditionalExercise: Boolean = false,
-        repeatImageExercise: Boolean = false
+        repeatImageExercise: Boolean = false,
+        mixedExercise: Boolean = false
     ) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val before = connectedClient().load(project)
@@ -740,7 +762,106 @@ class ConfiguredRecordPreparationUiTest {
                 val probe = ProtectedNativeControllerProbe(
                     context.cacheDir, context.noBackupFilesDir, settings
                 )
-                if (repeatImageExercise) {
+                if (mixedExercise) {
+                    val session = JavaRosaPrivateRepeatAnswerSession(
+                        context.cacheDir, binding, authorized.plan, authorized.targetXFormXml, true)
+                    val cipher = AndroidKeyStorePrivateDraftCipher()
+                    val rows = QuarantinedRepeatRowVault(context.noBackupFilesDir, cipher)
+                    val images = QuarantinedRepeatImageStore(context.noBackupFilesDir, cipher, rows)
+                    val answers = QuarantinedRepeatAnswerStore(context.noBackupFilesDir, cipher, rows)
+                    val combined = ProtectedNativeRepeatImageProbe(
+                        context.cacheDir, context.noBackupFilesDir, settings)
+                    val direct = ProtectedNativeImageIntake(
+                        context.cacheDir, context.noBackupFilesDir, settings)
+                    val group = session.schema.groups.single()
+                    val directText = session.schema.directTextPaths.single()
+                    val directImage = session.schema.directImagePaths.single()
+                    val name = group.fields.single().path
+                    val photo = group.imagePaths.single()
+                    assertEquals("/data/household_name", directText)
+                    assertEquals("/data/photo", directImage)
+                    assertEquals("/data/members/name", name)
+                    assertEquals("/data/members/photo", photo)
+                    assertTrue(runCatching {
+                        JavaRosaPrivateRepeatAnswerSession(context.cacheDir, binding,
+                            authorized.plan, authorized.targetXFormXml)
+                    }.isFailure)
+                    val a = rows.addRow(binding, session.schema, group.path, UUID.randomUUID().toString())
+                    val b = rows.addRow(binding, session.schema, group.path, UUID.randomUUID().toString())
+                    val household = "Synthetic household " + UUID.randomUUID()
+                    val memberA = "Synthetic A " + UUID.randomUUID()
+                    val memberB = "Synthetic B " + UUID.randomUUID()
+                    combined.saveDirectText(activeProjectId(), binding, mapOf(directText to household))
+                    answers.save(binding, session, a.rowId, mapOf(name to memberA))
+                    answers.save(binding, session, b.rowId, mapOf(name to memberB))
+                    fun png(color: Int): ByteArray {
+                        val bitmap = android.graphics.Bitmap.createBitmap(16, 16,
+                            android.graphics.Bitmap.Config.ARGB_8888)
+                        return try {
+                            bitmap.eraseColor(color)
+                            java.io.ByteArrayOutputStream().use {
+                                assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
+                                it.toByteArray()
+                            }
+                        } finally { bitmap.recycle() }
+                    }
+                    val green = png(android.graphics.Color.GREEN)
+                    val red = png(android.graphics.Color.RED)
+                    val blue = png(android.graphics.Color.BLUE)
+                    val dir = java.io.File(java.io.File(java.io.File(
+                        context.noBackupFilesDir, QuarantinedWorkDraftVault.VAULT_DIRECTORY),
+                        binding.projectId), binding.workId)
+                    fun snapshot() = dir.walkTopDown().filter { it.isFile }.associate {
+                        it.relativeTo(dir).path to QuarantinedPrivateImageStore.digest(it.readBytes())
+                    }
+                    fun hash(value: String) = QuarantinedWorkDraftVault.sha256(value)
+                    try {
+                        val directReceipt = direct.importSelectedImage(activeProjectId(), binding,
+                            directImage, "image/png", green.inputStream())
+                        val aReceipt = images.importSelectedImage(binding, session, a.rowId,
+                            photo, "image/png", red.inputStream())
+                        val bReceipt = images.importSelectedImage(binding, session, b.rowId,
+                            photo, "image/png", blue.inputStream())
+                        assertEquals(3, setOf(directReceipt.sha256, aReceipt.sha256, bReceipt.sha256).size)
+                        val before = snapshot()
+                        val evidence = combined.inspectCombined(activeProjectId(), binding, true)
+                        assertEquals(mapOf(directText to hash(household)), evidence.directAnswerDigests)
+                        assertEquals(mapOf(directImage to directReceipt.sha256), evidence.directImageDigests)
+                        assertEquals(mapOf(a.rowId to mapOf(name to hash(memberA)),
+                            b.rowId to mapOf(name to hash(memberB))), evidence.savedRowAnswerDigests)
+                        assertEquals(mapOf((a.rowId to photo) to 0, (b.rowId to photo) to 1),
+                            evidence.imageOrdinals)
+                        assertEquals(before, snapshot())
+                        rows.archiveRow(binding, session.schema, a.rowId, UUID.randomUUID().toString())
+                        val archived = snapshot()
+                        val survivor = combined.inspectCombined(activeProjectId(), binding, true)
+                        assertEquals(evidence.directAnswerDigests, survivor.directAnswerDigests)
+                        assertEquals(evidence.directImageDigests, survivor.directImageDigests)
+                        assertEquals(mapOf(b.rowId to mapOf(name to hash(memberB))),
+                            survivor.savedRowAnswerDigests)
+                        assertEquals(mapOf((b.rowId to photo) to 0), survivor.imageOrdinals)
+                        assertEquals(archived, snapshot())
+                        assertTrue(runCatching {
+                            combined.saveDirectText(activeProjectId(), binding, mapOf(name to "invalid"))
+                        }.isFailure)
+                        assertEquals(archived, snapshot())
+                        direct.clear(activeProjectId(), binding, directImage)
+                        val cleared = snapshot()
+                        val afterClear = combined.inspectCombined(activeProjectId(), binding, true)
+                        assertTrue(afterClear.directImageDigests.isEmpty())
+                        assertEquals(survivor.directAnswerDigests, afterClear.directAnswerDigests)
+                        assertEquals(survivor.savedRowAnswerDigests, afterClear.savedRowAnswerDigests)
+                        assertEquals(survivor.imageOrdinals, afterClear.imageOrdinals)
+                        assertEquals(archived.filterKeys { it.startsWith("repeat-") },
+                            cleared.filterKeys { it.startsWith("repeat-") })
+                        assertEquals(cleared, snapshot())
+                        assertEquals(binding, vault.read(activeProjectId(), pending.id, scope))
+                    } finally {
+                        green.fill(0)
+                        red.fill(0)
+                        blue.fill(0)
+                    }
+                } else if (repeatImageExercise) {
                     val session = JavaRosaPrivateRepeatAnswerSession(
                         context.cacheDir, binding, authorized.plan, authorized.targetXFormXml)
                     val cipher = AndroidKeyStorePrivateDraftCipher()

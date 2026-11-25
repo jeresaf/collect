@@ -78,6 +78,18 @@ internal class ProtectedMultipartSubmission(
         return requireNotNull(result)
     }
 
+    /** Only explicit successful transport can publish this acknowledgement.
+     * An ambiguous result stays unconfirmed; recovery is a separate gate. */
+    fun sendAndAcknowledge(
+        projectId: String, binding: QuarantinedWorkDraft, generation: String,
+        expectedPackageSha256: String
+    ): ProtectedSubmittedReceipt {
+        val result = send(projectId, binding, generation, expectedPackageSha256)
+        require(result == ProtectedTransportResult(201, true, binding.reservedInstanceId, expectedPackageSha256))
+        return ProtectedSubmissionReceiptStore(root, settings)
+            .recordAcknowledged(projectId, binding, generation, result)
+    }
+
     private data class Part(val name: String, val filename: String, val mime: String, val bytes: ByteArray)
 
     private fun decode(

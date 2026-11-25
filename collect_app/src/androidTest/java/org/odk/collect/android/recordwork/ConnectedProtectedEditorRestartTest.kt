@@ -1409,15 +1409,19 @@ class ConnectedProtectedEditorRestartTest {
         // credentials and the disposable debug-only CA, not a test POST stub.
         phase("POST")
         val sender = ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
-        val result = sender.send(b.projectId, b, generation, sha)
+        val receipt = sender.sendAndAcknowledge(b.projectId, b, generation, sha)
         phase("ACK")
-        assertEquals(ProtectedTransportResult(201, true, b.reservedInstanceId, sha), result)
+        assertEquals(b.reservedInstanceId, receipt.instanceId)
+        assertEquals(sha, receipt.packageSha256)
+        assertEquals(generation, receipt.generation)
+        assertFalse(receipt.canEdit || receipt.canUpload)
         assertTrue(latch.isFile && latch.length() > 30)
         val latchBefore = latch.readBytes()
         phase("RECONCILE")
         val after = remote.load(b.projectId)
         val child = after.records.single { it.instanceId == b.reservedInstanceId }
         assertNotEquals(b.sourceSubmissionId, child.submissionId)
+        assertEquals(receipt.submissionId, child.submissionId)
         assertEquals(b.targetFormVersionId, child.formVersionId)
         assertEquals(original.formId, child.formId)
         assertEquals(before.records.toSet() + child, after.records.toSet())
@@ -1452,6 +1456,10 @@ class ConnectedProtectedEditorRestartTest {
             it.write(oracle.toString().toByteArray(Charsets.UTF_8))
             it.fd.sync()
         }
+        val receiptFile = File(state.area, "submitted-receipt.aesgcm")
+        assertTrue(receiptFile.isFile)
+        assertEquals(receipt, ProtectedSubmissionReceiptStore(root, state.settings).reopen(b.projectId, b))
+        state.evidence.setProperty("receiptDigest", digest(receiptFile.readBytes()))
         state.evidence.setProperty("submittedChild", child.submissionId)
         state.evidence.setProperty("attemptDigest", digest(latchBefore))
         state.evidence.setProperty("submittedPid", android.os.Process.myPid().toString())
@@ -1459,6 +1467,61 @@ class ConnectedProtectedEditorRestartTest {
             state.evidence.store(it, "Synthetic submitted observation identity")
             it.fd.sync()
         }
+    }
+
+    @Test
+    fun submittedReceiptRecoversAfterForceStopAndRejectsCorruption() {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        assertNotEquals(state.required("submittedPid"), android.os.Process.myPid().toString())
+        val store = ProtectedSubmissionReceiptStore(root, state.settings)
+        val file = File(state.area, "submitted-receipt.aesgcm")
+        val attempt = File(state.area, "submission-attempt.aesgcm")
+        val envelope = File(state.area, "finalized-" + state.required("generation") + ".aesgcm")
+        val original = file.readBytes()
+        val latch = attempt.readBytes()
+        val sealed = envelope.readBytes()
+        assertEquals(state.required("receiptDigest"), digest(original))
+        val r = store.reopen(b.projectId, b)
+        assertEquals(state.required("submittedChild"), r.submissionId)
+        assertEquals(state.required("generation"), r.generation)
+        assertEquals(state.required("packageDigest"), r.packageSha256)
+        assertEquals(state.required("attemptDigest"), r.attemptSha256)
+        assertEquals(state.required("finalizedDigest"), r.ciphertextSha256)
+        assertFalse(r.canEdit || r.canUpload)
+        assertTrue(runCatching { store.reopen(b.projectId, b.copy(actorContextSha256 = "0".repeat(64))) }.isFailure)
+        for (target in listOf(file, attempt, envelope)) {
+            val bytes = target.readBytes()
+            val corrupted = bytes.copyOf().apply { this[lastIndex] = (this[lastIndex].toInt() xor 1).toByte() }
+            target.writeBytes(corrupted)
+            try {
+                assertTrue(runCatching { store.reopen(b.projectId, b) }.isFailure)
+                assertArrayEquals(corrupted, target.readBytes())
+            } finally { target.writeBytes(bytes) }
+        }
+        val missing = File(state.area, ".ci-receipt-held")
+        assertTrue(file.renameTo(missing))
+        try { assertTrue(runCatching { store.reopen(b.projectId, b) }.isFailure) }
+        finally { assertTrue(missing.renameTo(file)) }
+        assertEquals(r, store.reopen(b.projectId, b))
+        // READY-authorized edit/finalize/send must fail for completed work.
+        assertTrue(runCatching {
+            ProtectedNativeRepeatImageProbe(state.context.cacheDir, root, state.settings)
+                .saveDirectText(b.projectId, b, mapOf("/data/household_name" to "Synthetic prohibited edit"))
+        }.isFailure)
+        assertTrue(runCatching {
+            ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+                .reopenFinalizedPackage(b.projectId, b, r.generation)
+        }.isFailure)
+        assertTrue(runCatching {
+            ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
+                .send(b.projectId, b, r.generation, r.packageSha256)
+        }.isFailure)
+        assertArrayEquals(original, file.readBytes())
+        assertArrayEquals(latch, attempt.readBytes())
+        assertArrayEquals(sealed, envelope.readBytes())
+        assertEquals(state.required("pointerDigest"), digest(File(state.area, "current.aesgcm").readBytes()))
     }
 
     private fun verifyRestart(phase: (String) -> Unit) {

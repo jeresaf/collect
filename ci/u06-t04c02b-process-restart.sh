@@ -212,3 +212,8 @@ run_one actualFinalizedMultipartCreatesIndependentLinkedObservation "$restart_cl
 adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
 python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
 echo "U06-T04E-05C: actual Android HTTPS finalized submission and independent PostgreSQL exact-byte/link verification PASS."
+
+# Actual force-stop and independent online receipt readback, no second POST.
+adb shell am force-stop "$APP_ID"
+run_one submittedReceiptRecoversAfterForceStopAndRejectsCorruption "$restart_class"
+echo "U06-T04E-05D: authenticated durable submitted receipt, actual restart, corruption and edit/replay denial PASS."

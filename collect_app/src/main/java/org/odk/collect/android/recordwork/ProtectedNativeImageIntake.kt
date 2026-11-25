@@ -20,11 +20,18 @@ internal class ProtectedNativeImageIntake(
         noBackupRoot, AndroidKeyStorePrivateDraftCipher()
     )
 
-    fun inspect(projectId: String, binding: QuarantinedWorkDraft, path: String):
-        ProtectedNativeControllerEvidence =
+    fun inspect(
+        projectId: String,
+        binding: QuarantinedWorkDraft,
+        path: String,
+        requireAsset: Boolean = false
+    ): ProtectedNativeControllerEvidence =
         probe.inspect(projectId, binding, directImagePath = path).also {
             require(it.directImagePath == path && it.nativeImageReferenceVerified &&
                 !it.canSave && !it.canFinalize && !it.canUpload)
+            require(!requireAsset || it.directImageReceipt != null) {
+                "An authenticated staged image is required"
+            }
         }
 
     fun importSelectedImage(
@@ -38,7 +45,7 @@ internal class ProtectedNativeImageIntake(
         val receipt = store.importSelectedImage(binding, path, listOf(path), mime, input)
         // Never delete a successful encrypted replacement on a subsequent
         // network/readback failure; it remains quarantined for reauthorization.
-        require(inspect(projectId, binding, path).directImageReceipt == receipt) {
+        require(inspect(projectId, binding, path, requireAsset = true).directImageReceipt == receipt) {
             "Protected image failed native readback"
         }
         receipt

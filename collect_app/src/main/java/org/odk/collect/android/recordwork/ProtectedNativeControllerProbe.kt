@@ -448,7 +448,15 @@ internal class ProtectedNativeControllerProbe(
                     require(controller.answerQuestion(index, StringData(token)) ==
                         FormEntryController.ANSWER_OK &&
                         controller.getAnswer(ref)?.value == token)
-                    require(!File(folder, token).exists())
+                    // Leave and revisit the same native question, retaining
+                    // only its RAM reference. No attachment is materialized.
+                    controller.stepToPreviousEvent()
+                    require(controller.getFormIndex() != index)
+                    require(controller.jumpToIndex(index) == FormEntryController.EVENT_QUESTION &&
+                        controller.getAnswer(ref)?.value == token) {
+                        "Native image reference was lost during navigation"
+                    }
+                    require(folder.walkTopDown().none { it.isFile && it.name == token })
                     require(controller.answerQuestion(index, null) ==
                         FormEntryController.ANSWER_OK &&
                         controller.getAnswer(ref)?.value.let { it == null || it == "" }) {

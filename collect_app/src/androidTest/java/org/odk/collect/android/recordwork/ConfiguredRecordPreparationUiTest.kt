@@ -843,6 +843,10 @@ class ConfiguredRecordPreparationUiTest {
                 val firstPhoto = jpeg(android.graphics.Color.RED)
                 val secondPhoto = jpeg(android.graphics.Color.BLUE)
                 assertEquals(null, media.inspect(activeProjectId(), binding, photo).directImageReceipt)
+                assertTrue(runCatching {
+                    media.inspect(activeProjectId(), binding, photo, requireAsset = true)
+                }.isFailure)
+                assertEquals(originalFiles, snapshot())
                 val firstReceipt = media.importSelectedImage(
                     activeProjectId(), binding, photo, "image/jpeg", firstPhoto.inputStream()
                 )
@@ -873,7 +877,9 @@ class ConfiguredRecordPreparationUiTest {
                 assertEquals(QuarantinedPrivateImageStore.digest(secondPhoto), secondReceipt.sha256)
                 assertFalse(firstReceipt.sha256 == secondReceipt.sha256)
                 assertFalse(firstCipher.contentEquals(slot.readBytes()))
-                val reread = media.inspect(activeProjectId(), binding, photo)
+                val beforeRevisit = snapshot()
+                val reread = media.inspect(activeProjectId(), binding, photo, requireAsset = true)
+                assertEquals(beforeRevisit, snapshot())
                 assertEquals(secondReceipt, reread.directImageReceipt)
                 assertTrue(reread.nativeImageReferenceVerified)
                 assertFalse(reread.canUpload)
@@ -883,12 +889,42 @@ class ConfiguredRecordPreparationUiTest {
                 assertEquals(true, store.withVerifiedImage(binding, photo, listOf(photo)) {
                     receipt, bytes -> receipt == secondReceipt && bytes.contentEquals(secondPhoto)
                 })
+                // Exercise a second supported format on the canonical intake
+                // bridge, not a separate direct-store implementation.
+                val pngBitmap = android.graphics.Bitmap.createBitmap(
+                    16, 16, android.graphics.Bitmap.Config.ARGB_8888)
+                val png = try {
+                    pngBitmap.eraseColor(android.graphics.Color.GREEN)
+                    java.io.ByteArrayOutputStream().use { output ->
+                        assertTrue(pngBitmap.compress(
+                            android.graphics.Bitmap.CompressFormat.PNG, 100, output))
+                        output.toByteArray()
+                    }
+                } finally {
+                    pngBitmap.recycle()
+                }
+                val pngReceipt = media.importSelectedImage(
+                    activeProjectId(), binding, photo, "image/png", png.inputStream()
+                )
+                assertEquals(QuarantinedPrivateImageStore.digest(png), pngReceipt.sha256)
+                assertTrue(pngReceipt.sha256 != secondReceipt.sha256)
+                val pngSnapshot = snapshot()
+                assertEquals(pngReceipt, media.inspect(
+                    activeProjectId(), binding, photo, requireAsset = true).directImageReceipt)
+                assertEquals(pngSnapshot, snapshot())
+                assertEquals(true, store.withVerifiedImage(binding, photo, listOf(photo)) {
+                    receipt, bytes -> receipt == pngReceipt && bytes.contentEquals(png)
+                })
                 media.clear(activeProjectId(), binding, photo)
                 assertFalse(slot.exists())
                 assertEquals(null, media.inspect(activeProjectId(), binding, photo).directImageReceipt)
+                assertTrue(runCatching {
+                    media.inspect(activeProjectId(), binding, photo, requireAsset = true)
+                }.isFailure)
                 assertEquals(originalFiles, snapshot())
                 firstPhoto.fill(0)
                 secondPhoto.fill(0)
+                png.fill(0)
                 assertFalse(evidence.canSave)
                 assertFalse(evidence.canFinalize)
                 assertFalse(evidence.canUpload)

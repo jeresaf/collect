@@ -846,6 +846,32 @@ class ConfiguredRecordPreparationUiTest {
                         assertEquals(afterAdd.filterKeys { it.startsWith("repeat-image-") },
                             editedSnapshot.filterKeys { it.startsWith("repeat-image-") })
                         assertEquals(binding, vault.read(activeProjectId(), pending.id, scope))
+                        // Test-only restart oracle: UUIDs and digests, not
+                        // plaintext names, image bytes, tokens or credentials.
+                        val marker = java.io.File(context.noBackupFilesDir,
+                            "u06-combined-repeat-restart.properties")
+                        assertFalse(marker.exists())
+                        val checkpoint = java.util.Properties().apply {
+                            setProperty("pid", android.os.Process.myPid().toString())
+                            setProperty("project", binding.projectId)
+                            setProperty("work", binding.workId)
+                            setProperty("reserved", binding.reservedInstanceId)
+                            setProperty("archived", first.rowId)
+                            setProperty("survivor", second.rowId)
+                            setProperty("blank", third.rowId)
+                            setProperty("answerDigest", digest(editedName))
+                            setProperty("imageDigest", b.sha256)
+                            setProperty("pendingDigest", digest(
+                                connectedClient().load(project).pendingWork.map { it.id }
+                                    .sorted().joinToString("\n")))
+                            editedSnapshot.forEach { (file, hash) ->
+                                setProperty("file." + file, hash)
+                            }
+                        }
+                        java.io.FileOutputStream(marker).use {
+                            checkpoint.store(it, "Synthetic combined restart: identifiers and digests only")
+                            it.fd.sync()
+                        }
                     } finally {
                         red.fill(0)
                         blue.fill(0)

@@ -46,6 +46,134 @@ class ConnectedProtectedEditorRestartTest {
         }
     }
 
+    @Test
+    fun combinedRepeatDraftRecoversAfterForceStop() {
+        var phase = "CHECKPOINT"
+        try {
+            verifyCombinedRepeatRestart { phase = it }
+        } catch (failure: AssertionError) {
+            throw AssertionError("U06_RESTART_FAILURE phase=$phase kind=AssertionError")
+        } catch (failure: Exception) {
+            val kind = when (failure) {
+                is PreparationException -> "PreparationException"
+                is ReadOnlyRecordException -> "ReadOnlyRecordException"
+                is IllegalStateException -> "IllegalStateException"
+                is IllegalArgumentException -> "IllegalArgumentException"
+                is java.io.IOException -> "IOException"
+                is SecurityException -> "SecurityException"
+                else -> "OtherException"
+            }
+            throw AssertionError("U06_RESTART_FAILURE phase=$phase kind=$kind")
+        }
+    }
+
+    private fun verifyCombinedRepeatRestart(phase: (String) -> Unit) {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val marker = File(context.noBackupFilesDir, "u06-combined-repeat-restart.properties")
+        assertTrue(marker.isFile)
+        val evidence = Properties().apply { marker.inputStream().use { load(it) } }
+        fun required(key: String) = requireNotNull(evidence.getProperty(key))
+        val project = required("project")
+        val work = required("work")
+        val survivor = required("survivor")
+        val archived = required("archived")
+        val blank = required("blank")
+        assertEquals(3, setOf(survivor, archived, blank).size)
+        assertNotEquals(required("pid"), android.os.Process.myPid().toString())
+
+        phase("PERSISTED_PROJECT")
+        val component = DaggerUtils.getComponent(context)
+        val settings = component.settingsProvider()
+        assertEquals(project, settings.getMetaSettings().getString(
+            org.odk.collect.settings.keys.MetaKeys.CURRENT_PROJECT_ID))
+        assertEquals(project, component.projectsRepository().get(project)?.uuid)
+        phase("PROJECT_RESTORE")
+        ActivityScenario.launch(
+            org.odk.collect.android.mainmenu.MainMenuActivity::class.java
+        ).use { menu ->
+            menu.onActivity {
+                assertEquals(project, component.currentProjectProvider().getCurrentProject().value?.uuid)
+            }
+        }
+        phase("ACTOR_SCOPE")
+        val values = settings.getUnprotectedSettings(project)
+        val scope = QuarantinedWorkDraftVault.sha256(
+            project + "\n" + RecordWorkApiPaths.fromProjectUrl(
+                values.getString(ProjectKeys.KEY_SERVER_URL).orEmpty()
+            ).records() + "\n" + values.getString(ProjectKeys.KEY_USERNAME).orEmpty()
+        )
+        phase("BINDING")
+        val vault = QuarantinedWorkDraftVault(context.noBackupFilesDir)
+        val binding = requireNotNull(vault.read(project, work, scope))
+        assertEquals(required("reserved"), binding.reservedInstanceId)
+        assertEquals("81000000-0000-4000-8000-000000000007", binding.sourceSubmissionId)
+        assertEquals("81000000-0000-4000-8000-000000000020", binding.targetFormVersionId)
+        assertEquals(RecordWorkType.FOLLOW_UP, binding.workType)
+        assertEquals(0, binding.validationTransfers)
+        assertFalse(binding.canOpenEditor)
+        assertFalse(binding.canFinalize)
+        assertFalse(binding.canUpload)
+        phase("CIPHERTEXT")
+        val dir = File(File(File(context.noBackupFilesDir,
+            QuarantinedWorkDraftVault.VAULT_DIRECTORY), project), work)
+        fun snapshot() = dir.walkTopDown().filter { it.isFile }.associate {
+            it.relativeTo(dir).path to digest(it.readBytes())
+        }
+        val expected = evidence.stringPropertyNames().filter { it.startsWith("file.") }
+            .associate { it.removePrefix("file.") to required(it) }
+        assertTrue(expected.keys.count { it.startsWith("repeat-answer-") } == 2)
+        assertTrue(expected.keys.count { it.startsWith("repeat-image-") } == 2)
+        assertEquals(expected, snapshot())
+
+        phase("LIVE_READY")
+        val client = RecordWorkReadOnlyClient(settings)
+        val pending = client.load(project).pendingWork
+        assertTrue(pending.any { it.id == work })
+        assertEquals(required("pendingDigest"), QuarantinedWorkDraftVault.sha256(
+            pending.map { it.id }.sorted().joinToString("\n")))
+        val authorized = RecordWorkPreparationClient(settings)
+            .authorizePrivateTextForm(project, binding)
+        val session = JavaRosaPrivateRepeatAnswerSession(
+            context.cacheDir, binding, authorized.plan, authorized.targetXFormXml)
+        val group = session.schema.groups.single()
+        val path = group.imagePaths.single()
+        val answerPath = group.fields.single().path
+        val cipher = AndroidKeyStorePrivateDraftCipher()
+        val rows = QuarantinedRepeatRowVault(context.noBackupFilesDir, cipher)
+        val answers = QuarantinedRepeatAnswerStore(context.noBackupFilesDir, cipher, rows)
+        val images = QuarantinedRepeatImageStore(context.noBackupFilesDir, cipher, rows)
+        phase("EDITOR_REOPEN")
+        val inventory = rows.read(binding, session.schema)
+        assertEquals(listOf(survivor, blank), inventory.active(group.path).map { it.rowId })
+        assertTrue(inventory.rows.single { it.rowId == archived }.isArchived)
+        assertTrue(runCatching { answers.read(binding, session, archived) }.isFailure)
+        assertTrue(runCatching { images.receipt(binding, session, archived, path) }.isFailure)
+        assertFalse(answers.read(binding, session, blank).hasSavedAnswers)
+        assertNull(images.receipt(binding, session, blank, path))
+        val recovered = ProtectedNativeRepeatImageProbe(
+            context.cacheDir, context.noBackupFilesDir, settings).inspectCombined(project, binding)
+        assertEquals(mapOf((survivor to path) to 0), recovered.imageOrdinals)
+        assertEquals(mapOf(survivor to mapOf(answerPath to required("answerDigest"))),
+            recovered.savedRowAnswerDigests)
+        val recoveredAnswer = answers.read(binding, session, survivor)
+        assertTrue(recoveredAnswer.hasSavedAnswers)
+        assertEquals(required("answerDigest"), QuarantinedWorkDraftVault.sha256(
+            requireNotNull(recoveredAnswer.values[answerPath])))
+        assertEquals(true, images.withVerifiedImage(binding, session, survivor, path) { receipt, bytes ->
+            receipt.sha256 == required("imageDigest") && digest(bytes) == required("imageDigest")
+        })
+
+        phase("POSTCONDITIONS")
+        assertEquals(expected, snapshot())
+        assertEquals(binding, vault.read(project, work, scope))
+        assertEquals(pending.map { it.id }.toSet(), client.load(project).pendingWork.map { it.id }.toSet())
+        assertFalse(context.cacheDir.listFiles().orEmpty().any {
+            it.name.startsWith("recordwork-repeat-answers-") ||
+                it.name.startsWith("recordwork-repeat-")
+        })
+        assertTrue(marker.delete())
+    }
+
     private fun verifyRestart(phase: (String) -> Unit) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

@@ -131,3 +131,9 @@ PGPASSWORD=synthetic-ci-only psql -v ON_ERROR_STOP=1 -h 127.0.0.1 \
 adb shell pm clear "$APP_ID" >/dev/null
 run_one reviewedRepeatImagesRetainUuidAcrossArchiveAndOrdinalChange "$ui_class"
 echo "U06-T04E-03C5C: repeat UUID image association and ordinal compaction PASS."
+
+# No pm clear, APK reinstall or project recreation between these two phases.
+adb shell am force-stop "$APP_ID"
+run_one combinedRepeatDraftRecoversAfterForceStop \
+  org.odk.collect.android.recordwork.ConnectedProtectedEditorRestartTest
+echo "U06-T04E-03C6B: combined repeat answers and images recovered after force-stop; ciphertext and READY work unchanged."

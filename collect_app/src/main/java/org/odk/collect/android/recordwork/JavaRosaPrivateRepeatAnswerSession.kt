@@ -198,6 +198,89 @@ class JavaRosaPrivateRepeatAnswerSession(
         }
     }
 
+    /**
+     * RAM-only binary reference verification on the exact native repeat
+     * multiplicity. The caller must hold the inventory lock and provide
+     * receipts authenticated by the UUID-scoped encrypted image store.
+     * Never persist or expose the logical native filenames.
+     */
+    internal fun verifyImageReferences(
+        inventory: ProtectedRepeatInventory,
+        receipts: Map<Pair<String, String>, ProtectedRepeatImageReceipt>
+    ): Map<Pair<String, String>, Int> = withNativeTarget { form ->
+        require(schema.groups.size == 1)
+        val group = schema.groups.single()
+        val active = inventory.active(group.path)
+        require(active.isNotEmpty() && group.imagePaths.isNotEmpty())
+        require(receipts.keys.all { (id, path) ->
+            active.any { it.rowId == id } && path in group.imagePaths
+        })
+        val root = form.instance.root.name
+        val name = group.path.substringAfterLast('/')
+        require(group.path == "/$root/$name")
+        val templateRef = TreeReference.rootRef().apply {
+            add(root, 0)
+            add(name, TreeReference.INDEX_TEMPLATE)
+        }
+        val template = requireNotNull(form.instance.resolveReference(templateRef))
+        val initial = form.instance.root.getChildrenWithName(name).orEmpty()
+            .filter { it.mult != TreeReference.INDEX_TEMPLATE }
+        require(initial.size <= 1 && initial.all { it.mult == 0 })
+        val references = linkedMapOf<Pair<String, String>, Pair<TreeReference, String?>>()
+        val ordinals = linkedMapOf<Pair<String, String>, Int>()
+        for ((ordinal, row) in active.withIndex()) {
+            val rowRef = TreeReference.rootRef().apply {
+                add(root, 0)
+                add(name, ordinal)
+            }
+            val node = if (ordinal == 0 && initial.size == 1) initial.single()
+                else form.instance.copyNode(template, rowRef)
+            require(node.mult == ordinal && node.numChildren ==
+                group.fields.size + group.imagePaths.size)
+            require((0 until node.numChildren).all { node.getChildAt(it).value == null })
+            for (path in group.imagePaths) {
+                val key = row.rowId to path
+                val leaf = TreeReference.rootRef().apply {
+                    add(root, 0)
+                    add(name, ordinal)
+                    add(path.substringAfterLast('/'), 0)
+                }
+                val field = requireNotNull(form.instance.resolveReference(leaf))
+                require(field.isLeaf &&
+                    field.dataType == org.javarosa.core.model.Constants.DATATYPE_BINARY &&
+                    field.value == null)
+                val receipt = receipts[key]
+                val token = receipt?.let {
+                    require(it.rowId == row.rowId && it.fieldPath == path &&
+                        !it.canFinalize && !it.canUpload)
+                    "protected-" + QuarantinedWorkDraftVault.sha256(
+                        binding.reservedInstanceId + "\n" + row.rowId + "\n" +
+                            path + "\n" + it.sha256
+                    )
+                }
+                if (token != null) {
+                    form.setValue(StringData(token), leaf, true)
+                    ordinals[key] = ordinal
+                }
+                references[key] = leaf to token
+            }
+        }
+        require(form.instance.root.getChildrenWithName(name).orEmpty()
+            .count { it.mult != TreeReference.INDEX_TEMPLATE } == active.size)
+        require(references.values.mapNotNull { it.second }.toSet().size == receipts.size)
+        // Read all rows after all writes, not just immediately after a write.
+        for ((leaf, token) in references.values) {
+            require(form.instance.resolveReference(leaf)?.value?.value == token)
+        }
+        // Clearing these temporary references cannot touch encrypted assets.
+        for ((leaf, token) in references.values) {
+            if (token != null) form.setValue(null, leaf, true)
+            require(form.instance.resolveReference(leaf)?.value == null)
+        }
+        require(ordinals.keys == receipts.keys)
+        ordinals.toMap()
+    }
+
     private fun parse(type: PrivateScalarType, raw: String): Pair<IAnswerData, String> =
         when (type) {
             PrivateScalarType.TEXT -> StringData(raw) to raw

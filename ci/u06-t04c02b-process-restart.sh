@@ -124,3 +124,10 @@ PGPASSWORD=synthetic-ci-only psql -v ON_ERROR_STOP=1 -h 127.0.0.1 \
 adb shell pm clear "$APP_ID" >/dev/null
 run_one reviewedConditionalFollowUpValidatesNativeRelevanceAndCalculations "$ui_class"
 echo "U06-T04E-03C4: reviewed conditional target native validation PASS."
+
+# Qualify a repeat-only media form after all existing target catalog gates.
+PGPASSWORD=synthetic-ci-only psql -v ON_ERROR_STOP=1 -h 127.0.0.1 \\
+  -U odk_user -d odk_platform -f ci/u06-t04e03c5c-repeat-image-form.sql
+adb shell pm clear "$APP_ID" >/dev/null
+run_one reviewedRepeatImagesRetainUuidAcrossArchiveAndOrdinalChange "$ui_class"
+echo "U06-T04E-03C5C: repeat UUID image association and ordinal compaction PASS."

@@ -563,9 +563,33 @@ class ConfiguredRecordPreparationUiTest {
         reviewAndStageFollowUp(project, pending, openEditor = false, conditionalExercise = true)
     }
 
+    @Test
+    fun reviewedRepeatImagesRetainUuidAcrossArchiveAndOrdinalChange() {
+        rule.startAtFirstLaunch()
+            .clickManuallyEnterProjectDetails()
+            .inputUrl("https://10.0.2.2:8443/v1/projects/81000000-0000-4000-8000-000000000001")
+            .inputUsername("u06-connected-owner")
+            .inputPassword("u06-disposable-only")
+            .addProject()
+        val project = "81000000-0000-4000-8000-000000000001"
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val client = RecordWorkPreparationClient(DaggerUtils.getComponent(context).settingsProvider())
+        val target = "81000000-0000-4000-8000-000000000020"
+        assertTrue(client.targets(activeProjectId(), source, RecordWorkType.FOLLOW_UP)
+            .any { it.targetFormVersionId == target && it.version == "4" })
+        val created = client.create(activeProjectId(), NewRecordWork(
+            source, target, RecordWorkType.FOLLOW_UP,
+            "u06-repeat-image-request-" + UUID.randomUUID(),
+            "u06-repeat-image-" + UUID.randomUUID()
+        ))
+        val pending = connectedClient().load(project).pendingWork.single { it.id == created.id }
+        reviewAndStageFollowUp(project, pending, openEditor = false, repeatImageExercise = true)
+    }
+
     private fun reviewAndStageFollowUp(
         project: String, pending: RemoteVisitWork, openEditor: Boolean,
-        conditionalExercise: Boolean = false
+        conditionalExercise: Boolean = false,
+        repeatImageExercise: Boolean = false
     ) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val before = connectedClient().load(project)
@@ -716,7 +740,76 @@ class ConfiguredRecordPreparationUiTest {
                 val probe = ProtectedNativeControllerProbe(
                     context.cacheDir, context.noBackupFilesDir, settings
                 )
-                if (conditionalExercise) {
+                if (repeatImageExercise) {
+                    val session = JavaRosaPrivateRepeatAnswerSession(
+                        context.cacheDir, binding, authorized.plan, authorized.targetXFormXml)
+                    val cipher = AndroidKeyStorePrivateDraftCipher()
+                    val rows = QuarantinedRepeatRowVault(context.noBackupFilesDir, cipher)
+                    val images = QuarantinedRepeatImageStore(context.noBackupFilesDir, cipher, rows)
+                    val native = ProtectedNativeRepeatImageProbe(
+                        context.cacheDir, context.noBackupFilesDir, settings)
+                    val group = session.schema.groups.single()
+                    val path = group.imagePaths.single()
+                    assertEquals("/data/members/photo", path)
+                    val first = rows.addRow(binding, session.schema, group.path, UUID.randomUUID().toString())
+                    val second = rows.addRow(binding, session.schema, group.path, UUID.randomUUID().toString())
+                    assertTrue(first.rowId != second.rowId)
+                    fun png(color: Int): ByteArray {
+                        val bitmap = android.graphics.Bitmap.createBitmap(
+                            16, 16, android.graphics.Bitmap.Config.ARGB_8888)
+                        return try {
+                            bitmap.eraseColor(color)
+                            java.io.ByteArrayOutputStream().use { output ->
+                                assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,
+                                    100, output))
+                                output.toByteArray()
+                            }
+                        } finally { bitmap.recycle() }
+                    }
+                    val red = png(android.graphics.Color.RED)
+                    val blue = png(android.graphics.Color.BLUE)
+                    try {
+                        val a = images.importSelectedImage(binding, session, first.rowId,
+                            path, "image/png", red.inputStream())
+                        val b = images.importSelectedImage(binding, session, second.rowId,
+                            path, "image/png", blue.inputStream())
+                        assertTrue(a.sha256 != b.sha256)
+                        val dir = java.io.File(java.io.File(java.io.File(
+                            context.noBackupFilesDir, QuarantinedWorkDraftVault.VAULT_DIRECTORY),
+                            binding.projectId), binding.workId)
+                        fun snapshot() = dir.walkTopDown().filter { it.isFile }.associate {
+                            it.relativeTo(dir).path to QuarantinedPrivateImageStore.digest(it.readBytes())
+                        }
+                        val before = snapshot()
+                        assertEquals(mapOf((first.rowId to path) to 0, (second.rowId to path) to 1),
+                            native.inspect(activeProjectId(), binding))
+                        assertEquals(before, snapshot())
+                        rows.archiveRow(binding, session.schema, first.rowId, UUID.randomUUID().toString())
+                        val afterArchive = snapshot()
+                        assertTrue(runCatching {
+                            images.receipt(binding, session, first.rowId, path)
+                        }.isFailure)
+                        assertEquals(mapOf((second.rowId to path) to 0),
+                            native.inspect(activeProjectId(), binding))
+                        assertEquals(true, images.withVerifiedImage(binding, session, second.rowId, path) {
+                            receipt, bytes -> receipt == b && bytes.contentEquals(blue)
+                        })
+                        assertEquals(afterArchive, snapshot())
+                        val third = rows.addRow(binding, session.schema, group.path, UUID.randomUUID().toString())
+                        assertTrue(third.rowId !in setOf(first.rowId, second.rowId))
+                        assertEquals(null, images.receipt(binding, session, third.rowId, path))
+                        val afterAdd = snapshot()
+                        assertEquals(mapOf((second.rowId to path) to 0),
+                            native.inspect(activeProjectId(), binding))
+                        assertEquals(afterAdd, snapshot())
+                        assertEquals(before.filterKeys { it.startsWith("repeat-image-") },
+                            afterAdd.filterKeys { it.startsWith("repeat-image-") })
+                        assertEquals(binding, vault.read(activeProjectId(), pending.id, scope))
+                    } finally {
+                        red.fill(0)
+                        blue.fill(0)
+                    }
+                } else if (conditionalExercise) {
                     val dir = java.io.File(java.io.File(java.io.File(
                         context.noBackupFilesDir, QuarantinedWorkDraftVault.VAULT_DIRECTORY),
                         binding.projectId), binding.workId)

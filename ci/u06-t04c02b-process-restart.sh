@@ -144,3 +144,17 @@ PGPASSWORD=synthetic-ci-only psql -v ON_ERROR_STOP=1 -h 127.0.0.1 \
 adb shell pm clear "$APP_ID" >/dev/null
 run_one reviewedMixedDraftRebuildsDirectAndRepeatAnswersAndImages "$ui_class"
 echo "U06-T04E-03C6C: direct and repeat scalars and binary references rebuilt together PASS."
+
+# D2: terminate the app within the validated-candidate hook, before pointer publication.
+# Never print raw instrumentation output. The next phase requires an actual
+# durable pre-kill checkpoint, distinct PID and an abandoned candidate.
+adb shell am force-stop "$APP_ID"
+restart_class=org.odk.collect.android.recordwork.ConnectedProtectedEditorRestartTest
+interrupted="$(timeout 120s adb shell am instrument -w -e class "${restart_class}#terminateProcessBeforeCombinedPublication" "$instrumentation" 2>&1)" || true
+if grep -Eq '^OK \(1 test\)|^FAILURES' <<<"$interrupted" || ! grep -Eqi 'Process crashed|INSTRUMENTATION_CODE: 0' <<<"$interrupted"; then
+  echo "::error::Expected instrumentation process termination was not observed"
+  exit 1
+fi
+adb shell am force-stop "$APP_ID"
+run_one recoverCommittedDraftAndAbandonedCandidateAfterProcessDeath "$restart_class"
+echo "U06-T04E-03C6D2: real interrupted publication recovered previous checkpoint, removed marked candidate and retried successfully."

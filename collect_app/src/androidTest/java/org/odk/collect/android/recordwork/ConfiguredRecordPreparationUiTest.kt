@@ -900,6 +900,28 @@ class ConfiguredRecordPreparationUiTest {
                         assertEquals(nextCommit, generations.reopen(activeProjectId(), binding))
                         assertEquals(cleared, snapshot())
                         assertEquals(binding, vault.read(activeProjectId(), pending.id, scope))
+                        val restartMarker = java.io.File(context.noBackupFilesDir,
+                            "u06-publication-restart.properties")
+                        assertFalse(restartMarker.exists())
+                        val checkpoint = java.util.Properties().apply {
+                            setProperty("project", binding.projectId)
+                            setProperty("work", binding.workId)
+                            setProperty("reserved", binding.reservedInstanceId)
+                            setProperty("generation", nextCommit.generation)
+                            setProperty("historical", initialCommit.generation)
+                            setProperty("oldAnswerDigest", hash(household))
+                            setProperty("survivor", b.rowId)
+                            setProperty("memberDigest", hash(memberB))
+                            setProperty("memberImageDigest", bReceipt.sha256)
+                            setProperty("pointerDigest", QuarantinedPrivateImageStore.digest(
+                                java.io.File(generationDir.parentFile, "current.aesgcm").readBytes()))
+                            setProperty("pendingDigest", hash(connectedClient().load(project)
+                                .pendingWork.map { it.id }.sorted().joinToString("\n")))
+                        }
+                        java.io.FileOutputStream(restartMarker).use {
+                            checkpoint.store(it, "Synthetic interrupted publication checkpoint")
+                            it.fd.sync()
+                        }
                     } finally {
                         green.fill(0)
                         red.fill(0)

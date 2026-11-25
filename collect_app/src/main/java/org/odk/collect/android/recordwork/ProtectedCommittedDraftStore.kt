@@ -38,15 +38,21 @@ internal class ProtectedCommittedDraftStore(
         val area = area(binding)
         val candidate = File(area, id)
         var published = false
+        var owned = false
         try {
             val captured = synchronized(lock) {
                 checkBinding(binding)
                 val previous = readPointer(binding, area)
                 require(previous?.generation == expectedGeneration) { "Stale draft generation" }
                 if (previous != null) verifiedGeneration(binding, area, previous)
+                recoverCandidates(binding, area, previous)
                 require(area.listFiles().orEmpty().count { it.isDirectory } < MAX_GENERATIONS) {
                     "Committed generation storage limit reached"
                 }
+                require(!candidate.exists() && !candidateMarker(area, id).exists())
+                writeCandidateMarker(binding, area, id)
+                check(activeCandidates.add(candidate.absolutePath))
+                owned = true
                 require(candidate.mkdir())
                 val source = work(root, binding)
                 val capturedHashes = inventory(source)
@@ -78,10 +84,19 @@ internal class ProtectedCommittedDraftStore(
                 val pointer = Pointer(id, inventoryDigest(captured))
                 writePointer(binding, area, pointer)
                 published = true
+                // If termination occurs before removing this marker, the
+                // authenticated current pointer wins during recovery.
+                candidateMarker(area, id).delete()
             }
             return ProtectedCommittedDraft(id, evidence)
         } finally {
-            if (!published && candidate.exists()) candidate.deleteRecursively()
+            if (owned) synchronized(lock) {
+                activeCandidates.remove(candidate.absolutePath)
+                if (!published) {
+                    removeCandidateTree(binding, candidate)
+                    check(candidateMarker(area, id).delete())
+                }
+            }
         }
     }
 
@@ -90,9 +105,10 @@ internal class ProtectedCommittedDraftStore(
         val area = area(binding)
         val pointer = synchronized(lock) {
             checkBinding(binding)
-            val current = readPointer(binding, area) ?: return null
-            verifiedGeneration(binding, area, current)
-            current
+            val current = readPointer(binding, area)
+            if (current != null) verifiedGeneration(binding, area, current)
+            recoverCandidates(binding, area, current)
+            current ?: return null
         }
         val evidence = ProtectedNativeRepeatImageProbe(
             scratch, File(area, pointer.generation), settings
@@ -102,6 +118,71 @@ internal class ProtectedCommittedDraftStore(
             verifiedGeneration(binding, area, pointer)
         }
         return ProtectedCommittedDraft(pointer.generation, evidence)
+    }
+
+    private fun candidateMarker(area: File, id: String): File {
+        require(UUID.fromString(id).toString() == id)
+        return File(area, ".candidate-" + id + ".aesgcm")
+    }
+
+    private fun markerAad(b: QuarantinedWorkDraft, id: String): ByteArray =
+        aad(b) + ("\nDC_UNPUBLISHED_CANDIDATE_V1\n" + id).toByteArray(Charsets.UTF_8)
+
+    private fun writeCandidateMarker(b: QuarantinedWorkDraft, area: File, id: String) {
+        val marker = candidateMarker(area, id)
+        val pending = File(area, ".marker-write-" + id)
+        require(!marker.exists() && !pending.exists())
+        try {
+            val sealed = cipher.seal(id.toByteArray(Charsets.UTF_8), markerAad(b, id))
+            FileOutputStream(pending).use { it.write(sealed); it.fd.sync() }
+            require(pending.renameTo(marker))
+        } finally {
+            if (pending.exists()) pending.delete()
+        }
+    }
+
+    /** Called only under the global component monitor, after pointer verification. */
+    private fun recoverCandidates(b: QuarantinedWorkDraft, area: File, current: Pointer?) {
+        for (marker in requireNotNull(area.listFiles())) {
+            if (!marker.name.startsWith(".candidate-")) continue
+            require(marker.name.endsWith(".aesgcm") && marker.isFile &&
+                !java.nio.file.Files.isSymbolicLink(marker.toPath()) &&
+                marker.length() in 30..1024L)
+            val id = marker.name.removePrefix(".candidate-").removeSuffix(".aesgcm")
+            require(candidateMarker(area, id) == marker)
+            val candidate = File(area, id)
+            if (candidate.absolutePath in activeCandidates) continue
+            val clear = cipher.open(marker.readBytes(), markerAad(b, id))
+            try { require(String(clear, Charsets.UTF_8) == id) }
+            finally { clear.fill(0) }
+            if (id != current?.generation) removeCandidateTree(b, candidate)
+            check(marker.delete()) { "Abandoned generation marker could not be removed" }
+        }
+    }
+
+    /** Only a marked, unpublished generation may be removed. Never traverse links. */
+    private fun removeCandidateTree(b: QuarantinedWorkDraft, candidate: File) {
+        if (!candidate.exists()) {
+            require(!java.nio.file.Files.isSymbolicLink(candidate.toPath()))
+            return
+        }
+        val expectedDirs = setOf(candidate,
+            File(candidate, QuarantinedWorkDraftVault.VAULT_DIRECTORY),
+            File(File(candidate, QuarantinedWorkDraftVault.VAULT_DIRECTORY), b.projectId),
+            work(candidate, b))
+        val leafDir = work(candidate, b)
+        val nodes = candidate.walkTopDown().onEnter { dir ->
+            require(dir in expectedDirs && dir.canonicalFile == dir.absoluteFile &&
+                !java.nio.file.Files.isSymbolicLink(dir.toPath()))
+            true
+        }.toList()
+        require(nodes.size <= MAX_FILES + 4)
+        for (node in nodes) {
+            require(!java.nio.file.Files.isSymbolicLink(node.toPath()) &&
+                (node in expectedDirs && node.isDirectory ||
+                    node.parentFile == leafDir && node.isFile && ALLOWED.matches(node.name)))
+        }
+        check(candidate.deleteRecursively()) { "Unable to remove abandoned generation" }
     }
 
     private fun authorize(projectId: String, binding: QuarantinedWorkDraft) {
@@ -198,6 +279,7 @@ internal class ProtectedCommittedDraftStore(
     ).joinToString("\n").toByteArray(Charsets.UTF_8)
 
     companion object {
+        private val activeCandidates = mutableSetOf<String>()
         private const val MAX_FILES = 256
         private const val MAX_BYTES = 64L * 1024 * 1024
         private const val MAX_GENERATIONS = 8

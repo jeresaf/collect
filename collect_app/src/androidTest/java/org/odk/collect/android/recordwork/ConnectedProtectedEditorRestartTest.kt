@@ -174,6 +174,145 @@ class ConnectedProtectedEditorRestartTest {
         assertTrue(marker.delete())
     }
 
+    private data class PublicationContext(
+        val context: android.content.Context,
+        val settings: org.odk.collect.settings.SettingsProvider,
+        val binding: QuarantinedWorkDraft,
+        val marker: File,
+        val evidence: Properties,
+        val area: File
+    ) {
+        fun required(key: String) = requireNotNull(evidence.getProperty(key))
+    }
+
+    private fun publicationContext(): PublicationContext {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val marker = File(context.noBackupFilesDir, "u06-publication-restart.properties")
+        require(marker.isFile)
+        val evidence = Properties().apply { marker.inputStream().use { load(it) } }
+        val project = requireNotNull(evidence.getProperty("project"))
+        val work = requireNotNull(evidence.getProperty("work"))
+        val component = DaggerUtils.getComponent(context)
+        val settings = component.settingsProvider()
+        assertEquals(project, settings.getMetaSettings().getString(
+            org.odk.collect.settings.keys.MetaKeys.CURRENT_PROJECT_ID))
+        assertEquals(project, component.projectsRepository().get(project)?.uuid)
+        ActivityScenario.launch(
+            org.odk.collect.android.mainmenu.MainMenuActivity::class.java
+        ).use { menu ->
+            menu.onActivity {
+                assertEquals(project, component.currentProjectProvider().getCurrentProject().value?.uuid)
+            }
+        }
+        val values = settings.getUnprotectedSettings(project)
+        val scope = QuarantinedWorkDraftVault.sha256(
+            project + "\n" + RecordWorkApiPaths.fromProjectUrl(
+                values.getString(ProjectKeys.KEY_SERVER_URL).orEmpty()
+            ).records() + "\n" + values.getString(ProjectKeys.KEY_USERNAME).orEmpty())
+        val binding = requireNotNull(QuarantinedWorkDraftVault(context.noBackupFilesDir)
+            .read(project, work, scope))
+        assertEquals(evidence.getProperty("reserved"), binding.reservedInstanceId)
+        assertEquals("81000000-0000-4000-8000-000000000021", binding.targetFormVersionId)
+        val area = File(File(File(context.noBackupFilesDir, "recordwork-committed"), project), work)
+        return PublicationContext(context, settings, binding, marker, evidence, area)
+    }
+
+    @Test
+    fun terminateProcessBeforeCombinedPublication() {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        val normal = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+        val previous = requireNotNull(normal.reopen(b.projectId, b))
+        assertEquals(state.required("generation"), previous.generation)
+        val probe = ProtectedNativeRepeatImageProbe(state.context.cacheDir, root, state.settings)
+        val changed = "Synthetic interrupted edit " + java.util.UUID.randomUUID()
+        probe.saveDirectText(b.projectId, b, mapOf("/data/household_name" to changed))
+        val working = probe.inspectCombined(b.projectId, b, true)
+        assertNotEquals(previous.evidence, working)
+        val interrupted = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings) {
+            val candidates = state.area.listFiles().orEmpty().filter {
+                it.name.startsWith(".candidate-") && it.name.endsWith(".aesgcm")
+            }
+            assertEquals(1, candidates.size)
+            val id = candidates.single().name.removePrefix(".candidate-").removeSuffix(".aesgcm")
+            assertTrue(File(state.area, id).isDirectory)
+            assertEquals(state.required("pointerDigest"),
+                digest(File(state.area, "current.aesgcm").readBytes()))
+            state.evidence.setProperty("candidate", id)
+            state.evidence.setProperty("killedPid", android.os.Process.myPid().toString())
+            state.evidence.setProperty("newAnswerDigest", QuarantinedWorkDraftVault.sha256(changed))
+            java.io.FileOutputStream(state.marker).use {
+                state.evidence.store(it, "Synthetic publication interrupted at validated candidate")
+                it.fd.sync()
+            }
+            // Do not throw an exception: finally blocks must not execute.
+            android.os.Process.killProcess(android.os.Process.myPid())
+            Thread.sleep(30_000)
+            throw AssertionError("Process termination did not occur")
+        }
+        interrupted.commit(b.projectId, b, previous.generation)
+        throw AssertionError("Interrupted commit must never return")
+    }
+
+    @Test
+    fun recoverCommittedDraftAndAbandonedCandidateAfterProcessDeath() {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        val id = state.required("candidate")
+        assertNotEquals(state.required("killedPid"), android.os.Process.myPid().toString())
+        val orphan = File(state.area, id)
+        val orphanMarker = File(state.area, ".candidate-" + id + ".aesgcm")
+        assertTrue(orphan.isDirectory && orphanMarker.isFile)
+        val pointer = File(state.area, "current.aesgcm")
+        assertEquals(state.required("pointerDigest"), digest(pointer.readBytes()))
+        fun snapshot(dir: File) = dir.walkTopDown().filter { it.isFile }.associate {
+            it.relativeTo(dir).path to digest(it.readBytes())
+        }
+        val committedDir = File(state.area, state.required("generation"))
+        val historicalDir = File(state.area, state.required("historical"))
+        val before = snapshot(committedDir)
+        val historical = snapshot(historicalDir)
+        assertTrue(before.isNotEmpty() && historical.isNotEmpty())
+        val workingDir = File(File(File(root, QuarantinedWorkDraftVault.VAULT_DIRECTORY),
+            b.projectId), b.workId)
+        val workingBefore = snapshot(workingDir)
+        val normal = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+        val recovered = requireNotNull(normal.reopen(b.projectId, b))
+        assertEquals(state.required("generation"), recovered.generation)
+        assertEquals(mapOf("/data/household_name" to state.required("oldAnswerDigest")),
+            recovered.evidence.directAnswerDigests)
+        assertEquals(mapOf(state.required("survivor") to
+            mapOf("/data/members/name" to state.required("memberDigest"))),
+            recovered.evidence.savedRowAnswerDigests)
+        assertEquals(mapOf((state.required("survivor") to "/data/members/photo") to 0),
+            recovered.evidence.imageOrdinals)
+        assertTrue(recovered.evidence.directImageDigests.isEmpty())
+        assertFalse(orphan.exists() || orphanMarker.exists())
+        assertEquals(before, snapshot(committedDir))
+        assertEquals(historical, snapshot(historicalDir))
+        assertEquals(workingBefore, snapshot(workingDir))
+        assertEquals(state.required("pointerDigest"), digest(pointer.readBytes()))
+        val probe = ProtectedNativeRepeatImageProbe(state.context.cacheDir, root, state.settings)
+        val working = probe.inspectCombined(b.projectId, b, true)
+        assertEquals(mapOf("/data/household_name" to state.required("newAnswerDigest")),
+            working.directAnswerDigests)
+        val retry = normal.commit(b.projectId, b, recovered.generation)
+        assertEquals(working, retry.evidence)
+        assertNotEquals(id, retry.generation)
+        assertEquals(retry, normal.reopen(b.projectId, b))
+        assertEquals(workingBefore, snapshot(workingDir))
+        assertEquals(before, snapshot(committedDir))
+        assertEquals(historical, snapshot(historicalDir))
+        assertFalse(b.canOpenEditor || b.canFinalize || b.canUpload)
+        val pending = RecordWorkReadOnlyClient(state.settings).load(b.projectId).pendingWork
+        assertTrue(pending.any { it.id == b.workId })
+        assertEquals(state.required("pendingDigest"), QuarantinedWorkDraftVault.sha256(
+            pending.map { it.id }.sorted().joinToString("\n")))
+        assertTrue(state.marker.delete())
+    }
+
     private fun verifyRestart(phase: (String) -> Unit) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

@@ -103,7 +103,6 @@ class EncryptedPrivateTextDraftStore(
     private val vault: QuarantinedWorkDraftVault =
         QuarantinedWorkDraftVault(noBackupRoot)
 ) {
-    @Synchronized
     fun save(
         binding: QuarantinedWorkDraft,
         validated: Map<String, String>,
@@ -171,11 +170,10 @@ class EncryptedPrivateTextDraftStore(
         true
     }
 
-    @Synchronized
     fun read(
         binding: QuarantinedWorkDraft,
         allowedPaths: List<String>
-    ): PrivateTextDraftValues {
+    ): PrivateTextDraftValues = synchronized(GLOBAL_LOCK) {
         verifyBinding(binding)
         require(allowedPaths.isNotEmpty() &&
             allowedPaths.size <= JavaRosaPrivateTextSession.MAX_FIELDS &&
@@ -184,7 +182,7 @@ class EncryptedPrivateTextDraftStore(
         }
         val file = answerFile(binding)
         if (!file.exists()) {
-            return PrivateTextDraftValues(emptyMap(), hasSavedDraft = false)
+            return@synchronized PrivateTextDraftValues(emptyMap(), hasSavedDraft = false)
         }
         require(file.isFile && !java.nio.file.Files.isSymbolicLink(file.toPath()) &&
             file.length() in 30..MAX_FILE.toLong()) {
@@ -196,7 +194,7 @@ class EncryptedPrivateTextDraftStore(
             require(answers.keys == allowedPaths.toSet()) {
                 "Draft form inventory differs from its saved version"
             }
-            return PrivateTextDraftValues(answers, hasSavedDraft = true)
+            PrivateTextDraftValues(answers, hasSavedDraft = true)
         } finally {
             clear.fill(0)
         }
@@ -283,7 +281,7 @@ class EncryptedPrivateTextDraftStore(
     }
 
     companion object {
-        private val GLOBAL_LOCK = Any()
+        private val GLOBAL_LOCK = ProtectedDraftComponentLock.monitor
         private const val MAX_PLAINTEXT = 2_100_000
         private const val MAX_FILE = 2_200_000
     }

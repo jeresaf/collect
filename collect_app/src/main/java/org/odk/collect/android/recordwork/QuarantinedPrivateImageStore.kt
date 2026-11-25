@@ -44,14 +44,13 @@ class QuarantinedPrivateImageStore(
      * source-record attachment. The stream is bounded before encryption.
      * Existing ciphertext remains untouched when any check fails.
      */
-    @Synchronized
     fun importSelectedImage(
         binding: QuarantinedWorkDraft,
         fieldPath: String,
         permittedFields: List<String>,
         claimedMime: String,
         source: InputStream
-    ): ProtectedImageReceipt {
+    ): ProtectedImageReceipt = synchronized(ProtectedDraftComponentLock.monitor) {
         requireAllowed(binding, fieldPath, permittedFields)
         require(claimedMime in MIME_TYPES) { "Unsupported private image MIME" }
         val clear = readBounded(source)
@@ -89,7 +88,7 @@ class QuarantinedPrivateImageStore(
                 } finally {
                     if (pending.exists()) pending.delete()
                 }
-                return receipt
+                receipt
             } finally {
                 bytes.fill(0)
             }
@@ -103,16 +102,15 @@ class QuarantinedPrivateImageStore(
      * consumer synchronously, then zeroes the internal byte buffer. Do not
      * retain or log the image bytes in callers.
      */
-    @Synchronized
     fun <T> withVerifiedImage(
         binding: QuarantinedWorkDraft,
         fieldPath: String,
         permittedFields: List<String>,
         consume: (ProtectedImageReceipt, ByteArray) -> T
-    ): T? {
+    ): T? = synchronized(ProtectedDraftComponentLock.monitor) {
         requireAllowed(binding, fieldPath, permittedFields)
         val file = slot(binding, fieldPath)
-        if (!file.exists()) return null
+        if (!file.exists()) return@synchronized null
         require(file.isFile && !java.nio.file.Files.isSymbolicLink(file.toPath()) &&
             file.length() in 30..MAX_CIPHER_FILE.toLong()) {
             "Corrupt protected image slot"
@@ -121,7 +119,7 @@ class QuarantinedPrivateImageStore(
         try {
             val (receipt, image) = deserialize(clear, fieldPath)
             try {
-                return consume(receipt, image)
+                consume(receipt, image)
             } finally {
                 image.fill(0)
             }
@@ -137,12 +135,11 @@ class QuarantinedPrivateImageStore(
     ): ProtectedImageReceipt? =
         withVerifiedImage(binding, fieldPath, permittedFields) { receipt, _ -> receipt }
 
-    @Synchronized
     fun clear(
         binding: QuarantinedWorkDraft,
         fieldPath: String,
         permittedFields: List<String>
-    ) {
+    ) = synchronized(ProtectedDraftComponentLock.monitor) {
         requireAllowed(binding, fieldPath, permittedFields)
         val file = slot(binding, fieldPath)
         if (file.exists()) {

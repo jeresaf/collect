@@ -832,6 +832,13 @@ class ConfiguredRecordPreparationUiTest {
                         assertEquals(mapOf((a.rowId to photo) to 0, (b.rowId to photo) to 1),
                             evidence.imageOrdinals)
                         assertEquals(before, snapshot())
+                        val generations = ProtectedCommittedDraftStore(
+                            context.cacheDir, context.noBackupFilesDir, settings)
+                        assertNull(generations.reopen(activeProjectId(), binding))
+                        val initialCommit = generations.commit(activeProjectId(), binding, null)
+                        assertEquals(evidence, initialCommit.evidence)
+                        assertEquals(initialCommit, generations.reopen(activeProjectId(), binding))
+                        assertEquals(before, snapshot())
                         rows.archiveRow(binding, session.schema, a.rowId, UUID.randomUUID().toString())
                         val archived = snapshot()
                         val survivor = combined.inspectCombined(activeProjectId(), binding, true)
@@ -854,6 +861,41 @@ class ConfiguredRecordPreparationUiTest {
                         assertEquals(survivor.imageOrdinals, afterClear.imageOrdinals)
                         assertEquals(archived.filterKeys { it.startsWith("repeat-") },
                             cleared.filterKeys { it.startsWith("repeat-") })
+                        assertEquals(cleared, snapshot())
+                        val failed = ProtectedCommittedDraftStore(
+                            context.cacheDir, context.noBackupFilesDir, settings) {
+                            throw IllegalStateException("Synthetic interruption before publication")
+                        }
+                        assertTrue(runCatching {
+                            failed.commit(activeProjectId(), binding, initialCommit.generation)
+                        }.isFailure)
+                        assertEquals(initialCommit, generations.reopen(activeProjectId(), binding))
+                        assertEquals(cleared, snapshot())
+                        val nextCommit = generations.commit(activeProjectId(), binding, initialCommit.generation)
+                        assertEquals(afterClear, nextCommit.evidence)
+                        assertNotEquals(initialCommit.generation, nextCommit.generation)
+                        assertEquals(nextCommit, generations.reopen(activeProjectId(), binding))
+                        assertTrue(runCatching {
+                            generations.commit(activeProjectId(), binding, initialCommit.generation)
+                        }.isFailure)
+                        assertEquals(nextCommit, generations.reopen(activeProjectId(), binding))
+                        assertEquals(cleared, snapshot())
+                        val generationDir = java.io.File(java.io.File(java.io.File(java.io.File(
+                            context.noBackupFilesDir, "recordwork-committed"), binding.projectId),
+                            binding.workId), nextCommit.generation)
+                        val corrupt = generationDir.walkTopDown().single {
+                            it.isFile && it.name == "private-answers.aesgcm"
+                        }
+                        val intact = corrupt.readBytes()
+                        try {
+                            val changed = intact.clone()
+                            changed[changed.lastIndex] = (changed.last().toInt() xor 1).toByte()
+                            corrupt.writeBytes(changed)
+                            assertTrue(runCatching {
+                                generations.reopen(activeProjectId(), binding)
+                            }.isFailure)
+                        } finally { corrupt.writeBytes(intact) }
+                        assertEquals(nextCommit, generations.reopen(activeProjectId(), binding))
                         assertEquals(cleared, snapshot())
                         assertEquals(binding, vault.read(activeProjectId(), pending.id, scope))
                     } finally {

@@ -337,7 +337,7 @@ class QuarantinedRepeatRowVault(
     }
 
     companion object {
-        private val GLOBAL_LOCK = Any()
+        private val GLOBAL_LOCK = ProtectedDraftComponentLock.monitor
         private const val FORMAT = 1
         const val MAX_ACTIVE_PER_GROUP = 20
         private const val MAX_STORED_ROWS = 120

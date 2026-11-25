@@ -175,3 +175,4 @@ echo "U06-T04E-03C6D3: competing publication and stale working text rejection PA
 adb shell am force-stop "$APP_ID"
 run_one finalizationEligibilityRequiresCompleteCurrentCommittedNativeModel "$restart_class"
 echo "U06-T04E-04A: strict native completeness, current generation and reserved instance identity eligibility PASS."
+echo "U06-T04E-04B: native in-memory XML serialization and independent exact-tree validation PASS."

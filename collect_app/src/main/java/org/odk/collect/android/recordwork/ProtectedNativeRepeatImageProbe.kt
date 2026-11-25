@@ -61,7 +61,8 @@ internal class ProtectedNativeRepeatImageProbe(
         projectId: String,
         binding: QuarantinedWorkDraft,
         allowMixedDirect: Boolean = false,
-        requireComplete: Boolean = false
+        requireComplete: Boolean = false,
+        onSerialized: ((ProtectedNativeXmlEvidence) -> Unit)? = null
     ): ProtectedCombinedRepeatEvidence {
         require(!requireComplete || allowMixedDirect)
         require(binding.workType == RecordWorkType.FOLLOW_UP &&
@@ -109,7 +110,7 @@ internal class ProtectedNativeRepeatImageProbe(
                 }
             }
             val ordinals = session.verifyImageReferences(
-                inventory, receipts, saved, direct, directImages, requireComplete)
+                inventory, receipts, saved, direct, directImages, requireComplete, onSerialized)
             ProtectedCombinedRepeatEvidence(ordinals, saved.mapValues { (_, values) ->
                 values.mapValues { (_, value) -> QuarantinedWorkDraftVault.sha256(value) }
             }, direct.mapValues { (_, value) -> QuarantinedWorkDraftVault.sha256(value) },

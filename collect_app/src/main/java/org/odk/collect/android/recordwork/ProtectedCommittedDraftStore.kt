@@ -143,6 +143,22 @@ internal class ProtectedCommittedDraftStore(
      */
     fun verifyFinalizationEligibility(
         projectId: String, binding: QuarantinedWorkDraft, expectedGeneration: String
+    ): ProtectedFinalizationEligibility = inspectFinalization(projectId, binding, expectedGeneration, null)
+
+    fun verifyNativeXmlSerialization(
+        projectId: String, binding: QuarantinedWorkDraft, expectedGeneration: String
+    ): ProtectedCommittedXmlEvidence {
+        var xml: ProtectedNativeXmlEvidence? = null
+        val eligibility = inspectFinalization(projectId, binding, expectedGeneration) {
+            check(xml == null)
+            xml = it
+        }
+        return ProtectedCommittedXmlEvidence(eligibility, requireNotNull(xml))
+    }
+
+    private fun inspectFinalization(
+        projectId: String, binding: QuarantinedWorkDraft, expectedGeneration: String,
+        onSerialized: ((ProtectedNativeXmlEvidence) -> Unit)?
     ): ProtectedFinalizationEligibility {
         authorize(projectId, binding)
         val area = area(binding)
@@ -159,7 +175,8 @@ internal class ProtectedCommittedDraftStore(
         val pointer = synchronized(lock) { checkCurrent() }
         val evidence = ProtectedNativeRepeatImageProbe(
             scratch, File(area, pointer.generation), settings
-        ).inspectCombined(projectId, binding, allowMixedDirect = true, requireComplete = true)
+        ).inspectCombined(projectId, binding, allowMixedDirect = true, requireComplete = true,
+            onSerialized = onSerialized)
         authorize(projectId, binding)
         synchronized(lock) { require(checkCurrent() == pointer) }
         return ProtectedFinalizationEligibility(binding.workId, pointer.generation,

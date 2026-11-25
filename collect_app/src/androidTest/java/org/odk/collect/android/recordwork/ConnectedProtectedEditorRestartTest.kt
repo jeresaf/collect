@@ -730,7 +730,28 @@ class ConnectedProtectedEditorRestartTest {
             assertTrue(pending.any { it.id == b.workId })
             assertEquals(state.required("pendingDigest"), QuarantinedWorkDraftVault.sha256(
                 pending.map { it.id }.sorted().joinToString("\n")))
-            assertTrue(state.marker.delete())
+            // Native serialization must deny stale generation and return only
+            // deterministic digest evidence for the complete current generation.
+            assertTrue(runCatching {
+                generations.verifyNativeXmlSerialization(b.projectId, b, blank.generation)
+            }.isFailure)
+            val xml = generations.verifyNativeXmlSerialization(b.projectId, b, complete.generation)
+            assertEquals(eligible, xml.eligibility)
+            assertTrue(xml.xml.xmlBytes > 0)
+            assertEquals(2, xml.xml.repeatCount)
+            assertEquals(active.map { it.rowId to group.imagePaths.single() }.toSet() +
+                ("direct" to directPath), xml.xml.mediaReferenceDigests.keys)
+            assertEquals(3, xml.xml.mediaReferenceDigests.values.toSet().size)
+            assertEquals(xml, generations.verifyNativeXmlSerialization(b.projectId, b, complete.generation))
+            assertEquals(before, snapshot(workDir))
+            assertEquals(committedBefore, snapshot(committedDir))
+            assertEquals(pointerBefore, digest(pointer.readBytes()))
+            state.evidence.setProperty("generation", complete.generation)
+            state.evidence.setProperty("xmlDigest", xml.xml.xmlSha256)
+            java.io.FileOutputStream(state.marker).use {
+                state.evidence.store(it, "Synthetic native serialization evidence")
+                it.fd.sync()
+            }
         } finally { media.forEach { it.fill(0) } }
     }
 

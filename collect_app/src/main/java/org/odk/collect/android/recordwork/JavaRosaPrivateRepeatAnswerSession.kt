@@ -211,8 +211,10 @@ class JavaRosaPrivateRepeatAnswerSession(
         savedAnswers: Map<String, Map<String, String>> = emptyMap(),
         directAnswers: Map<String, String> = emptyMap(),
         directReceipts: Map<String, ProtectedImageReceipt> = emptyMap(),
-        requireComplete: Boolean = false
+        requireComplete: Boolean = false,
+        onSerialized: ((ProtectedNativeXmlEvidence) -> Unit)? = null
     ): Map<Pair<String, String>, Int> = withNativeTarget { form ->
+        require(onSerialized == null || requireComplete)
         require(schema.groups.size == 1)
         val group = schema.groups.single()
         val active = inventory.active(group.path)
@@ -365,6 +367,41 @@ class JavaRosaPrivateRepeatAnswerSession(
             assertScalars()
             for ((leaf, token) in references.values) {
                 require(token != null && form.instance.resolveReference(leaf)?.value?.value == token)
+            }
+            if (onSerialized != null) {
+                // Native serializer from the ordinary Collect save path.
+                // This bounded gate deliberately admits only text repeat
+                // leaves until typed lexical round-trip rules are qualified.
+                require(group.fields.all { it.type == PrivateScalarType.TEXT })
+                require(form.submissionProfile == null || form.submissionProfile.ref == null)
+                val payload = org.javarosa.model.xform.XFormSerializingVisitor(false)
+                    .createSerializedPayload(form.instance) as
+                    org.javarosa.core.services.transport.payload.ByteArrayPayload
+                val bytes = payload.payloadStream.use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    try {
+                        while (true) {
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            require(output.size() + n <= 8_388_608)
+                            output.write(buffer, 0, n)
+                        }
+                        output.toByteArray()
+                    } finally { buffer.fill(0) }
+                }
+                try {
+                    val expectedDirect = directAnswers + schema.directImagePaths.associateWith {
+                        requireNotNull(references.getValue("direct" to it).second)
+                    }
+                    val expectedRows = active.map { row ->
+                        savedAnswers.getValue(row.rowId) + group.imagePaths.associateWith {
+                            requireNotNull(references.getValue(row.rowId to it).second)
+                        }
+                    }
+                    onSerialized(ProtectedNativeXmlVerifier.verify(bytes, binding, root, name,
+                        expectedDirect, expectedRows, references.mapValues { requireNotNull(it.value.second) }))
+                } finally { bytes.fill(0) }
             }
             form.setValue(null, instanceRef, true)
             require(form.instance.resolveReference(instanceRef)?.value == null)

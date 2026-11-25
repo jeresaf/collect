@@ -38,7 +38,9 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
         val binding: QuarantinedWorkDraft,
         val values: Map<String, String>,
         val activeRows: Int,
-        val committed: ProtectedCommittedDraft?
+        val committed: ProtectedCommittedDraft?,
+        val finalization: ProtectedCommittedDraftStore.FinalizationState?,
+        val eligibilityChecked: Boolean? = null
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -97,7 +99,9 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
             .read(b, session.schema).active(group.path).size
         val committed = checkpoints().reopen(project, b)
         return Display(b, session.schema.directTextPaths.associateWith { values[it].orEmpty() },
-            count, committed)
+            count, committed, committed?.let {
+                checkpoints().finalizationState(project, b, it.generation)
+            })
     }
 
     private fun clear() {
@@ -196,6 +200,57 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
                     }
                 }.show()
         }.isEnabled = state.activeRows > 0
+        val finalizationStatus = TextView(this).apply {
+            setPadding(0, 16, 0, 6)
+            setText(when (state.finalization) {
+                null -> R.string.private_finalization_checkpoint_required
+                ProtectedCommittedDraftStore.FinalizationState.DIRTY -> R.string.private_finalization_dirty
+                ProtectedCommittedDraftStore.FinalizationState.NOT_FINALIZED -> when (state.eligibilityChecked) {
+                    true -> R.string.private_finalization_eligible
+                    false -> R.string.private_finalization_ineligible
+                    null -> R.string.private_finalization_not_yet
+                }
+                ProtectedCommittedDraftStore.FinalizationState.FINALIZED -> R.string.private_finalization_complete
+            })
+        }
+        content.addView(finalizationStatus)
+        button(R.string.private_finalization_action) {
+            if (!requireSaved(state)) return@button
+            val generation = state.committed?.generation ?: return@button
+            AlertDialog.Builder(this)
+                .setTitle(R.string.private_finalization_action)
+                .setMessage(R.string.private_finalization_confirm)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    perform {
+                        require(binding() == state.binding)
+                        val result = runCatching {
+                            checkpoints().persistFinalizedPackage(project, state.binding, generation)
+                        }
+                        val reopened = load()
+                        require(reopened.committed?.generation == generation)
+                        if (result.isSuccess) {
+                            require(reopened.finalization == ProtectedCommittedDraftStore.FinalizationState.FINALIZED)
+                            reopened
+                        } else reopened.copy(eligibilityChecked = false)
+                    }
+                }.show()
+        }.isEnabled = state.finalization == ProtectedCommittedDraftStore.FinalizationState.NOT_FINALIZED
+        button(R.string.private_finalization_check) {
+            if (!requireSaved(state)) return@button
+            val generation = state.committed?.generation ?: return@button
+            // Check without writing any package; reload with fresh auth even
+            // on failure rather than displaying a possibly stale success.
+            perform {
+                require(binding() == state.binding)
+                val result = runCatching {
+                    checkpoints().verifyNativeAttachmentPackage(project, state.binding, generation)
+                }
+                val refreshed = load()
+                require(refreshed.committed?.generation == generation)
+                refreshed.copy(eligibilityChecked = result.isSuccess)
+            }
+        }.isEnabled = state.finalization == ProtectedCommittedDraftStore.FinalizationState.NOT_FINALIZED
         button(R.string.private_combined_reload) {
             if (requireSaved(state)) perform { load() }
         }

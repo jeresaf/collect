@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="private_combined_open">Open protected combined draft</string>
-    <string name="private_combined_warning">Working changes and committed checkpoints are separate. Nothing here finalizes or submits a record.</string>
+    <string name="private_combined_warning">Working changes, committed checkpoints and finalized observations are separate. Finalization stores an encrypted package only; no record is submitted.</string>
     <string name="private_combined_checking">Checking protected draft…</string>
     <string name="private_combined_denied">Protected draft unavailable. Changes may remain in the working copy. Recheck the project and server permission.</string>
     <string name="private_combined_no_checkpoint">No committed checkpoint</string>
@@ -12,4 +12,13 @@
     <string name="private_combined_publish">Commit saved working draft</string>
     <string name="private_combined_confirm">Publish a validated checkpoint of the saved working answers and photos? This does not submit the record.</string>
     <string name="private_combined_reload">Reload protected draft</string>
+    <string name="private_finalization_checkpoint_required">Finalization requires a committed checkpoint.</string>
+    <string name="private_finalization_dirty">Saved working changes are not committed. Commit them before finalization.</string>
+    <string name="private_finalization_not_yet">Not finalized. Complete all reviewed answers and photographs before finalization.</string>
+    <string name="private_finalization_eligible">Completeness and package check passed. Finalization still requires confirmation.</string>
+    <string name="private_finalization_ineligible">Finalization check did not pass. Review all answers, photographs and server permission, then retry.</string>
+    <string name="private_finalization_complete">Finalized securely on this device. Not submitted.</string>
+    <string name="private_finalization_action">Finalize observation</string>
+    <string name="private_finalization_check">Check finalization eligibility</string>
+    <string name="private_finalization_confirm">Finalize this exact committed checkpoint and store the encrypted observation and photographs? This does not submit the observation.</string>
 </resources>

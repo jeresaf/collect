@@ -913,6 +913,143 @@ class ConnectedProtectedEditorRestartTest {
         // Retain digest-only state for the graphical finalization gate.
     }
 
+    @Test
+    fun graphicalFinalizationConfirmsCurrentGeneration() {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        val store = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+        val oldId = state.required("generation")
+        val oldFile = File(state.area, "finalized-" + oldId + ".aesgcm")
+        val oldBytes = oldFile.readBytes()
+        val edited = "Synthetic graphical finalization " + java.util.UUID.randomUUID()
+        fun textVisible(activity: android.app.Activity, views: List<View>, label: Int) =
+            views.filterIsInstance<TextView>().any { it.text.toString() == activity.getString(label) }
+        fun dialog(id: Int) {
+            androidx.test.espresso.Espresso.onView(
+                androidx.test.espresso.matcher.ViewMatchers.withId(id))
+                .inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog())
+                .perform(androidx.test.espresso.action.ViewActions.click())
+        }
+        var generation = ""
+        ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+            QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+        ).use { editor ->
+            awaitUi(editor) { activity, views ->
+                if (!textVisible(activity, views, R.string.private_finalization_complete)) false
+                else {
+                    assertFalse(views.filterIsInstance<Button>().single {
+                        it.text.toString() == activity.getString(R.string.private_finalization_action)
+                    }.isEnabled)
+                    views.filterIsInstance<EditText>().single().setText(edited)
+                    true
+                }
+            }
+            clickButton(editor, R.string.private_combined_save_text)
+            awaitUi(editor) { activity, views ->
+                if (!textVisible(activity, views, R.string.private_finalization_dirty)) false
+                else {
+                    assertFalse(views.filterIsInstance<Button>().single {
+                        it.text.toString() == activity.getString(R.string.private_finalization_action)
+                    }.isEnabled)
+                    true
+                }
+            }
+            assertArrayEquals(oldBytes, oldFile.readBytes())
+            clickButton(editor, R.string.private_combined_publish)
+            dialog(android.R.id.button1)
+            awaitUi(editor) { activity, views ->
+                textVisible(activity, views, R.string.private_finalization_not_yet)
+            }
+            generation = requireNotNull(store.reopen(b.projectId, b)).generation
+            assertNotEquals(oldId, generation)
+            val file = File(state.area, "finalized-" + generation + ".aesgcm")
+            assertFalse(file.exists())
+            // Unsaved text is not eligible for any finalization action.
+            editor.onActivity { activity ->
+                val views = descendants(activity.window.decorView)
+                views.filterIsInstance<EditText>().single().setText("Unsaved synthetic answer")
+                views.filterIsInstance<Button>().single {
+                    it.text.toString() == activity.getString(R.string.private_finalization_action)
+                }.performClick()
+                assertTrue(textVisible(activity, views, R.string.private_combined_unsaved))
+                views.filterIsInstance<EditText>().single().setText(edited)
+            }
+            assertFalse(file.exists())
+            clickButton(editor, R.string.private_finalization_check)
+            awaitUi(editor) { activity, views ->
+                textVisible(activity, views, R.string.private_finalization_eligible)
+            }
+            assertFalse(file.exists())
+            clickButton(editor, R.string.private_finalization_action)
+            dialog(android.R.id.button2)
+            assertFalse(file.exists())
+            clickButton(editor, R.string.private_finalization_action)
+            dialog(android.R.id.button1)
+            awaitUi(editor) { activity, views ->
+                textVisible(activity, views, R.string.private_finalization_complete)
+            }
+            assertTrue(file.isFile)
+        }
+        val saved = store.reopenFinalizedPackage(b.projectId, b, generation)
+        assertFalse(saved.canUpload)
+        assertEquals(3, saved.evidence.packaged.attachments.size)
+        assertEquals(mapOf("/data/household_name" to QuarantinedWorkDraftVault.sha256(edited)),
+            saved.evidence.eligibility.evidence.directAnswerDigests)
+        assertArrayEquals(oldBytes, oldFile.readBytes())
+        state.evidence.setProperty("generation", generation)
+        state.evidence.setProperty("packageDigest", saved.evidence.packaged.packageSha256)
+        state.evidence.setProperty("xmlDigest", saved.evidence.packaged.xml.xmlSha256)
+        state.evidence.setProperty("finalizedDigest", saved.ciphertextSha256)
+        state.evidence.setProperty("graphicalFinalPid", android.os.Process.myPid().toString())
+        state.evidence.setProperty("pointerDigest", digest(File(state.area, "current.aesgcm").readBytes()))
+        java.io.FileOutputStream(state.marker).use {
+            state.evidence.store(it, "Synthetic graphical finalized package")
+            it.fd.sync()
+        }
+    }
+
+    @Test
+    fun graphicalFinalizedStatusRecoversAfterForceStop() {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        assertNotEquals(state.required("graphicalFinalPid"), android.os.Process.myPid().toString())
+        val id = state.required("generation")
+        val file = File(state.area, "finalized-" + id + ".aesgcm")
+        val before = file.readBytes()
+        assertEquals(state.required("finalizedDigest"), digest(before))
+        ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+            QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+        ).use { editor ->
+            awaitUi(editor) { activity, views ->
+                val ready = views.filterIsInstance<TextView>().any {
+                    it.text.toString() == activity.getString(R.string.private_finalization_complete)
+                }
+                if (ready) {
+                    assertTrue(views.filterIsInstance<TextView>().any {
+                        it.text.toString() == activity.getString(R.string.private_combined_checkpoint, id)
+                    })
+                    assertFalse(views.filterIsInstance<Button>().single {
+                        it.text.toString() == activity.getString(R.string.private_finalization_action)
+                    }.isEnabled)
+                }
+                ready
+            }
+        }
+        val saved = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+            .reopenFinalizedPackage(b.projectId, b, id)
+        assertEquals(state.required("packageDigest"), saved.evidence.packaged.packageSha256)
+        assertEquals(state.required("xmlDigest"), saved.evidence.packaged.xml.xmlSha256)
+        assertArrayEquals(before, file.readBytes())
+        assertEquals(state.required("pointerDigest"), digest(File(state.area, "current.aesgcm").readBytes()))
+        assertFalse(saved.canUpload || b.canFinalize || b.canUpload)
+        val pending = RecordWorkReadOnlyClient(state.settings).load(b.projectId).pendingWork
+        assertTrue(pending.any { it.id == b.workId })
+        assertEquals(state.required("pendingDigest"), QuarantinedWorkDraftVault.sha256(
+            pending.map { it.id }.sorted().joinToString("\n")))
+    }
+
     private fun verifyRestart(phase: (String) -> Unit) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

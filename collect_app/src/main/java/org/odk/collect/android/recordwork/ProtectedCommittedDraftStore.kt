@@ -186,6 +186,32 @@ internal class ProtectedCommittedDraftStore(
      * authorized current package and compares its complete authenticated bytes.
      * This is not independent recovery when the committed source is missing.
      */
+    internal enum class FinalizationState { DIRTY, NOT_FINALIZED, FINALIZED }
+
+    /** Current local state is authenticated; a finalized label requires full
+     * native package readback, not just the existence of a file. */
+    fun finalizationState(
+        projectId: String, binding: QuarantinedWorkDraft, generation: String
+    ): FinalizationState {
+        authorize(projectId, binding)
+        val area = area(binding)
+        val published = synchronized(lock) {
+            checkBinding(binding)
+            val current = requireNotNull(readPointer(binding, area))
+            require(current.generation == generation)
+            verifiedGeneration(binding, area, current)
+            if (inventoryDigest(inventory(work(root, binding))) != current.inventoryDigest) {
+                return FinalizationState.DIRTY
+            }
+            val file = File(area, "finalized-" + generation + ".aesgcm")
+            require(!java.nio.file.Files.isSymbolicLink(file.toPath()))
+            file.exists()
+        }
+        if (!published) return FinalizationState.NOT_FINALIZED
+        reopenFinalizedPackage(projectId, binding, generation)
+        return FinalizationState.FINALIZED
+    }
+
     fun persistFinalizedPackage(
         projectId: String, binding: QuarantinedWorkDraft, expectedGeneration: String
     ): ProtectedPersistedPackage = finalizedPackage(projectId, binding, expectedGeneration, true)

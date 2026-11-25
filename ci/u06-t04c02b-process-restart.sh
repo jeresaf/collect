@@ -184,3 +184,10 @@ run_one persistFinalizedPackageAndRejectCorruption "$restart_class"
 adb shell am force-stop "$APP_ID"
 run_one finalizedPackageRecoversAfterForceStop "$restart_class"
 echo "U06-T04E-04D: encrypted finalized package publication, corruption rejection and actual force-stop recovery PASS."
+
+# Graphical finalize/check/cancel/confirm and actual restarted UI status.
+adb shell am force-stop "$APP_ID"
+run_one graphicalFinalizationConfirmsCurrentGeneration "$restart_class"
+adb shell am force-stop "$APP_ID"
+run_one graphicalFinalizedStatusRecoversAfterForceStop "$restart_class"
+echo "U06-T04E-04E: graphical finalization confirmation, unsaved/dirty denial and restarted finalized status PASS."

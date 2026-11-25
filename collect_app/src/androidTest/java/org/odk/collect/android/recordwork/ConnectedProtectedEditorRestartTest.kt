@@ -520,7 +520,110 @@ class ConnectedProtectedEditorRestartTest {
         assertTrue(pending.any { it.id == b.workId })
         assertEquals(state.required("pendingDigest"), QuarantinedWorkDraftVault.sha256(
             pending.map { it.id }.sorted().joinToString("\n")))
-        assertTrue(state.marker.delete())
+        // Keep the same persisted work for the competing-writer gate.
+    }
+
+    @Test
+    fun competingCheckpointPublicationsRejectStaleWorkingState() {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        val normal = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+        val probe = ProtectedNativeRepeatImageProbe(state.context.cacheDir, root, state.settings)
+        val original = requireNotNull(normal.reopen(b.projectId, b))
+        assertEquals(state.required("generation"), original.generation)
+        val workDir = File(File(File(root, QuarantinedWorkDraftVault.VAULT_DIRECTORY), b.projectId), b.workId)
+        val pointer = File(state.area, "current.aesgcm")
+        fun snapshot(dir: File) = dir.walkTopDown().filter { it.isFile }.associate {
+            it.relativeTo(dir).path to digest(it.readBytes())
+        }
+        fun candidates() = state.area.listFiles().orEmpty().filter { it.name.startsWith(".candidate-") }
+        val oldPointer = digest(pointer.readBytes())
+        val oldGenerationDir = File(state.area, original.generation)
+        val oldGeneration = snapshot(oldGenerationDir)
+        val previousWorking = snapshot(workDir)
+        val oldDirs = state.area.listFiles().orEmpty().filter { it.isDirectory }.map { it.name }.toSet()
+        assertTrue(candidates().isEmpty())
+        val approved = RecordWorkPreparationClient(state.settings).authorizePrivateTextForm(b.projectId, b)
+        val session = JavaRosaPrivateRepeatAnswerSession(
+            state.context.cacheDir, b, approved.plan, approved.targetXFormXml, true)
+        val path = session.schema.directTextPaths.single()
+        val directStore = EncryptedPrivateTextDraftStore(root, AndroidKeyStorePrivateDraftCipher())
+        val baseValues = directStore.read(b, session.schema.directTextPaths).answers
+        assertEquals(state.required("newAnswerDigest"),
+            QuarantinedWorkDraftVault.sha256(requireNotNull(baseValues[path])))
+        val updated = mapOf(path to ("Synthetic competing edit " + java.util.UUID.randomUUID()))
+
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        try {
+            // Hold a real worker at the validated-candidate boundary, while
+            // another thread changes the working text through authorized save.
+            val captured = java.util.concurrent.CountDownLatch(1)
+            val resume = java.util.concurrent.CountDownLatch(1)
+            val first = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings) {
+                captured.countDown()
+                check(resume.await(30, java.util.concurrent.TimeUnit.SECONDS))
+            }
+            val future = executor.submit<Boolean> {
+                runCatching { first.commit(b.projectId, b, original.generation) }.isFailure
+            }
+            try {
+                assertTrue(captured.await(30, java.util.concurrent.TimeUnit.SECONDS))
+                assertEquals(1, candidates().size)
+                assertEquals(original, normal.reopen(b.projectId, b))
+                assertEquals(1, candidates().size) // active candidate not scavenged
+                assertEquals(oldPointer, digest(pointer.readBytes()))
+                probe.saveDirectText(b.projectId, b, updated, baseValues)
+                val changedWorking = snapshot(workDir)
+                assertNotEquals(previousWorking, changedWorking)
+                assertTrue(runCatching {
+                    probe.saveDirectText(b.projectId, b,
+                        mapOf(path to "Synthetic stale edit"), baseValues)
+                }.isFailure)
+                assertEquals(changedWorking, snapshot(workDir))
+            } finally { resume.countDown() }
+            assertTrue(future.get(30, java.util.concurrent.TimeUnit.SECONDS))
+            assertTrue(candidates().isEmpty())
+            assertEquals(oldDirs, state.area.listFiles().orEmpty().filter { it.isDirectory }.map { it.name }.toSet())
+            assertEquals(original, normal.reopen(b.projectId, b))
+            assertEquals(oldPointer, digest(pointer.readBytes()))
+            assertEquals(oldGeneration, snapshot(oldGenerationDir))
+
+            // A competing publisher wins while a different worker is
+            // validating the same expected generation. Only one may publish.
+            val secondCaptured = java.util.concurrent.CountDownLatch(1)
+            val secondResume = java.util.concurrent.CountDownLatch(1)
+            val second = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings) {
+                secondCaptured.countDown()
+                check(secondResume.await(30, java.util.concurrent.TimeUnit.SECONDS))
+            }
+            val competing = executor.submit<Boolean> {
+                runCatching { second.commit(b.projectId, b, original.generation) }.isFailure
+            }
+            val finalWorking = snapshot(workDir)
+            val winner = try {
+                assertTrue(secondCaptured.await(30, java.util.concurrent.TimeUnit.SECONDS))
+                assertEquals(1, candidates().size)
+                normal.commit(b.projectId, b, original.generation)
+            } finally { secondResume.countDown() }
+            assertTrue(competing.get(30, java.util.concurrent.TimeUnit.SECONDS))
+            assertTrue(candidates().isEmpty())
+            assertEquals(oldDirs + winner.generation,
+                state.area.listFiles().orEmpty().filter { it.isDirectory }.map { it.name }.toSet())
+            assertEquals(winner, normal.reopen(b.projectId, b))
+            assertEquals(mapOf(path to QuarantinedWorkDraftVault.sha256(updated.getValue(path))),
+                winner.evidence.directAnswerDigests)
+            assertEquals(original.evidence.savedRowAnswerDigests, winner.evidence.savedRowAnswerDigests)
+            assertEquals(original.evidence.imageOrdinals, winner.evidence.imageOrdinals)
+            assertEquals(finalWorking, snapshot(workDir))
+            assertEquals(oldGeneration, snapshot(oldGenerationDir))
+            assertFalse(b.canOpenEditor || b.canFinalize || b.canUpload)
+            val pending = RecordWorkReadOnlyClient(state.settings).load(b.projectId).pendingWork
+            assertTrue(pending.any { it.id == b.workId })
+            assertEquals(state.required("pendingDigest"), QuarantinedWorkDraftVault.sha256(
+                pending.map { it.id }.sorted().joinToString("\n")))
+            assertTrue(state.marker.delete())
+        } finally { executor.shutdownNow() }
     }
 
     private fun verifyRestart(phase: (String) -> Unit) {

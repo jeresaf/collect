@@ -29,7 +29,8 @@ internal class ProtectedNativeRepeatImageProbe(
 
     /** Narrow direct text save; exact mixed target and complete review are mandatory. */
     fun saveDirectText(
-        projectId: String, binding: QuarantinedWorkDraft, values: Map<String, String>
+        projectId: String, binding: QuarantinedWorkDraft, values: Map<String, String>,
+        expectedValues: Map<String, String>? = null
     ) {
         require(binding.workType == RecordWorkType.FOLLOW_UP && binding.validationTransfers == 0)
         val authorized = RecordWorkPreparationClient(settings)
@@ -42,8 +43,17 @@ internal class ProtectedNativeRepeatImageProbe(
             scratch, binding, authorized.plan, authorized.targetXFormXml, true)
         val validated = session.validateDirectText(values)
         val store = EncryptedPrivateTextDraftStore(root, cipher)
-        store.save(binding, validated, session.schema.directTextPaths)
-        require(store.read(binding, session.schema.directTextPaths).answers == validated)
+        synchronized(ProtectedDraftComponentLock.monitor) {
+            if (expectedValues != null) {
+                val prior = store.read(binding, session.schema.directTextPaths).answers
+                require(expectedValues.keys == session.schema.directTextPaths.toSet() &&
+                    session.schema.directTextPaths.associateWith { prior[it].orEmpty() } == expectedValues) {
+                    "Working answers changed; reload before saving"
+                }
+            }
+            store.save(binding, validated, session.schema.directTextPaths)
+            require(store.read(binding, session.schema.directTextPaths).answers == validated)
+        }
     }
 
     /** Rebuild saved scalar values and authenticated images in the same native model. */

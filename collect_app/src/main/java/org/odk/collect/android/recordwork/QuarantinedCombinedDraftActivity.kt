@@ -164,7 +164,7 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
             val entered = values()
             perform {
                 require(binding() == state.binding)
-                probe().saveDirectText(project, state.binding, entered)
+                probe().saveDirectText(project, state.binding, entered, state.values)
                 load()
             }
         }

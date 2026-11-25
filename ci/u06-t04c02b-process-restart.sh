@@ -165,3 +165,8 @@ run_one mixedChildEditorsSaveAndPublishGraphically "$restart_class"
 adb shell am force-stop "$APP_ID"
 run_one mixedGraphicalEditorReopensAfterForceStop "$restart_class"
 echo "U06-T04E-03C6D3: mixed child UI saves, checkpoint publication and graphical process recovery PASS."
+
+# Competing worker publication and stale working text CAS gate.
+adb shell am force-stop "$APP_ID"
+run_one competingCheckpointPublicationsRejectStaleWorkingState "$restart_class"
+echo "U06-T04E-03C6D3: competing publication and stale working text rejection PASS."

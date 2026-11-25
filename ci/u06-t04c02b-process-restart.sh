@@ -158,3 +158,10 @@ fi
 adb shell am force-stop "$APP_ID"
 run_one recoverCommittedDraftAndAbandonedCandidateAfterProcessDeath "$restart_class"
 echo "U06-T04E-03C6D2: real interrupted publication recovered previous checkpoint, removed marked candidate and retried successfully."
+
+# D3 graphical qualification on the same persisted V5 work after D2 recovery.
+adb shell am force-stop "$APP_ID"
+run_one mixedChildEditorsSaveAndPublishGraphically "$restart_class"
+adb shell am force-stop "$APP_ID"
+run_one mixedGraphicalEditorReopensAfterForceStop "$restart_class"
+echo "U06-T04E-03C6D3: mixed child UI saves, checkpoint publication and graphical process recovery PASS."

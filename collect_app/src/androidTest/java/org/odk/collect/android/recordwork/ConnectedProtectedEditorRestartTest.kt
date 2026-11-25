@@ -310,6 +310,216 @@ class ConnectedProtectedEditorRestartTest {
         assertTrue(pending.any { it.id == b.workId })
         assertEquals(state.required("pendingDigest"), QuarantinedWorkDraftVault.sha256(
             pending.map { it.id }.sorted().joinToString("\n")))
+        // Preserve a digest-only oracle for the next real UI phase.
+        state.evidence.setProperty("generation", retry.generation)
+        state.evidence.setProperty("oldAnswerDigest", state.required("newAnswerDigest"))
+        java.io.FileOutputStream(state.marker).use {
+            state.evidence.store(it, "Synthetic graphical qualification input")
+            it.fd.sync()
+        }
+    }
+
+    private fun <A : android.app.Activity> awaitUi(
+        scenario: ActivityScenario<A>, check: (A, List<View>) -> Boolean
+    ) {
+        for (attempt in 1..120) {
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            var ready = false
+            scenario.onActivity { activity -> ready = check(activity, descendants(activity.window.decorView)) }
+            if (ready) return
+            Thread.sleep(250)
+        }
+        throw AssertionError("Protected graphical qualification timed out")
+    }
+
+    private fun <A : android.app.Activity> clickButton(scenario: ActivityScenario<A>, label: Int) {
+        awaitUi(scenario) { activity, views ->
+            val button = views.filterIsInstance<Button>().singleOrNull {
+                it.text.toString() == activity.getString(label) && it.isEnabled
+            }
+            button?.performClick() == true
+        }
+    }
+
+    @Test
+    fun mixedChildEditorsSaveAndPublishGraphically() {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        val normal = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+        val previous = requireNotNull(normal.reopen(b.projectId, b))
+        assertEquals(state.required("generation"), previous.generation)
+        val authorized = RecordWorkPreparationClient(state.settings).authorizePrivateTextForm(b.projectId, b)
+        val session = JavaRosaPrivateRepeatAnswerSession(state.context.cacheDir, b,
+            authorized.plan, authorized.targetXFormXml, true)
+        val rows = QuarantinedRepeatRowVault(root, AndroidKeyStorePrivateDraftCipher())
+        val group = session.schema.groups.single()
+        val survivor = state.required("survivor")
+        val rowBefore = rows.read(b, session.schema)
+        assertEquals(listOf(survivor), rowBefore.active(group.path).map { it.rowId })
+
+        // Real row inventory Activity and Add control, not a vault mutation.
+        ActivityScenario.launch<QuarantinedRepeatRowsActivity>(
+            QuarantinedRepeatRowsActivity.intentFor(state.context, b.projectId, b.workId, true)
+        ).use { editor ->
+            clickButton(editor, R.string.private_repeat_add)
+            awaitUi(editor) { activity, views ->
+                views.filterIsInstance<Button>().count {
+                    it.text.toString() == activity.getString(R.string.private_repeat_edit_answers)
+                } == 2
+            }
+        }
+        val rowAfter = rows.read(b, session.schema)
+        val added = rowAfter.active(group.path).single { it.rowId != survivor }.rowId
+        val answer = "Synthetic graphical repeat " + java.util.UUID.randomUUID()
+        ActivityScenario.launch<QuarantinedRepeatAnswerActivity>(
+            QuarantinedRepeatAnswerActivity.intentFor(state.context, b.projectId, b.workId, added, true)
+        ).use { editor ->
+            awaitUi(editor) { activity, views ->
+                val save = views.filterIsInstance<Button>().singleOrNull {
+                    it.text.toString() == activity.getString(R.string.private_repeat_answer_save) && it.isEnabled
+                }
+                if (save == null) false else {
+                    val input = views.filterIsInstance<EditText>().single()
+                    assertTrue(input.text.isEmpty())
+                    input.setText(answer)
+                    save.performClick()
+                }
+            }
+            awaitUi(editor) { activity, views ->
+                views.filterIsInstance<TextView>().any {
+                    it.text.toString() == activity.getString(R.string.private_repeat_answer_saved)
+                }
+            }
+        }
+        val answerDigest = QuarantinedWorkDraftVault.sha256(answer)
+        val workingText = "Synthetic graphical household " + java.util.UUID.randomUUID()
+        val householdDigest = QuarantinedWorkDraftVault.sha256(workingText)
+
+        // Actual repeat image screen authenticates existing asset and clears it.
+        ActivityScenario.launch<QuarantinedRepeatImageActivity>(
+            QuarantinedRepeatImageActivity.intentFor(state.context, b.projectId, b.workId, survivor, true)
+        ).use { editor ->
+            clickButton(editor, R.string.private_repeat_image_clear)
+            awaitUi(editor) { activity, views ->
+                views.filterIsInstance<Button>().any {
+                    it.text.toString() == activity.getString(R.string.private_repeat_image_choose) && it.isEnabled
+                }
+            }
+        }
+        assertEquals(previous, normal.reopen(b.projectId, b))
+        ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+            QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+        ).use { editor ->
+            awaitUi(editor) { activity, views ->
+                val publish = views.filterIsInstance<Button>().singleOrNull {
+                    it.text.toString() == activity.getString(R.string.private_combined_publish) && it.isEnabled
+                }
+                if (publish == null) false else {
+                    views.filterIsInstance<EditText>().single().setText(workingText)
+                    publish.performClick()
+                }
+            }
+            awaitUi(editor) { activity, views ->
+                views.filterIsInstance<TextView>().any {
+                    it.text.toString() == activity.getString(R.string.private_combined_unsaved)
+                }
+            }
+            assertEquals(previous, normal.reopen(b.projectId, b))
+            clickButton(editor, R.string.private_combined_save_text)
+            awaitUi(editor) { activity, views ->
+                views.filterIsInstance<Button>().any {
+                    it.text.toString() == activity.getString(R.string.private_combined_publish) && it.isEnabled
+                } && views.filterIsInstance<EditText>().singleOrNull()?.text?.toString() == workingText
+            }
+            assertEquals(previous, normal.reopen(b.projectId, b))
+            clickButton(editor, R.string.private_combined_publish)
+            androidx.test.espresso.Espresso.onView(
+                androidx.test.espresso.matcher.ViewMatchers.withId(android.R.id.button1))
+                .inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog())
+                .perform(androidx.test.espresso.action.ViewActions.click())
+            awaitUi(editor) { activity, views ->
+                views.filterIsInstance<Button>().any {
+                    it.text.toString() == activity.getString(R.string.private_combined_publish) && it.isEnabled
+                }
+            }
+        }
+        val committed = requireNotNull(normal.reopen(b.projectId, b))
+        assertNotEquals(previous.generation, committed.generation)
+        assertEquals(mapOf("/data/household_name" to householdDigest), committed.evidence.directAnswerDigests)
+        assertEquals(mapOf(survivor to mapOf("/data/members/name" to state.required("memberDigest")),
+            added to mapOf("/data/members/name" to answerDigest)), committed.evidence.savedRowAnswerDigests)
+        assertTrue(committed.evidence.imageOrdinals.isEmpty())
+        assertTrue(committed.evidence.directImageDigests.isEmpty())
+        state.evidence.setProperty("generation", committed.generation)
+        state.evidence.setProperty("graphicalPid", android.os.Process.myPid().toString())
+        state.evidence.setProperty("newAnswerDigest", householdDigest)
+        state.evidence.setProperty("added", added)
+        state.evidence.setProperty("addedDigest", answerDigest)
+        val workDir = File(File(File(root, QuarantinedWorkDraftVault.VAULT_DIRECTORY), b.projectId), b.workId)
+        workDir.walkTopDown().filter { it.isFile }.forEach {
+            state.evidence.setProperty("graphicalFile." + it.relativeTo(workDir).path, digest(it.readBytes()))
+        }
+        state.evidence.setProperty("pointerDigest", digest(File(state.area, "current.aesgcm").readBytes()))
+        java.io.FileOutputStream(state.marker).use {
+            state.evidence.store(it, "Synthetic graphical restart checkpoint")
+            it.fd.sync()
+        }
+    }
+
+    @Test
+    fun mixedGraphicalEditorReopensAfterForceStop() {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        assertNotEquals(state.required("graphicalPid"), android.os.Process.myPid().toString())
+        val workDir = File(File(File(root, QuarantinedWorkDraftVault.VAULT_DIRECTORY), b.projectId), b.workId)
+        fun snapshot() = workDir.walkTopDown().filter { it.isFile }.associate {
+            it.relativeTo(workDir).path to digest(it.readBytes())
+        }
+        val expected = state.evidence.stringPropertyNames().filter { it.startsWith("graphicalFile.") }
+            .associate { it.removePrefix("graphicalFile.") to state.required(it) }
+        assertEquals(expected, snapshot())
+        val pointer = File(state.area, "current.aesgcm")
+        assertEquals(state.required("pointerDigest"), digest(pointer.readBytes()))
+        ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+            QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+        ).use { editor ->
+            awaitUi(editor) { activity, views ->
+                val input = views.filterIsInstance<EditText>().singleOrNull()
+                if (input == null) false else {
+                    assertEquals(state.required("newAnswerDigest"),
+                        QuarantinedWorkDraftVault.sha256(input.text.toString()))
+                    assertTrue(views.filterIsInstance<TextView>().any {
+                        it.text.toString() == activity.getString(
+                            R.string.private_combined_checkpoint, state.required("generation"))
+                    })
+                    assertTrue(views.filterIsInstance<TextView>().any {
+                        it.text.toString() == activity.getString(R.string.private_combined_rows, 2)
+                    })
+                    true
+                }
+            }
+        }
+        ActivityScenario.launch<QuarantinedRepeatAnswerActivity>(
+            QuarantinedRepeatAnswerActivity.intentFor(state.context, b.projectId, b.workId,
+                state.required("added"), true)
+        ).use { editor ->
+            awaitUi(editor) { _, views ->
+                val input = views.filterIsInstance<EditText>().singleOrNull()
+                if (input == null) false else {
+                    assertEquals(state.required("addedDigest"),
+                        QuarantinedWorkDraftVault.sha256(input.text.toString()))
+                    true
+                }
+            }
+        }
+        assertEquals(expected, snapshot())
+        assertEquals(state.required("pointerDigest"), digest(pointer.readBytes()))
+        val pending = RecordWorkReadOnlyClient(state.settings).load(b.projectId).pendingWork
+        assertTrue(pending.any { it.id == b.workId })
+        assertEquals(state.required("pendingDigest"), QuarantinedWorkDraftVault.sha256(
+            pending.map { it.id }.sorted().joinToString("\n")))
         assertTrue(state.marker.delete())
     }
 

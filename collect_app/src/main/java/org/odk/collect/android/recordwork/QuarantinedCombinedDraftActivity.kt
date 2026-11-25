@@ -115,7 +115,9 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
             val outcome = runCatching(action)
             runOnUiThread {
                 if (request != token || isFinishing || isDestroyed) return@runOnUiThread
-                if (!activeProject()) {
+                if (!activeProject() || outcome.getOrNull()?.let {
+                        runCatching { binding() == it.binding }.getOrDefault(false)
+                    } == false) {
                     clear()
                     status.setText(R.string.private_combined_denied)
                     return@runOnUiThread

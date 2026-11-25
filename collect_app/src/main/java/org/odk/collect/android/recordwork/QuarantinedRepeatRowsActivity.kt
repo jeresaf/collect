@@ -272,6 +272,19 @@ class QuarantinedRepeatRowsActivity : LocalizedActivity() {
         status.setText(R.string.private_repeat_denied)
     }
 
+    override fun onStop() {
+        generation++
+        deny()
+        super.onStop()
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        if (projectId.isNotBlank() && validUuid(workId) && activeProjectMatches()) {
+            refresh()
+        } else deny()
+    }
+
     override fun onDestroy() {
         generation++
         executor.shutdownNow()

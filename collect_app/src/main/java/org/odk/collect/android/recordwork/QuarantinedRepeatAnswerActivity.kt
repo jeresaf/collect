@@ -200,6 +200,7 @@ class QuarantinedRepeatAnswerActivity : LocalizedActivity() {
                 setPadding(0, 18, 0, 6)
             })
             val input = EditText(this).apply {
+                isSaveEnabled = false
                 inputType = when (field.type) {
                     PrivateScalarType.TEXT -> InputType.TYPE_CLASS_TEXT or
                         InputType.TYPE_TEXT_FLAG_MULTI_LINE
@@ -237,6 +238,7 @@ class QuarantinedRepeatAnswerActivity : LocalizedActivity() {
             return
         }
         val candidate = inputs.mapValues { (_, input) -> input.text.toString() }
+        val expectedFields = openedFields.toList()
         save.isEnabled = false
         spinner.visibility = View.VISIBLE
         status.setText(R.string.private_repeat_answer_saving)
@@ -245,7 +247,7 @@ class QuarantinedRepeatAnswerActivity : LocalizedActivity() {
             val result = runCatching {
                 val fresh = authorize()
                 require(fresh.binding == previouslyAuthorized &&
-                    fresh.fields == openedFields) {
+                    fresh.fields == expectedFields) {
                     "Repeat answer schema or assignment changed"
                 }
                 val saved = store().save(
@@ -293,6 +295,7 @@ class QuarantinedRepeatAnswerActivity : LocalizedActivity() {
         recoveryButton.isEnabled = outcome?.mayManuallyReviewServerRecords == true
         openedBinding = null
         openedFields = emptyList()
+        inputs.values.forEach { it.text?.clear() }
         inputs.clear()
         fieldsContainer.removeAllViews()
         save.isEnabled = false

@@ -1149,7 +1149,16 @@ class ConnectedProtectedEditorRestartTest {
                 is java.io.IOException -> "IOException"
                 else -> "OtherException"
             }
-            throw AssertionError("U06_MULTIPART_FAILURE phase=$phase kind=$kind line=$line")
+            val allowed = setOf("ProtectedMultipartSubmission", "ProtectedCommittedDraftStore",
+                "ProtectedFinalizedPackageFile", "ProtectedSubmissionAdmission",
+                "ProtectedNativePackageBuilder", "RecordWorkPreparationClient",
+                "RecordWorkReadOnlyClient", "AndroidKeyStorePrivateDraftCipher")
+            val origin = failure.stackTrace.firstOrNull {
+                it.className.substringAfterLast('.').substringBefore('$') in allowed
+            }
+            val component = origin?.className?.substringAfterLast('.')?.substringBefore('$') ?: "Unknown"
+            val originLine = origin?.lineNumber ?: -1
+            throw AssertionError("U06_MULTIPART_FAILURE phase=$phase kind=$kind line=$line origin=$component:$originLine")
         }
     }
 
@@ -1189,6 +1198,45 @@ class ConnectedProtectedEditorRestartTest {
         val latch = File(state.area, "submission-attempt.aesgcm")
         val envelope = File(state.area, "finalized-" + generation + ".aesgcm")
         val envelopeBefore = envelope.readBytes()
+        assertFalse(latch.exists())
+        phase("DECRYPTED_FRAME")
+        // Separately check the exact published bytes before transport.
+        ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+            .withFinalizedSubmissionContent(b.projectId, b, generation) { reopened, bytes ->
+                assertEquals(saved, reopened)
+                assertEquals(sha, digest(bytes))
+                java.io.DataInputStream(bytes.inputStream()).use { input ->
+                    assertEquals("DC_NATIVE_PACKAGE_V1", input.readUTF())
+                    assertEquals(b.projectId, input.readUTF())
+                    assertEquals(b.actorContextSha256, input.readUTF())
+                    assertEquals(b.workId, input.readUTF())
+                    assertEquals(b.sourceSubmissionId, input.readUTF())
+                    assertEquals(b.targetFormVersionId, input.readUTF())
+                    assertEquals(b.reservedInstanceId, input.readUTF())
+                    assertEquals(generation, input.readUTF())
+                    val n = input.readInt()
+                    assertEquals(saved.evidence.packaged.xml.xmlBytes, n)
+                    val xml = ByteArray(n)
+                    try {
+                        input.readFully(xml)
+                        assertEquals(saved.evidence.packaged.xml.xmlSha256, digest(xml))
+                    } finally { xml.fill(0) }
+                    assertEquals(saved.evidence.packaged.attachments.size, input.readInt())
+                    for ((key, part) in saved.evidence.packaged.attachments.entries.sortedBy { it.value.filename }) {
+                        assertEquals(key.first, input.readUTF())
+                        assertEquals(key.second, input.readUTF())
+                        assertEquals(part.filename, input.readUTF())
+                        assertEquals(part.mime, input.readUTF())
+                        assertEquals(part.bytes, input.readInt())
+                        val media = ByteArray(part.bytes)
+                        try {
+                            input.readFully(media)
+                            assertEquals(part.sha256, digest(media))
+                        } finally { media.fill(0) }
+                    }
+                    assertEquals(-1, input.read())
+                }
+            }
         assertFalse(latch.exists())
         phase("CAPTURE_SETUP")
         val endpoint = RecordWorkApiPaths.fromProjectUrl(state.settings.getUnprotectedSettings(b.projectId)

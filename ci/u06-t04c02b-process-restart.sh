@@ -28,7 +28,7 @@ run_one() {
     echo "::error::Android process-boundary phase ${method} did not pass"
     # Emit only the fixed-format recovery diagnostic, not raw output.
     grep -Eo 'U06_RESTART_FAILURE phase=(CHECKPOINT|PERSISTED_PROJECT|PROJECT_RESTORE|ACTOR_SCOPE|BINDING|CIPHERTEXT|LIVE_READY|EDITOR_REOPEN|POSTCONDITIONS) kind=(AssertionError|PreparationException|ReadOnlyRecordException|IllegalStateException|IllegalArgumentException|IOException|SecurityException|OtherException)' <<<"$output" | sort -u || true
-    grep -Eo 'U06_MULTIPART_FAILURE phase=(SETUP|CAPTURE_SETUP|WRONG_DIGEST|SEND|RECEIPT|HEADERS|MULTIPART|REPLAY|REDIRECT|WRONG_RECEIPT|POSTCONDITIONS) kind=(AssertionError|IllegalArgumentException|IllegalStateException|IOException|OtherException) line=-?[0-9]+' <<<"$output" | sort -u || true
+    grep -Eo 'U06_MULTIPART_FAILURE phase=(SETUP|DECRYPTED_FRAME|CAPTURE_SETUP|WRONG_DIGEST|SEND|RECEIPT|HEADERS|MULTIPART|REPLAY|REDIRECT|WRONG_RECEIPT|POSTCONDITIONS) kind=(AssertionError|IllegalArgumentException|IllegalStateException|IOException|OtherException) line=-?[0-9]+ origin=(ProtectedMultipartSubmission|ProtectedCommittedDraftStore|ProtectedFinalizedPackageFile|ProtectedSubmissionAdmission|ProtectedNativePackageBuilder|RecordWorkPreparationClient|RecordWorkReadOnlyClient|AndroidKeyStorePrivateDraftCipher|Unknown):-?[0-9]+' <<<"$output" | sort -u || true
     exit 1
   fi
   echo "Android instrumentation phase ${method}: PASS"

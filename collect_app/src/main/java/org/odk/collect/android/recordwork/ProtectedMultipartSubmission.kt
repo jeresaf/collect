@@ -40,7 +40,9 @@ internal class ProtectedMultipartSubmission(
         ProtectedCommittedDraftStore(scratch, root, settings)
             .withFinalizedSubmissionContent(projectId, binding, generation) { persisted, canonical ->
                 require(persisted.ciphertextSha256 == admission.ciphertextSha256 &&
-                    persisted.evidence.packaged.packageSha256 == admission.packageSha256)
+                    persisted.evidence.packaged.packageSha256 == admission.packageSha256) {
+                    "Submission admission and published package differ"
+                }
                 val values = settings.getUnprotectedSettings(projectId)
                 val paths = RecordWorkApiPaths.fromProjectUrl(values.getString(ProjectKeys.KEY_SERVER_URL).orEmpty())
                 val user = values.getString(ProjectKeys.KEY_USERNAME).orEmpty()
@@ -50,7 +52,7 @@ internal class ProtectedMultipartSubmission(
                     password.none { it == '\n' || it == '\r' } &&
                     paths.submission() == admission.endpoint &&
                     QuarantinedWorkDraftVault.sha256(projectId + "\n" + paths.records() + "\n" + user) ==
-                        admission.actorContextSha256)
+                        admission.actorContextSha256) { "Submission account or endpoint changed" }
                 val parts = decode(canonical, binding, generation, persisted.evidence.packaged)
                 try {
                     val boundary = "dc" + UUID.randomUUID().toString().replace("-", "")
@@ -83,23 +85,25 @@ internal class ProtectedMultipartSubmission(
         evidence: ProtectedNativePackageEvidence
     ): List<Part> {
         require(canonical.size in 1..13 * 1024 * 1024 &&
-            QuarantinedPrivateImageStore.digest(canonical) == evidence.packageSha256)
+            QuarantinedPrivateImageStore.digest(canonical) == evidence.packageSha256) {
+            "Canonical package size or digest mismatch"
+        }
         val parts = mutableListOf<Part>()
         try {
             DataInputStream(ByteArrayInputStream(canonical)).use { input ->
                 for (value in listOf("DC_NATIVE_PACKAGE_V1", binding.projectId,
                     binding.actorContextSha256, binding.workId, binding.sourceSubmissionId,
                     binding.targetFormVersionId, binding.reservedInstanceId, generation)) {
-                    require(input.readUTF() == value)
+                    require(input.readUTF() == value) { "Canonical package binding mismatch" }
                 }
                 val n = input.readInt()
-                require(n == evidence.xml.xmlBytes && n in 1..8_388_608)
+                require(n == evidence.xml.xmlBytes && n in 1..8_388_608) { "Canonical XML size mismatch" }
                 val xml = ByteArray(n)
                 parts += Part("xml_submission_file", "submission.xml", "text/xml", xml)
                 input.readFully(xml)
-                require(QuarantinedPrivateImageStore.digest(xml) == evidence.xml.xmlSha256)
+                require(QuarantinedPrivateImageStore.digest(xml) == evidence.xml.xmlSha256) { "Canonical XML digest mismatch" }
                 val count = input.readInt()
-                require(count in 1..64 && count == evidence.attachments.size)
+                require(count in 1..64 && count == evidence.attachments.size) { "Canonical attachment count mismatch" }
                 val seen = mutableSetOf<Pair<String, String>>()
                 var previous = ""
                 repeat(count) {
@@ -107,20 +111,22 @@ internal class ProtectedMultipartSubmission(
                     val name = input.readUTF()
                     val mime = input.readUTF()
                     val length = input.readInt()
-                    val item = requireNotNull(evidence.attachments[key])
+                    val item = requireNotNull(evidence.attachments[key]) { "Canonical attachment slot mismatch" }
                     require(seen.add(key) && name > previous && length in 1..1_500_000 &&
                         length == item.bytes && mime == item.mime && name == item.filename &&
                         name == ProtectedNativePackageBuilder.filename(binding, key, mime, item.sha256) &&
-                        evidence.xml.mediaReferenceDigests[key] == QuarantinedWorkDraftVault.sha256(name))
+                        evidence.xml.mediaReferenceDigests[key] == QuarantinedWorkDraftVault.sha256(name)) {
+                        "Canonical attachment metadata mismatch"
+                    }
                     previous = name
                     val bytes = ByteArray(length)
                     parts += Part(name, name, mime, bytes)
                     input.readFully(bytes)
                     require(QuarantinedPrivateImageStore.digest(bytes) == item.sha256 &&
-                        QuarantinedPrivateImageStore.sniffMime(bytes) == mime)
+                        QuarantinedPrivateImageStore.sniffMime(bytes) == mime) { "Canonical attachment bytes mismatch" }
                 }
                 require(input.read() == -1 && seen == evidence.attachments.keys &&
-                    parts.sumOf { it.bytes.size.toLong() } == evidence.totalContentBytes)
+                    parts.sumOf { it.bytes.size.toLong() } == evidence.totalContentBytes) { "Canonical package inventory mismatch" }
             }
             return parts
         } catch (failure: Throwable) {
@@ -131,7 +137,7 @@ internal class ProtectedMultipartSubmission(
 
     private fun reserveAttempt(binding: QuarantinedWorkDraft, admission: ProtectedSubmissionAdmissionEvidence) {
         val area = File(File(File(root, "recordwork-committed"), binding.projectId), binding.workId)
-        require(area.isDirectory && area.canonicalFile == area.absoluteFile)
+        require(area.isDirectory && area.canonicalFile == area.absoluteFile) { "Invalid submission attempt directory" }
         val marker = File(area, "submission-attempt.aesgcm")
         require(!Files.isSymbolicLink(marker.toPath()))
         val aad = ("DC_SUBMISSION_ATTEMPT_V1\n" + binding.projectId + "\n" +

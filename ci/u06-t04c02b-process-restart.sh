@@ -30,6 +30,7 @@ run_one() {
     grep -Eo 'U06_RESTART_FAILURE phase=(CHECKPOINT|PERSISTED_PROJECT|PROJECT_RESTORE|ACTOR_SCOPE|BINDING|CIPHERTEXT|LIVE_READY|EDITOR_REOPEN|POSTCONDITIONS) kind=(AssertionError|PreparationException|ReadOnlyRecordException|IllegalStateException|IllegalArgumentException|IOException|SecurityException|OtherException)' <<<"$output" | sort -u || true
     grep -Eo 'U06_MULTIPART_FAILURE phase=(SETUP|DECRYPTED_FRAME|CAPTURE_SETUP|WRONG_DIGEST|SEND|RECEIPT|HEADERS|MULTIPART|REPLAY|REDIRECT|WRONG_RECEIPT|POSTCONDITIONS) kind=(AssertionError|IllegalArgumentException|IllegalStateException|IOException|OtherException) line=-?[0-9]+ origin=(ProtectedMultipartSubmission|ProtectedCommittedDraftStore|ProtectedFinalizedPackageFile|ProtectedSubmissionAdmission|ProtectedNativePackageBuilder|RecordWorkPreparationClient|RecordWorkReadOnlyClient|AndroidKeyStorePrivateDraftCipher|Unknown):-?[0-9]+' <<<"$output" | sort -u || true
     grep -Eo 'U06_NATIVE_POST_FAILURE phase=(SETUP|UNCONFIRMED_UI|CONFIRM_UI|POST|ACK|RECONCILE|RECONCILIATION_INSPECTION|COMPLETION_EVIDENCE|RECOVERED_RECEIPT|REPLAY|ORACLE) line=-?[0-9]+' <<<"$output" | sort -u || true
+    grep -Eo 'U06_LOST_ACK_FAILURE phase=(SETUP|POST|REMOTE_COMMIT|ORACLE|UNCONFIRMED_UI|RECOVER|PRESERVE) line=-?[0-9]+' <<<"$output" | sort -u || true
     exit 1
   fi
   echo "Android instrumentation phase ${method}: PASS"
@@ -228,26 +229,77 @@ adb shell am force-stop "$APP_ID"
 run_one finalizedMultipartUsesExactPersistedBytesWithoutRealPost "$restart_class"
 echo "U06-T04E-05B: authenticated finalized multipart bytes, receipt and redirect/duplicate attempt denial PASS."
 
-# Preserve exact historic rows before the real native finalized POST.
+# Both independent profiles use the same real finalized work and database
+# preflight. The baseline preserves every existing acknowledged regression.
 export PGPASSWORD=synthetic-ci-only
 python3 ci/u06-t04e05c-native-postflight.py before /tmp/u06-native-history.json
 adb shell am force-stop "$APP_ID"
-run_one actualFinalizedMultipartCreatesIndependentLinkedObservation "$restart_class"
-adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
-python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
-echo "U06-T04E-05C: actual Android HTTPS finalized submission and independent PostgreSQL exact-byte/link verification PASS."
-
-# Actual force-stop and independent online receipt readback, no second POST.
-adb shell am force-stop "$APP_ID"
-run_one submittedReceiptRecoversAfterForceStopAndRejectsCorruption "$restart_class"
-echo "U06-T04E-05D: authenticated durable submitted receipt, actual restart, corruption and edit/replay denial PASS."
-
-echo "U06-T04E-05E: explicit graphical submission, unsaved/cancel/partial-attempt denial, real acknowledged POST and read-only restarted submitted status PASS."
-
-echo "U06-T04E-06A: protected stale-session text/media/repeat/checkpoint editing denial, partial/receipt/symlink marker preservation and real graphical submission PASS."
-
-echo "U06-T04E-06B: authenticated READY/linked-record inspection without receipt publication or retransmission, integrity and conflict denial PASS."
-
-echo "U06-T04E-06C2: authenticated completed-work evidence GET, exact identity and bounded digest inventory, malformed/redirect/READY denial PASS."
-
-echo "U06-T04E-06C3: exact authenticated local package and remote evidence comparison, recovered receipt publication, corruption denial and restart PASS."
+case "${U06_ACK_PROFILE:-acknowledged}" in
+acknowledged)
+  run_one actualFinalizedMultipartCreatesIndependentLinkedObservation "$restart_class"
+  adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
+  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
+  adb shell am force-stop "$APP_ID"
+  run_one submittedReceiptRecoversAfterForceStopAndRejectsCorruption "$restart_class"
+  echo "U06-T04E-05C: actual Android HTTPS finalized submission and independent PostgreSQL exact-byte/link verification PASS."
+  echo "U06-T04E-05D: authenticated durable submitted receipt, actual restart, corruption and edit/replay denial PASS."
+  echo "U06-T04E-05E: explicit graphical submission, unsaved/cancel/partial-attempt denial, real acknowledged POST and read-only restarted submitted status PASS."
+  echo "U06-T04E-06A: protected stale-session text/media/repeat/checkpoint editing denial, partial/receipt/symlink marker preservation and real graphical submission PASS."
+  echo "U06-T04E-06B: authenticated READY/linked-record inspection without receipt publication or retransmission, integrity and conflict denial PASS."
+  echo "U06-T04E-06C2: authenticated completed-work evidence GET, exact identity and bounded digest inventory, malformed/redirect/READY denial PASS."
+  echo "U06-T04E-06C3: exact authenticated local package and remote evidence comparison, recovered receipt publication, corruption denial and restart PASS."
+  ;;
+lost-response)
+  # Replace only the disposable TLS front end, not production app/server code.
+  # Arm it for the exact synthetic work ID; it refuses all other POSTs.
+  work="$(adb exec-out run-as "$APP_ID" cat no_backup/u06-publication-restart.properties | tr -d '\r' | sed -n 's/^work=//p')"
+  [[ "$work" =~ ^[0-9a-f-]{36}$ ]]
+  event=/tmp/u06-native-lost-ack-event.json
+  rm -f "$event" "${event%.json}.tmp"
+  docker stop u06-t04a-tls >/dev/null
+  python3 ci/u06-t04e06c4-lost-ack-proxy.py "$work" "$event" >/tmp/u06-native-lost-ack-proxy.log 2>&1 &
+  proxy_pid=$!
+  restore_tls() {
+    kill "$proxy_pid" >/dev/null 2>&1 || true
+    wait "$proxy_pid" 2>/dev/null || true
+    docker start u06-t04a-tls >/dev/null || true
+    rm -f "$event" "${event%.json}.tmp" /tmp/u06-native-lost-ack-proxy.log
+  }
+  trap restore_tls EXIT
+  for i in $(seq 1 20); do
+    kill -0 "$proxy_pid"
+    if curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt \
+        --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'; then break; fi
+    sleep 1
+  done
+  curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt \
+    --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'
+  run_one actualFinalizedPostLosesResponseWithoutPublishingReceipt "$restart_class"
+  check_drop() {
+    python3 - "$event" <<'PY'
+import json, sys
+from pathlib import Path
+assert json.loads(Path(sys.argv[1]).read_text()) == {
+    "posts": 1, "forwarded": 1, "upstream201": 1, "dropped": 1
+}, "Expected one real upstream 201 discarded without another POST"
+PY
+  }
+  check_drop
+  adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
+  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
+  echo "U06-T04E-06C4: server committed exact native XML/media; one upstream 201 response discarded before Android receipt."
+  adb shell am force-stop "$APP_ID"
+  run_one recoverActualLostAcknowledgementAfterForceStop "$restart_class"
+  adb shell am force-stop "$APP_ID"
+  run_one submittedReceiptRecoversAfterForceStopAndRejectsCorruption "$restart_class"
+  check_drop
+  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
+  echo "U06-T04E-06C4: real lost HTTP response, distinct-process exact receipt recovery, second restart and one POST only PASS."
+  restore_tls
+  trap - EXIT
+  ;;
+*)
+  echo "::error::Unknown acknowledgement qualification profile"
+  exit 1
+  ;;
+esac

@@ -1841,6 +1841,175 @@ class ConnectedProtectedEditorRestartTest {
     }
 
     @Test
+    fun actualFinalizedPostLosesResponseWithoutPublishingReceipt() {
+        var phase = "SETUP"
+        try {
+            val state = publicationContext()
+            val b = state.binding
+            val root = state.context.noBackupFilesDir
+            val generation = state.required("generation")
+            val sha = state.required("packageDigest")
+            val store = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+            val saved = store.reopenFinalizedPackage(b.projectId, b, generation)
+            assertEquals(sha, saved.evidence.packaged.packageSha256)
+            assertEquals(3, saved.evidence.packaged.attachments.size)
+            assertEquals(2, saved.evidence.packaged.xml.repeatCount)
+            val latch = File(state.area, "submission-attempt.aesgcm")
+            val receiptFile = File(state.area, "submitted-receipt.aesgcm")
+            val pending = File(state.area, ".submitted-receipt-write")
+            val envelope = File(state.area, "finalized-" + generation + ".aesgcm")
+            val pointer = File(state.area, "current.aesgcm")
+            val envelopeBefore = envelope.readBytes()
+            val pointerBefore = pointer.readBytes()
+            assertFalse(latch.exists() || receiptFile.exists() || pending.exists())
+            val remote = RecordWorkReadOnlyClient(state.settings)
+            val before = remote.load(b.projectId)
+            ProtectedSubmissionAdmission.verifySnapshot(b, before)
+            phase = "POST"
+            // Real production transport, default TLS connection. The CI proxy
+            // forwards the request once and closes the socket after upstream 201.
+            val sender = ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
+            val result = sender.send(b.projectId, b, generation, sha)
+            assertFalse(result.acknowledged)
+            assertNull(result.instanceId)
+            assertTrue("No valid HTTP response status should reach Android",
+                result.httpStatus == null || result.httpStatus == -1)
+            assertEquals(sha, result.packageSha256)
+            assertTrue(latch.isFile && latch.length() > 30)
+            assertFalse(receiptFile.exists() || pending.exists())
+            val attemptBytes = latch.readBytes()
+            phase = "REMOTE_COMMIT"
+            val after = remote.load(b.projectId)
+            val child = after.records.single { it.instanceId == b.reservedInstanceId }
+            val original = before.records.single { it.submissionId == b.sourceSubmissionId }
+            assertNotEquals(original.submissionId, child.submissionId)
+            assertEquals(b.targetFormVersionId, child.formVersionId)
+            assertEquals(original.formId, child.formId)
+            assertEquals(before.records.toSet() + child, after.records.toSet())
+            assertEquals(before.pendingWork.filter { it.id != b.workId }.toSet(), after.pendingWork.toSet())
+            assertTrue(remote.completedVisit(b.projectId, b, child))
+            assertFalse(receiptFile.exists())
+            assertArrayEquals(envelopeBefore, envelope.readBytes())
+            assertArrayEquals(pointerBefore, pointer.readBytes())
+            assertArrayEquals(attemptBytes, latch.readBytes())
+            phase = "ORACLE"
+            val oracle = org.json.JSONObject()
+                .put("work", b.workId).put("source", b.sourceSubmissionId)
+                .put("child", child.submissionId).put("reserved", b.reservedInstanceId)
+                .put("target", b.targetFormVersionId).put("visit", b.visitKey)
+                .put("xmlSha256", saved.evidence.packaged.xml.xmlSha256)
+                .put("xmlBytes", saved.evidence.packaged.xml.xmlBytes)
+                .put("packageSha256", sha)
+            val attachments = org.json.JSONArray()
+            saved.evidence.packaged.attachments.values.sortedBy { it.filename }.forEach {
+                attachments.put(org.json.JSONObject().put("filename", it.filename)
+                    .put("mime", it.mime).put("bytes", it.bytes).put("sha256", it.sha256))
+            }
+            oracle.put("attachments", attachments)
+            java.io.FileOutputStream(File(root, "u06-native-submission-oracle.json")).use {
+                it.write(oracle.toString().toByteArray(Charsets.UTF_8))
+                it.fd.sync()
+            }
+            state.evidence.setProperty("lostPid", android.os.Process.myPid().toString())
+            state.evidence.setProperty("submittedChild", child.submissionId)
+            state.evidence.setProperty("attemptDigest", digest(attemptBytes))
+            state.evidence.setProperty("finalizedDigest", digest(envelopeBefore))
+            state.evidence.setProperty("pointerDigest", digest(pointerBefore))
+            java.io.FileOutputStream(state.marker).use {
+                state.evidence.store(it, "Synthetic lost HTTP acknowledgement")
+                it.fd.sync()
+            }
+            assertFalse(receiptFile.exists() || pending.exists())
+        } catch (failure: Throwable) {
+            val line = failure.stackTrace.firstOrNull {
+                it.className.startsWith(ConnectedProtectedEditorRestartTest::class.java.name)
+            }?.lineNumber ?: -1
+            throw AssertionError("U06_LOST_ACK_FAILURE phase=$phase line=$line")
+        }
+    }
+
+    @Test
+    fun recoverActualLostAcknowledgementAfterForceStop() {
+        var phase = "SETUP"
+        try {
+            val state = publicationContext()
+            val b = state.binding
+            val root = state.context.noBackupFilesDir
+            assertNotEquals(state.required("lostPid"), android.os.Process.myPid().toString())
+            val latch = File(state.area, "submission-attempt.aesgcm")
+            val receiptFile = File(state.area, "submitted-receipt.aesgcm")
+            val pending = File(state.area, ".submitted-receipt-write")
+            val envelope = File(state.area, "finalized-" + state.required("generation") + ".aesgcm")
+            val pointer = File(state.area, "current.aesgcm")
+            val attemptBytes = latch.readBytes()
+            val envelopeBytes = envelope.readBytes()
+            val pointerBytes = pointer.readBytes()
+            assertEquals(state.required("attemptDigest"), digest(attemptBytes))
+            assertEquals(state.required("finalizedDigest"), digest(envelopeBytes))
+            assertEquals(state.required("pointerDigest"), digest(pointerBytes))
+            assertFalse(receiptFile.exists() || pending.exists())
+            val store = ProtectedSubmissionReceiptStore(root, state.settings)
+            assertTrue(runCatching { store.reopen(b.projectId, b) }.isFailure)
+            phase = "UNCONFIRMED_UI"
+            ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+                QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+            ).use { editor ->
+                awaitUi(editor) { activity, views ->
+                    val unconfirmed = views.filterIsInstance<TextView>().any {
+                        it.text.toString() == activity.getString(R.string.private_submission_unconfirmed)
+                    }
+                    if (unconfirmed) {
+                        assertTrue(views.filterIsInstance<EditText>().isEmpty())
+                        assertTrue(views.filterIsInstance<Button>().none {
+                            it.text.toString() == activity.getString(R.string.private_submission_action)
+                        })
+                    }
+                    unconfirmed
+                }
+            }
+            val remote = RecordWorkReadOnlyClient(state.settings)
+            val before = remote.load(b.projectId)
+            phase = "RECOVER"
+            val inspected = store.inspectAttempt(b.projectId, b)
+            assertEquals(ProtectedReconciliationState.LINKED_RECORD_VISIBLE, inspected.state)
+            assertEquals(state.required("submittedChild"), inspected.submissionId)
+            assertFalse(receiptFile.exists())
+            val receipt = store.recoverAcknowledgement(b.projectId, b)
+            assertEquals(state.required("submittedChild"), receipt.submissionId)
+            assertEquals(state.required("generation"), receipt.generation)
+            assertEquals(state.required("packageDigest"), receipt.packageSha256)
+            assertEquals(state.required("attemptDigest"), receipt.attemptSha256)
+            assertEquals(state.required("finalizedDigest"), receipt.ciphertextSha256)
+            assertFalse(receipt.canEdit || receipt.canUpload)
+            val receiptBytes = receiptFile.readBytes()
+            assertEquals(receipt, store.reopen(b.projectId, b))
+            assertEquals(receipt, store.recoverAcknowledgement(b.projectId, b))
+            assertArrayEquals(receiptBytes, receiptFile.readBytes())
+            phase = "PRESERVE"
+            assertEquals(before, remote.load(b.projectId))
+            assertArrayEquals(attemptBytes, latch.readBytes())
+            assertArrayEquals(envelopeBytes, envelope.readBytes())
+            assertArrayEquals(pointerBytes, pointer.readBytes())
+            assertFalse(pending.exists())
+            assertTrue(runCatching {
+                ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
+                    .send(b.projectId, b, receipt.generation, receipt.packageSha256)
+            }.isFailure)
+            state.evidence.setProperty("receiptDigest", digest(receiptBytes))
+            state.evidence.setProperty("submittedPid", android.os.Process.myPid().toString())
+            java.io.FileOutputStream(state.marker).use {
+                state.evidence.store(it, "Synthetic recovered lost acknowledgement")
+                it.fd.sync()
+            }
+        } catch (failure: Throwable) {
+            val line = failure.stackTrace.firstOrNull {
+                it.className.startsWith(ConnectedProtectedEditorRestartTest::class.java.name)
+            }?.lineNumber ?: -1
+            throw AssertionError("U06_LOST_ACK_FAILURE phase=$phase line=$line")
+        }
+    }
+
+    @Test
     fun submittedReceiptRecoversAfterForceStopAndRejectsCorruption() {
         val state = publicationContext()
         val b = state.binding

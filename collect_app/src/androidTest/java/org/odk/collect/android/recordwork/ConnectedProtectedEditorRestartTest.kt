@@ -1867,10 +1867,36 @@ class ConnectedProtectedEditorRestartTest {
         }
     }
 
+    /** Local queue is not an acceptance or send oracle. Reopening the real browser
+     * must render the expected scoped row without changing any attempt files. */
+    private fun assertLocalQueue(state: PublicationContext, label: Int) {
+        fun snapshot() = state.area.walkTopDown().filter { it.isFile }.associate {
+            it.relativeTo(state.area).path to digest(it.readBytes())
+        }
+        val before = snapshot()
+        ActivityScenario.launch(RecordWorkBrowserActivity::class.java).use { browser ->
+            awaitUi(browser) { activity, views ->
+                val expected = activity.getString(R.string.private_queue_row, state.binding.workId,
+                    activity.getString(label))
+                val matches = views.filterIsInstance<Button>().filter { it.text.toString() == expected }
+                if (matches.isNotEmpty()) {
+                    assertEquals(1, matches.size)
+                    assertTrue(matches.single().isEnabled)
+                    assertTrue(views.filterIsInstance<Button>().none {
+                        it.text.toString() == activity.getString(R.string.private_bound_send)
+                    })
+                }
+                matches.size == 1
+            }
+        }
+        assertEquals(before, snapshot())
+    }
+
     private fun verifyBoundPreparation() {
         val state = publicationContext()
         val b = state.binding
         val store = ProtectedBoundAttemptStore(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)
+        assertLocalQueue(state, R.string.private_queue_finalization)
         // Use the actual opt-in Activity for cancellation and explicit preparation.
         ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
             QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
@@ -1934,6 +1960,7 @@ class ConnectedProtectedEditorRestartTest {
         assertEquals(RemoteProtectedAttemptState.BOUND_EXACT_CONTENT_ADMISSIBLE, before.state)
         assertEquals(state.required("boundAttempt"), before.attemptId)
         assertEquals(state.required("boundWire"), before.wireSha256)
+        assertLocalQueue(state, R.string.private_queue_bound)
         val sender = ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
         assertTrue(runCatching { sender.sendBound(b, before.attemptId, "0".repeat(64)) }.isFailure)
         assertTrue(runCatching { sender.send(b.projectId, b, before.generation, before.packageSha256) }.isFailure)
@@ -1990,6 +2017,7 @@ class ConnectedProtectedEditorRestartTest {
         assertNull(status.acceptedSubmissionId)
         assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
         assertTrue(runCatching { store.recoverReceipt(b) }.isFailure)
+        assertLocalQueue(state, R.string.private_queue_bound)
         assertBoundFilesUnchanged(state)
     }
 
@@ -2004,6 +2032,7 @@ class ConnectedProtectedEditorRestartTest {
         assertEquals(state.required("boundAttempt"), status.attemptId)
         assertEquals(state.required("boundWire"), status.wireSha256)
         assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
+        assertLocalQueue(state, R.string.private_queue_bound)
         ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
             QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
         ).use { editor ->
@@ -2072,6 +2101,7 @@ class ConnectedProtectedEditorRestartTest {
         assertEquals(state.required("boundReceiptDigest"),
             digest(File(state.area, "protected-bound-receipt.aesgcm").readBytes()))
         assertEquals(receipt.submissionId, store.inspect(b).acceptedSubmissionId)
+        assertLocalQueue(state, R.string.private_queue_receipt)
         assertTrue(runCatching {
             ProtectedMultipartSubmission(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)
                 .sendBound(b, state.required("boundAttempt"), state.required("boundWire"))

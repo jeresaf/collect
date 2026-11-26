@@ -23,6 +23,7 @@ import java.util.concurrent.Executors
  */
 class RecordWorkBrowserActivity : LocalizedActivity() {
     private val background = Executors.newSingleThreadExecutor()
+    private val queueWorker = Executors.newSingleThreadExecutor()
     private var requestGeneration = 0
     private lateinit var settingsProvider: SettingsProvider
     private lateinit var progress: ProgressBar
@@ -64,6 +65,7 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
 
     override fun onDestroy() {
         background.shutdownNow()
+        queueWorker.shutdownNow()
         super.onDestroy()
     }
 
@@ -90,8 +92,8 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
 
         progress.visibility = View.VISIBLE
         status.setText(R.string.remote_records_loading)
-        background.execute {
-            if (BuildConfig.PROTECTED_BOUND_SUBMISSIONS) {
+        if (BuildConfig.PROTECTED_BOUND_SUBMISSIONS) {
+            queueWorker.execute {
                 val local = runCatching {
                     require(session.username.isNotBlank())
                     val scope = QuarantinedWorkDraftVault.sha256(session.projectId + "\n" +
@@ -107,6 +109,8 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
                     showLocalQueue(session, local)
                 }
             }
+        }
+        background.execute {
             val result = try {
                 Result.success(RecordWorkReadOnlyClient(settingsProvider).load(session.projectId))
             } catch (error: ReadOnlyRecordException) {

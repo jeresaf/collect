@@ -2116,7 +2116,12 @@ class ConnectedProtectedEditorRestartTest {
     }
 
     @Test
-    fun boundAttemptTransmissionInterruptedOrAcknowledgementLost() {
+    fun boundAttemptSurvivesServerTermination() = verifyBoundInterruptedSend(true)
+
+    @Test
+    fun boundAttemptTransmissionInterruptedOrAcknowledgementLost() = verifyBoundInterruptedSend(false)
+
+    private fun verifyBoundInterruptedSend(serverTerminated: Boolean) {
         val state = publicationContext()
         val b = state.binding
         val root = state.context.noBackupFilesDir
@@ -2130,7 +2135,8 @@ class ConnectedProtectedEditorRestartTest {
             .sendBound(b, before.attemptId, before.wireSha256)
         assertFalse(result.acknowledged)
         assertNull(result.instanceId)
-        assertTrue(result.httpStatus == null || result.httpStatus == -1)
+        assertTrue(result.httpStatus == null || result.httpStatus == -1 ||
+            (serverTerminated && result.httpStatus == 502))
         assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
         assertBoundFilesUnchanged(state)
         state.evidence.setProperty("faultPid", android.os.Process.myPid().toString())

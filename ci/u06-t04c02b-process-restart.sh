@@ -315,6 +315,8 @@ PY
   fi
 }
 
+source ci/u08-bound-server-crash.sh
+
 case "${U06_ACK_PROFILE:-acknowledged}" in
 bound-acknowledged|bound-amendment*)
   run_one boundAttemptPreparesAndPersistsAcrossForceStop "$restart_class"
@@ -335,6 +337,8 @@ bound-acknowledged|bound-amendment*)
       run_one boundAttemptPreparesAndPersistsAcrossForceStop "$restart_class"
       adb shell am force-stop "$APP_ID"
       run_one boundAttemptSendsExactPackageAndRecoversReceipt "$restart_class"
+    elif [[ "$U06_ACK_PROFILE" == bound-amendment-server-crash ]]; then
+      run_bound_server_crash
     else
       run_bound_fault "${U06_ACK_PROFILE#bound-amendment-}"
     fi
@@ -370,6 +374,11 @@ acknowledged)
   echo "U06-T04E-06B: authenticated READY/linked-record inspection without receipt publication or retransmission, integrity and conflict denial PASS."
   echo "U06-T04E-06C2: authenticated completed-work evidence GET, exact identity and bounded digest inventory, malformed/redirect/READY denial PASS."
   echo "U06-T04E-06C3: exact authenticated local package and remote evidence comparison, recovered receipt publication, corruption denial and restart PASS."
+  ;;
+bound-server-crash)
+  run_bound_server_crash
+  adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
+  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
   ;;
 bound-lost-response|bound-interrupted-upload|bound-interrupted-upstream)
   run_bound_fault "${U06_ACK_PROFILE#bound-}"

@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 TABLES = ("submissions", "submission_versions", "submission_answers",
-          "submission_attachments", "record_links", "record_work_items")
+          "submission_attachments", "record_links", "record_work_items", "submission_events")
 
 def query(sql):
     return subprocess.check_output(

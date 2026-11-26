@@ -21,7 +21,8 @@ internal data class ProtectedBoundAttempt(
  * a request marker BEFORE the reservation POST, and a server identity marker
  * BEFORE the binding POST. An ambiguous or partial marker stays blocking.
  * Existing unbound submission-attempt markers are never adopted.
- * No caller in the graphical sender yet; this class never transmits XML/media.
+ * No graphical caller yet. Only the dedicated bound sender consumes the
+ * verified package through the scoped callback below.
  */
 internal class ProtectedBoundAttemptStore(
     private val scratch: File, private val root: File, private val settings: SettingsProvider
@@ -94,6 +95,64 @@ internal class ProtectedBoundAttemptStore(
             result(b, request, server, local, remote.status(b, server.attemptId))
         }
 
+    /** Fresh server admission and verified encrypted bytes under the same
+     * monitor as all draft edits. No caller-supplied status can grant access.
+     * No retry after a local receipt, even if the server reports READY. */
+    internal fun withAdmittedContent(b: QuarantinedWorkDraft, expectedAttemptId: String,
+                                     expectedWire: String,
+                                     consume: (ProtectedBoundAttempt, ProtectedSubmittedReceipt, ByteArray) -> ProtectedTransportResult):
+        ProtectedTransportResult = synchronized(ProtectedDraftComponentLock.monitor) {
+        require(noReceipt(b))
+        val r = readRequest(b)
+        val s = readServer(b)
+        val admitted = inspect(b)
+        require(admitted.state == RemoteProtectedAttemptState.BOUND_EXACT_CONTENT_ADMISSIBLE &&
+            admitted.attemptId == expectedAttemptId && admitted.wireSha256 == expectedWire &&
+            admitted.attemptId == s.attemptId && admitted.generation == r.generation &&
+            admitted.packageSha256 == r.packageSha)
+        val local = localReceipt(b, r)
+        var result: ProtectedTransportResult? = null
+        packages.attemptedPackageEvidence(b, local) { canonical ->
+            require(noReceipt(b) && readRequest(b) == r && readServer(b) == s)
+            result = consume(admitted, local, canonical)
+        }
+        requireNotNull(result)
+    }
+
+    /** Explicit receipt recovery; requires verified current server completion,
+     * never a caller-provided 201 or fabricated status. */
+    fun recoverReceipt(b: QuarantinedWorkDraft): ProtectedSubmittedReceipt =
+        synchronized(ProtectedDraftComponentLock.monitor) {
+            val r = readRequest(b)
+            val s = readServer(b)
+            val status = inspect(b)
+            require(status.state == RemoteProtectedAttemptState.COMPLETED_VERIFIED)
+            val child = requireNotNull(status.acceptedSubmissionId)
+            val receipt = localReceipt(b, r).copy(
+                attemptSha256 = QuarantinedPrivateImageStore.digest(
+                    (r.id + "\n" + s.attemptId + "\n" + s.wire).toByteArray(Charsets.UTF_8)),
+                submissionId = child)
+            val values = listOf(receipt.generation, receipt.packageSha256, receipt.ciphertextSha256,
+                receipt.attemptSha256, receipt.instanceId, child, receipt.targetFormVersionId)
+            val target = File(area(b), RECEIPT)
+            require(!Files.isSymbolicLink(target.toPath()))
+            // A partial receipt is conservatively blocked; never replace it.
+            if (!target.exists()) write(area(b), b, RECEIPT, values)
+            require(read(b, RECEIPT) == values)
+            receipt
+        }
+
+    fun reopenReceipt(b: QuarantinedWorkDraft): ProtectedSubmittedReceipt =
+        synchronized(ProtectedDraftComponentLock.monitor) {
+            require(File(area(b), RECEIPT).isFile)
+            recoverReceipt(b)
+        }
+
+    private fun noReceipt(b: QuarantinedWorkDraft): Boolean {
+        val file = File(area(b), RECEIPT)
+        return !file.exists() && !Files.isSymbolicLink(file.toPath())
+    }
+
     private fun result(b: QuarantinedWorkDraft, r: Request, s: Server,
                        local: ProtectedAttemptedPackageEvidence,
                        status: RemoteProtectedAttemptStatus): ProtectedBoundAttempt {
@@ -138,7 +197,7 @@ internal class ProtectedBoundAttemptStore(
         remote.serverProjectId(b)
         val area = area(b)
         // Do not upgrade an earlier V1 unbound transmission, even if its
-        // contents happen to match. New protocol transmission is not wired yet.
+        // contents happen to match. Bound receipts use a distinct journal.
         for (name in listOf("submission-attempt.aesgcm", "submitted-receipt.aesgcm", ".submitted-receipt-write")) {
             val file = File(area, name)
             require(!file.exists() && !Files.isSymbolicLink(file.toPath()))
@@ -190,5 +249,6 @@ internal class ProtectedBoundAttemptStore(
     companion object {
         private const val REQUEST = "protected-attempt-request.aesgcm"
         private const val SERVER = "protected-attempt-server.aesgcm"
+        private const val RECEIPT = "protected-bound-receipt.aesgcm"
     }
 }

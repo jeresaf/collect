@@ -265,7 +265,8 @@ internal class ProtectedCommittedDraftStore(
     /** Attempted package recovery is strictly read-only. No editor/native
      * session, READY authorization, generation creation or repair. */
     internal fun attemptedPackageEvidence(binding: QuarantinedWorkDraft,
-                                          attempt: ProtectedSubmittedReceipt): ProtectedAttemptedPackageEvidence =
+                                          attempt: ProtectedSubmittedReceipt,
+                                          consume: ((ByteArray) -> Unit)? = null): ProtectedAttemptedPackageEvidence =
         synchronized(lock) {
             require(ProtectedSubmissionAttemptGuard.hasAttempt(root, binding))
             require(QuarantinedWorkDraftVault(root).read(binding.projectId, binding.workId,
@@ -278,7 +279,7 @@ internal class ProtectedCommittedDraftStore(
             verifiedGeneration(binding, area, pointer)
             require(inventoryDigest(inventory(work(root, binding))) == pointer.inventoryDigest)
             val evidence = ProtectedFinalizedPackageFile(area, binding, pointer.generation,
-                pointer.inventoryDigest).inspectAttempted(attempt)
+                pointer.inventoryDigest).inspectAttempted(attempt, consume)
             require(readPointer(binding, area) == pointer)
             verifiedGeneration(binding, area, pointer)
             require(inventoryDigest(inventory(work(root, binding))) == pointer.inventoryDigest)

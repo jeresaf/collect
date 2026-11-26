@@ -118,8 +118,8 @@ internal class ProtectedMultipartSubmission(
                     require(parts.size == evidence.attachments.size + 1)
                     val boundary = "dc" + UUID.randomUUID().toString().replace("-", "")
                     val headers = parts.map { part ->
-                        ("--$boundary\r\nContent-Disposition: form-data; name=\\"" +
-                            part.name + "\\"; filename=\\"" + part.filename + "\\"\r\nContent-Type: " +
+                        ("--$boundary\r\nContent-Disposition: form-data; name=\"" +
+                            part.name + "\"; filename=\"" + part.filename + "\"\r\nContent-Type: " +
                             part.mime + "\r\n\r\n").toByteArray(Charsets.UTF_8)
                     }
                     val suffix = "--$boundary--\r\n".toByteArray(Charsets.UTF_8)

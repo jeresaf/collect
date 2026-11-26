@@ -15,8 +15,9 @@ export SPRING_DATASOURCE_USERNAME=odk_user
 export SPRING_DATASOURCE_PASSWORD=synthetic-ci-only
 export STORAGE_LOCAL_PATH=/tmp/u06-t04a-data
 export ODK_STORAGE_SUBMISSIONS_ROOT=/tmp/u06-t04a-data/submissions
-export SPRING_SERVLET_MULTIPART_LOCATION=/tmp/u06-t04a-multipart
-mkdir -p "$STORAGE_LOCAL_PATH" "$ODK_STORAGE_SUBMISSIONS_ROOT" "$SPRING_SERVLET_MULTIPART_LOCATION"
+export ODK_MULTIPART_SPOOL_ENABLED=true
+export ODK_MULTIPART_SPOOL_ROOT=/tmp/u06-t04a-multipart
+mkdir -p "$STORAGE_LOCAL_PATH" "$ODK_STORAGE_SUBMISSIONS_ROOT" "$ODK_MULTIPART_SPOOL_ROOT"
 key=/tmp/u08-disposable-jwt-key
 if [[ ! -f "$key" ]]; then
   (umask 077; openssl rand -hex 48 > "$key")

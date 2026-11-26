@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: jeresaf/data-collector
-          ref: 5e2257d6e07b4414e74468ad2317da64c40f9c55
+          ref: 05c65e1ae5dd7a7657536663a6d898e4e5179119
           path: backend-reference
           persist-credentials: false
       - name: Java 17
@@ -55,13 +55,13 @@ jobs:
       - name: Record source pin and executable jar digest
         run: |
           set -euo pipefail
-          test "$(git -C backend-reference rev-parse HEAD)" = '5e2257d6e07b4414e74468ad2317da64c40f9c55'
+          test "$(git -C backend-reference rev-parse HEAD)" = '05c65e1ae5dd7a7657536663a6d898e4e5179119'
           mapfile -t jars < <(find backend-reference/backend/target -maxdepth 1 -name '*.jar' ! -name '*original*')
           test "${#jars[@]}" = 1
           mkdir -p /tmp/u08-backend
           cp "${jars[0]}" /tmp/u08-backend/backend.jar
           cd /tmp/u08-backend
-          printf '%s\n' '5e2257d6e07b4414e74468ad2317da64c40f9c55' > source-commit.txt
+          printf '%s\n' '05c65e1ae5dd7a7657536663a6d898e4e5179119' > source-commit.txt
           printf '%s\n' "$U08_ANDROID_SHA" > android-commit.txt
           sha256sum backend.jar > SHA256SUMS
       - uses: actions/upload-artifact@v4
@@ -76,6 +76,7 @@ jobs:
     name: Android PostgreSQL HTTPS (${{ matrix.ack-profile }})
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix:
         ack-profile: [acknowledged, lost-response, interrupted-upload, interrupted-upstream, bound-acknowledged, bound-lost-response, bound-interrupted-upload, bound-interrupted-upstream, bound-amendment, bound-amendment-lost-response, bound-amendment-interrupted-upload, bound-amendment-interrupted-upstream, bound-server-crash, bound-amendment-server-crash]
     env:
@@ -113,7 +114,7 @@ jobs:
         run: |
           set -euo pipefail
           cd /tmp/u08-backend
-          test "$(cat source-commit.txt)" = '5e2257d6e07b4414e74468ad2317da64c40f9c55'
+          test "$(cat source-commit.txt)" = '05c65e1ae5dd7a7657536663a6d898e4e5179119'
           test "$(cat android-commit.txt)" = "$U08_ANDROID_SHA"
           sha256sum -c SHA256SUMS
       - name: Run journal-enabled backend with ephemeral PostgreSQL 15/Flyway

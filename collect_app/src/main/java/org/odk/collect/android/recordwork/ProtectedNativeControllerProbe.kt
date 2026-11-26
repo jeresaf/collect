@@ -83,8 +83,7 @@ internal class ProtectedNativeControllerProbe(
             "Repeat exercise requires the direct text navigation gate"
         }
         require(binding.projectId == projectId &&
-            binding.workType == RecordWorkType.FOLLOW_UP &&
-            binding.validationTransfers == 0 &&
+            ProtectedReentryWork.eligible(binding) &&
             !binding.canOpenEditor && !binding.canFinalize && !binding.canUpload)
         val authorized = RecordWorkPreparationClient(settings)
             .authorizePrivateTextForm(projectId, binding)

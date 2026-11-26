@@ -1903,6 +1903,126 @@ class ConnectedProtectedEditorRestartTest {
         assertEquals(before, snapshot())
     }
 
+    /** Create a real amendment of the independently submitted version-2 visit.
+     * Reuse only project settings; no source answers/media copied into v5. */
+    @Test
+    fun stageAndFinalizeProtectedAmendment() {
+        val prior = publicationContext()
+        val project = prior.binding.projectId
+        val root = prior.context.noBackupFilesDir
+        val source = RecordWorkReadOnlyClient(prior.settings).load(project).records.single {
+            it.formVersionId == "81000000-0000-4000-8000-000000000004" &&
+                it.submissionId != "81000000-0000-4000-8000-000000000008" &&
+                it.mayOfferAmendment
+        }
+        val target = "81000000-0000-4000-8000-000000000021"
+        val client = RecordWorkPreparationClient(prior.settings,
+            nativeProbe = { plan, xml, historical ->
+                JavaRosaStagingProbe(prior.context.cacheDir).inspect(plan, xml, historical)
+            },
+            transferProbe = { plan, review, xml, hash, instance, historical, targetXml ->
+                ReviewedScalarTransferProbe(prior.context.cacheDir).validate(
+                    plan, review, xml, hash, instance, historical, targetXml)
+            })
+        val work = client.create(project, NewRecordWork(source.submissionId, target,
+            RecordWorkType.AMENDMENT, "u08-connected-amendment-" + java.util.UUID.randomUUID()))
+        val prepared = client.prepare(project, work.id, source.submissionId, target,
+            RecordWorkType.AMENDMENT, assessCrossVersion = true)
+        val plan = requireNotNull(prepared.mappingPlan)
+        val review = MappingReviewSnapshot(work.id, plan.sourceXFormSha256, plan.targetXFormSha256,
+            plan.candidates.associate { it.targetPath to MappingDecision.REENTER }, true)
+        val b = client.stageQuarantinedWork(project, prepared, review, QuarantinedWorkDraftVault(root))
+        assertTrue(ProtectedReentryWork.eligible(b))
+        assertEquals(0, b.validationTransfers)
+        assertTrue(b.requiresDeprecatedId)
+        assertEquals(source.instanceId, b.sourceInstanceId)
+        val cipher = AndroidKeyStorePrivateDraftCipher()
+        ProtectedMappingApprovalStore(root, cipher).save(b, plan, review)
+        val authorized = client.authorizePrivateTextForm(project, b)
+        val native = JavaRosaPrivateRepeatAnswerSession(prior.context.cacheDir, b,
+            authorized.plan, authorized.targetXFormXml, true)
+        val group = native.schema.groups.single()
+        val rows = QuarantinedRepeatRowVault(root, cipher)
+        val answers = QuarantinedRepeatAnswerStore(root, cipher, rows)
+        val images = QuarantinedRepeatImageStore(root, cipher, rows)
+        val direct = ProtectedNativeImageIntake(prior.context.cacheDir, root, prior.settings)
+        val directProbe = ProtectedNativeRepeatImageProbe(prior.context.cacheDir, root, prior.settings)
+        fun png(color: Int): ByteArray {
+            val bitmap = android.graphics.Bitmap.createBitmap(16, 16, android.graphics.Bitmap.Config.ARGB_8888)
+            return try {
+                bitmap.eraseColor(color)
+                java.io.ByteArrayOutputStream().use {
+                    assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
+                    it.toByteArray()
+                }
+            } finally { bitmap.recycle() }
+        }
+        directProbe.saveDirectText(project, b,
+            native.schema.directTextPaths.associateWith { "Synthetic reentered amendment" })
+        val media = listOf(png(android.graphics.Color.GREEN), png(android.graphics.Color.RED),
+            png(android.graphics.Color.BLUE))
+        try {
+            direct.importSelectedImage(project, b, native.schema.directImagePaths.single(),
+                "image/png", media[0].inputStream())
+            repeat(2) { i ->
+                val row = rows.addRow(b, native.schema, group.path, java.util.UUID.randomUUID().toString())
+                answers.save(b, native, row.rowId, group.fields.associate { it.path to "Reentered member " + i })
+                images.importSelectedImage(b, native, row.rowId, group.imagePaths.single(),
+                    "image/png", media[i + 1].inputStream())
+            }
+        } finally { media.forEach { it.fill(0) } }
+        val store = ProtectedCommittedDraftStore(prior.context.cacheDir, root, prior.settings)
+        val checkpoint = store.commit(project, b, null)
+        val pack = store.persistFinalizedPackage(project, b, checkpoint.generation)
+        assertEquals(3, pack.evidence.packaged.attachments.size)
+        assertFalse(pack.canUpload)
+        assertTrue(runCatching {
+            ProtectedMultipartSubmission(prior.context.cacheDir, root, prior.settings)
+                .send(project, b, checkpoint.generation, pack.evidence.packaged.packageSha256)
+        }.isFailure)
+        // Existing real graphical reserve/send/receipt tests read this marker
+        // after force-stop; the prior visit has already passed its postflight.
+        val evidence = Properties().apply {
+            setProperty("project", project)
+            setProperty("work", b.workId)
+            setProperty("reserved", b.reservedInstanceId)
+            setProperty("generation", checkpoint.generation)
+            setProperty("packageDigest", pack.evidence.packaged.packageSha256)
+        }
+        java.io.FileOutputStream(prior.marker).use { evidence.store(it, "Synthetic amendment"); it.fd.sync() }
+    }
+
+    @Test
+    fun amendmentReceiptRetainedWhileDisconnected() {
+        val state = publicationContext()
+        val b = state.binding
+        assertEquals(RecordWorkType.AMENDMENT, b.workType)
+        val store = ProtectedBoundAttemptStore(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)
+        assertEquals(state.required("packageDigest"), store.inspectStoredReceipt(b).packageSha256)
+        assertTrue(runCatching { store.reopenReceipt(b) }.isFailure)
+        assertLocalQueue(state, R.string.private_queue_receipt, R.string.private_queue_server_unknown)
+        ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+            QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+        ).use { editor ->
+            awaitUi(editor) { activity, views ->
+                val retained = views.filterIsInstance<TextView>().any {
+                    it.text.toString() == activity.getString(R.string.private_bound_local_receipt_retained)
+                }
+                if (retained) {
+                    assertTrue(views.filterIsInstance<EditText>().isEmpty())
+                    assertTrue(views.filterIsInstance<Button>().none {
+                        it.text.toString() in setOf(activity.getString(R.string.private_bound_send),
+                            activity.getString(R.string.private_bound_prepare),
+                            activity.getString(R.string.private_bound_recover))
+                    })
+                }
+                retained
+            }
+        }
+        assertEquals(state.required("boundReceiptDigest"),
+            digest(File(state.area, "protected-bound-receipt.aesgcm").readBytes()))
+    }
+
     private fun verifyBoundPreparation() {
         val state = publicationContext()
         val b = state.binding

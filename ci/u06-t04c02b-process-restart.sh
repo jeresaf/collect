@@ -79,6 +79,9 @@ bound_property=()
 if [[ "${U06_ACK_PROFILE:-acknowledged}" == bound-* ]]; then
   bound_property=(-PCOLLECT_PROTECTED_BOUND_SUBMISSIONS=true)
 fi
+if [[ "${U06_ACK_PROFILE:-acknowledged}" == bound-amendment ]]; then
+  bound_property+=(-PCOLLECT_PROTECTED_AMENDMENTS=true)
+fi
 ./gradlew :collect_app:installDebug "${bound_property[@]}" --no-daemon --stacktrace >/tmp/u06-ui-debug-install.log 2>&1 || {
   echo "::error::Ephemeral-CA debug APK rebuild/install failed"
   tail -n 60 /tmp/u06-ui-debug-install.log
@@ -246,7 +249,7 @@ export PGPASSWORD=synthetic-ci-only
 python3 ci/u06-t04e05c-native-postflight.py before /tmp/u06-native-history.json
 adb shell am force-stop "$APP_ID"
 case "${U06_ACK_PROFILE:-acknowledged}" in
-bound-acknowledged)
+bound-acknowledged|bound-amendment)
   run_one boundAttemptPreparesAndPersistsAcrossForceStop "$restart_class"
   adb shell am force-stop "$APP_ID"
   run_one boundAttemptSendsExactPackageAndRecoversReceipt "$restart_class"
@@ -256,6 +259,32 @@ bound-acknowledged)
   run_one boundReceiptReopensAfterForceStop "$restart_class"
   python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
   echo "U08 bound submission, exact persisted bytes, receipt and restart PASS."
+  if [[ "$U06_ACK_PROFILE" == bound-amendment ]]; then
+    python3 ci/u08-amendment-postflight.py before /tmp/u08-amendment-history.json
+    adb shell am force-stop "$APP_ID"
+    run_one stageAndFinalizeProtectedAmendment "$restart_class"
+    adb shell am force-stop "$APP_ID"
+    run_one boundAttemptPreparesAndPersistsAcrossForceStop "$restart_class"
+    adb shell am force-stop "$APP_ID"
+    run_one boundAttemptSendsExactPackageAndRecoversReceipt "$restart_class"
+    adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u08-amendment-oracle.json
+    python3 ci/u08-amendment-postflight.py after /tmp/u08-amendment-history.json /tmp/u08-amendment-oracle.json
+    adb shell am force-stop "$APP_ID"
+    docker stop u06-t04a-tls >/dev/null
+    trap 'docker start u06-t04a-tls >/dev/null' EXIT
+    run_one amendmentReceiptRetainedWhileDisconnected "$restart_class"
+    docker start u06-t04a-tls >/dev/null
+    trap - EXIT
+    for i in $(seq 1 20); do
+      if curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'; then break; fi
+      sleep 1
+    done
+    curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'
+    adb shell am force-stop "$APP_ID"
+    run_one boundReceiptReopensAfterForceStop "$restart_class"
+    python3 ci/u08-amendment-postflight.py after /tmp/u08-amendment-history.json /tmp/u08-amendment-oracle.json
+    echo "U08 connected amendment and offline retained receipt qualification PASS."
+  fi
   ;;
 acknowledged)
   run_one actualFinalizedMultipartCreatesIndependentLinkedObservation "$restart_class"

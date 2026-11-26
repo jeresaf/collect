@@ -38,7 +38,7 @@ internal class ProtectedSubmissionQueue(private val root: File) {
                     // Do not display or count a foreign/corrupt binding.
                     val b = runCatching { vault.read(projectId, work.name, actorContextSha256) }
                         .getOrNull() ?: continue
-                    if (b.workType != RecordWorkType.FOLLOW_UP || b.validationTransfers != 0) continue
+                    if (!ProtectedReentryWork.eligible(b)) continue
                     val state = runCatching { state(base, b) }.getOrElse { State.UNAVAILABLE }
                     if (state != null) {
                         val bound = state in setOf(State.BOUND_STATUS_REQUIRED, State.RECEIPT_RECHECK) &&

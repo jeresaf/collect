@@ -115,7 +115,7 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
 
     private fun load(): Display {
         val b = binding()
-        require(b.workType == RecordWorkType.FOLLOW_UP && b.validationTransfers == 0)
+        require(ProtectedReentryWork.eligible(b))
         submittedDisplay(b)?.let { return it }
         val form = RecordWorkPreparationClient(settings).authorizePrivateTextForm(project, b)
         val cipher = AndroidKeyStorePrivateDraftCipher()

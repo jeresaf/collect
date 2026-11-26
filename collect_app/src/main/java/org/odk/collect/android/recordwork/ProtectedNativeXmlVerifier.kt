@@ -83,7 +83,7 @@ internal object ProtectedNativeXmlVerifier {
                 "meta" -> {
                     require(!meta && parser.attributeCount == 0)
                     meta = true
-                    fields(mapOf("/$root/meta/instanceID" to binding.reservedInstanceId), "/$root/meta")
+                    fields(ProtectedReentryWork.metadata(binding).mapKeys { "/$root/meta/" + it.key }, "/$root/meta")
                     require(parser.name == "meta")
                 }
                 else -> {

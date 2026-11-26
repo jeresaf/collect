@@ -82,8 +82,7 @@ internal class ProtectedAttemptRemoteClient(
         val paths = RecordWorkApiPaths.fromProjectUrl(base)
         val user = values.getString(ProjectKeys.KEY_USERNAME).orEmpty()
         val password = values.getString(ProjectKeys.KEY_PASSWORD).orEmpty()
-        require(b.workType == RecordWorkType.FOLLOW_UP && b.validationTransfers == 0 &&
-            !b.requiresDeprecatedId && !b.visitKey.isNullOrBlank() && user.isNotBlank() && password.isNotBlank() &&
+        require(ProtectedReentryWork.eligible(b) && user.isNotBlank() && password.isNotBlank() &&
             user.none { it == ':' || it.isISOControl() } && password.none { it.isISOControl() } &&
             QuarantinedWorkDraftVault.sha256(b.projectId + "\n" + paths.records() + "\n" + user) ==
                 b.actorContextSha256)

@@ -380,8 +380,8 @@ internal class ProtectedCommittedDraftStore(
     }
 
     private fun authorize(projectId: String, binding: QuarantinedWorkDraft) {
-        require(projectId == binding.projectId && binding.workType == RecordWorkType.FOLLOW_UP &&
-            binding.validationTransfers == 0 && !binding.canOpenEditor &&
+        require(projectId == binding.projectId && ProtectedReentryWork.eligible(binding) &&
+            !binding.canOpenEditor &&
             !binding.canFinalize && !binding.canUpload)
         checkBinding(binding)
         RecordWorkPreparationClient(settings).authorizePrivateTextForm(projectId, binding)

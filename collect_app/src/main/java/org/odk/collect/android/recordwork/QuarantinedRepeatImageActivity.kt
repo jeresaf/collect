@@ -120,7 +120,7 @@ class QuarantinedRepeatImageActivity : LocalizedActivity() {
             .authorizePrivateTextForm(projectId, binding)
         val mixed = intent.getBooleanExtra(QuarantinedCombinedDraftActivity.EXTRA_MIXED, false)
         if (mixed) {
-            require(binding.workType == RecordWorkType.FOLLOW_UP && binding.validationTransfers == 0)
+            require(ProtectedReentryWork.eligible(binding))
             val approval = requireNotNull(ProtectedMappingApprovalStore(
                 noBackupFilesDir, AndroidKeyStorePrivateDraftCipher()).read(binding, prepared.plan))
             require(approval.decisions.values.all { it == MappingDecision.REENTER })

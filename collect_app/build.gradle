@@ -89,6 +89,8 @@ android {
         // Explicit qualification/distribution opt-in. No default activation.
         buildConfigField('boolean', 'PROTECTED_BOUND_SUBMISSIONS',
             project.findProperty('COLLECT_PROTECTED_BOUND_SUBMISSIONS')?.toString() == 'true' ? 'true' : 'false')
+        buildConfigField('boolean', 'PROTECTED_AMENDMENTS',
+            project.findProperty('COLLECT_PROTECTED_AMENDMENTS')?.toString() == 'true' ? 'true' : 'false')
         buildConfigField('boolean', 'CUSTOM_DISTRIBUTION', isOfficialOdkApplication ? 'false' : 'true')
         testInstrumentationRunner('androidx.test.runner.AndroidJUnitRunner')
         vectorDrawables.useSupportLibrary = true

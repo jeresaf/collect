@@ -229,6 +229,26 @@ class QuarantinedWorkDraftVaultTest {
         assertTrue(ProtectedSubmissionQueue(temporary.root).list(project, actor).isEmpty())
     }
 
+    @Test fun protectedAmendmentRequiresExplicitGateAndZeroTransfers() {
+        val (preview, review, transfer) = amendment()
+        val b = QuarantinedWorkDraftVault(temporary.root).stage(project, actor, preview, review, transfer)
+        assertFalse(ProtectedReentryWork.eligible(b, amendmentsEnabled = true))
+        val reentry = b.copy(validationTransfers = 0)
+        assertFalse(ProtectedReentryWork.eligible(reentry, amendmentsEnabled = false))
+        assertTrue(ProtectedReentryWork.eligible(reentry, amendmentsEnabled = true))
+        assertFalse(ProtectedReentryWork.eligible(reentry.copy(sourceXFormSha256 = null), true))
+        assertFalse(ProtectedReentryWork.eligible(reentry.copy(visitKey = "visit"), true))
+        assertFalse(ProtectedReentryWork.eligible(reentry.copy(reservedInstanceId = reentry.sourceInstanceId), true))
+        assertEquals(mapOf("instanceID" to reentry.reservedInstanceId,
+            "deprecatedID" to reentry.sourceInstanceId), ProtectedReentryWork.metadata(reentry))
+        val independent = reentry.copy(workType = RecordWorkType.FOLLOW_UP,
+            visitKey = "visit", requiresDeprecatedId = false)
+        assertTrue(ProtectedReentryWork.eligible(independent, amendmentsEnabled = false))
+        assertEquals(mapOf("instanceID" to independent.reservedInstanceId),
+            ProtectedReentryWork.metadata(independent))
+        rejects { ProtectedReentryWork.metadata(b) }
+    }
+
     private fun amendment(): Triple<PreparedRecordPreview, MappingReviewSnapshot,
         ReviewedTransferEvidence> {
         val path = "/data/name"

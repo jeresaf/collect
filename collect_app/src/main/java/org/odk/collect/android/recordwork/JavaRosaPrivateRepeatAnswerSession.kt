@@ -347,17 +347,33 @@ class JavaRosaPrivateRepeatAnswerSession(
         }
         assertScalars()
         if (requireComplete) {
-            // Exact root/metadata inventory; no hidden business fields or
-            // amendment deprecatedID admitted for an independent visit.
-            require(binding.workType == RecordWorkType.FOLLOW_UP &&
-                !binding.requiresDeprecatedId && binding.reservedInstanceId != binding.sourceInstanceId)
+            // Exact root/metadata inventory; amendments are independently gated.
+            require(ProtectedReentryWork.eligible(binding))
             val rootNode = form.instance.root
             val expectedRootNames = (schema.directTextPaths + schema.directImagePaths)
                 .map { it.substringAfterLast('/') }.toSet() + setOf(name, "meta")
             require((0 until rootNode.numChildren).map { rootNode.getChildAt(it).name }.toSet() ==
                 expectedRootNames)
             val meta = requireNotNull(rootNode.getChild("meta", 0))
-            require(meta.numChildren == 1 && meta.getChildAt(0).name == "instanceID")
+            val expectedMetadata = ProtectedReentryWork.metadata(binding)
+            val existingMetadata = (0 until meta.numChildren).map { meta.getChildAt(it).name }
+            require(existingMetadata.size == existingMetadata.toSet().size &&
+                "instanceID" in existingMetadata && existingMetadata.all { it in expectedMetadata })
+            if (binding.requiresDeprecatedId) {
+                // Add only the protocol-owned revision identity to the ephemeral
+                // native model. No historical business value is imported.
+                val deprecated = meta.getChild("deprecatedID", 0) ?:
+                    org.javarosa.core.model.instance.TreeElement("deprecatedID", 0).apply {
+                        dataType = org.javarosa.core.model.Constants.DATATYPE_TEXT
+                        meta.addChild(this)
+                    }
+                require(deprecated.isLeaf && deprecated.value == null &&
+                    deprecated.dataType == org.javarosa.core.model.Constants.DATATYPE_TEXT)
+                deprecated.setValue(StringData(binding.sourceInstanceId))
+                require(deprecated.value?.value == binding.sourceInstanceId)
+            }
+            require(meta.numChildren == expectedMetadata.size &&
+                (0 until meta.numChildren).map { meta.getChildAt(it).name }.toSet() == expectedMetadata.keys)
             val instanceRef = TreeReference.rootRef().apply {
                 add(root, 0)
                 add("meta", 0)

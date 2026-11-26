@@ -34,6 +34,8 @@ internal class ProtectedMultipartSubmission(
         projectId: String, binding: QuarantinedWorkDraft, generation: String,
         expectedPackageSha256: String
     ): ProtectedTransportResult {
+        // The legacy sender never acquires protected amendment authority.
+        require(binding.workType == RecordWorkType.FOLLOW_UP)
         val admission = ProtectedSubmissionAdmission(scratch, root, settings)
             .inspect(projectId, binding, generation, expectedPackageSha256)
         var result: ProtectedTransportResult? = null

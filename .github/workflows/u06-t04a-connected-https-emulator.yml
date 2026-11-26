@@ -2,7 +2,7 @@ name: U06-T04A Connected Android HTTPS Smoke (experimental)
 
 on:
   push:
-    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission, codex/u06-t04c02-stale-recovery, codex/u06-t04c02b-draft-restart, codex/u06-t04c03a-followup-submission, codex/u06-t04c03b-repeats-media, codex/u06-t04c03c-lost-ack-recovery, codex/u06-t04d01-ui-fail-closed, codex/u06-t04d02-ui-context-invariants, codex/u06-t04d03-record-row-ui, codex/u06-t04d03b-record-intent, codex/u06-t04d03b2a-active-project-preparation-ui, codex/u06-t04d03b2b-live-record-preparation-ui, codex/u06-t04d03c1-pending-work-ui, codex/u06-t04d04a-actual-browser-activity, codex/u06-t04d04b1-target-version-ui, codex/u06-t04d04b2-ui-followup-create, codex/u06-t04e01-unstaged-native-editor-denial, codex/u06-t04e02a-ui-reviewed-staging, codex/u06-t04e02b-authorized-protected-editor, codex/u06-t04e03a-protected-editor-save, codex/u06-t04e03b-editor-process-recovery, codex/u06-t04e03c1-native-controller-boundary, codex/u06-t04e03c2-native-answer-navigation, codex/u06-t04e03c3-native-repeat-editing, codex/u06-t04e03c4-native-conditional-validation, codex/u06-t04e03c5a-native-direct-image, codex/u06-t04e03c5b-native-image-navigation, codex/u06-t04e03c5c-repeat-image-identity, codex/u06-t04e03c6a-combined-repeat-draft, codex/u06-t04e03c6b-combined-draft-restart, codex/u06-t04e03c6c-mixed-native-draft, codex/u06-t04e03c6d1-atomic-draft-generation, codex/u06-t04e03c6d2-interrupted-publication, codex/u06-t04e03c6d3-protected-checkpoint-ui, codex/u06-t04e03c6d3-graphical-recovery, codex/u06-t04e03c6d3-concurrent-publication, codex/u06-t04e04a-finalization-eligibility, codex/u06-t04e04b-native-xml-serialization, codex/u06-t04e04c-attachment-reconciliation, codex/u06-t04e04d-finalized-package-persistence, codex/u06-t04e04e-graphical-finalization, codex/u06-t04e05a-finalized-submission-admission, codex/u06-t04e05b-authenticated-multipart, codex/u06-t04e05c-native-server-acceptance, codex/u06-t04e05d-durable-acknowledgement, codex/u06-t04e05e-graphical-submission, codex/u06-t04e06a-attempt-edit-boundary, codex/u06-t04e06b-authenticated-reconciliation, codex/u06-t04e06c2-completion-evidence-client, codex/u06-t04e06c3-recovered-receipt, codex/u06-t04e06c4-lost-ack-qualification, codex/u06-t04e06d1-interrupted-upload]
+    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission, codex/u06-t04c02-stale-recovery, codex/u06-t04c02b-draft-restart, codex/u06-t04c03a-followup-submission, codex/u06-t04c03b-repeats-media, codex/u06-t04c03c-lost-ack-recovery, codex/u06-t04d01-ui-fail-closed, codex/u06-t04d02-ui-context-invariants, codex/u06-t04d03-record-row-ui, codex/u06-t04d03b-record-intent, codex/u06-t04d03b2a-active-project-preparation-ui, codex/u06-t04d03b2b-live-record-preparation-ui, codex/u06-t04d03c1-pending-work-ui, codex/u06-t04d04a-actual-browser-activity, codex/u06-t04d04b1-target-version-ui, codex/u06-t04d04b2-ui-followup-create, codex/u06-t04e01-unstaged-native-editor-denial, codex/u06-t04e02a-ui-reviewed-staging, codex/u06-t04e02b-authorized-protected-editor, codex/u06-t04e03a-protected-editor-save, codex/u06-t04e03b-editor-process-recovery, codex/u06-t04e03c1-native-controller-boundary, codex/u06-t04e03c2-native-answer-navigation, codex/u06-t04e03c3-native-repeat-editing, codex/u06-t04e03c4-native-conditional-validation, codex/u06-t04e03c5a-native-direct-image, codex/u06-t04e03c5b-native-image-navigation, codex/u06-t04e03c5c-repeat-image-identity, codex/u06-t04e03c6a-combined-repeat-draft, codex/u06-t04e03c6b-combined-draft-restart, codex/u06-t04e03c6c-mixed-native-draft, codex/u06-t04e03c6d1-atomic-draft-generation, codex/u06-t04e03c6d2-interrupted-publication, codex/u06-t04e03c6d3-protected-checkpoint-ui, codex/u06-t04e03c6d3-graphical-recovery, codex/u06-t04e03c6d3-concurrent-publication, codex/u06-t04e04a-finalization-eligibility, codex/u06-t04e04b-native-xml-serialization, codex/u06-t04e04c-attachment-reconciliation, codex/u06-t04e04d-finalized-package-persistence, codex/u06-t04e04e-graphical-finalization, codex/u06-t04e05a-finalized-submission-admission, codex/u06-t04e05b-authenticated-multipart, codex/u06-t04e05c-native-server-acceptance, codex/u06-t04e05d-durable-acknowledgement, codex/u06-t04e05e-graphical-submission, codex/u06-t04e06a-attempt-edit-boundary, codex/u06-t04e06b-authenticated-reconciliation, codex/u06-t04e06c2-completion-evidence-client, codex/u06-t04e06c3-recovered-receipt, codex/u06-t04e06c4-lost-ack-qualification, codex/u06-t04e06d1-interrupted-upload, codex/u06-t04e06d2-interrupted-upstream]
   workflow_dispatch:
 
 permissions:
@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ack-profile: [acknowledged, lost-response, interrupted-upload]
+        ack-profile: [acknowledged, lost-response, interrupted-upload, interrupted-upstream]
     env:
       U06_ACK_PROFILE: ${{ matrix.ack-profile }}
     runs-on: ubuntu-24.04
@@ -55,9 +55,10 @@ jobs:
           SPRING_DATASOURCE_USERNAME: odk_user
           SPRING_DATASOURCE_PASSWORD: synthetic-ci-only
           STORAGE_LOCAL_PATH: /tmp/u06-t04a-data
+          SPRING_SERVLET_MULTIPART_LOCATION: /tmp/u06-t04a-multipart
         run: |
           set -euo pipefail
-          mkdir -p /tmp/u06-t04a-data
+          mkdir -p /tmp/u06-t04a-data /tmp/u06-t04a-multipart
           export JWT_SECRET="$(openssl rand -hex 48)"
           jar="$(find backend-reference/backend/target -maxdepth 1 -name '*.jar' ! -name '*original*' | head -n1)"
           test -n "$jar"
@@ -193,7 +194,7 @@ jobs:
               expected_mixed_state=COMPLETED
               expected_mixed_children=1
               ;;
-            interrupted-upload)
+            interrupted-upload|interrupted-upstream)
               expected_links=1
               expected_submissions=3
               expected_mixed_state=READY
@@ -284,7 +285,7 @@ jobs:
           if [ -f /tmp/u06-t04a-backend.pid ]; then
             kill "$(cat /tmp/u06-t04a-backend.pid)" >/dev/null 2>&1 || true
           fi
-          rm -rf /tmp/u06-t04a-tls /tmp/u06-t04a-data
+          rm -rf /tmp/u06-t04a-tls /tmp/u06-t04a-data /tmp/u06-t04a-multipart
           rm -f /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json /tmp/u06-interrupted-baseline.json
           rm -f collect_app/src/androidTest/assets/u06_t04a_ca.pem
       - name: Upload emulator test report only

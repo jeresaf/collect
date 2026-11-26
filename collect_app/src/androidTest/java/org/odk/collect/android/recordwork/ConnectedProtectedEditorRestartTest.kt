@@ -2010,7 +2010,7 @@ class ConnectedProtectedEditorRestartTest {
     }
 
     @Test
-    fun actualFinalizedUploadInterruptedBeforeForwarding() {
+    fun actualFinalizedUploadInterruptedWithoutAcceptance() {
         var phase = "SETUP"
         try {
             val state = publicationContext()
@@ -2035,7 +2035,7 @@ class ConnectedProtectedEditorRestartTest {
             val before = remote.load(b.projectId)
             ProtectedSubmissionAdmission.verifySnapshot(b, before)
             phase = "POST"
-            // Real production TLS transport; CI ingress consumes a strict prefix and closes.
+            // Real production TLS transport; CI interrupts ingress or upstream before acceptance.
             val sender = ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
             val result = sender.send(b.projectId, b, generation, sha)
             assertFalse(result.acknowledged)

@@ -184,10 +184,30 @@ jobs:
           followups="$(query "SELECT count(*) FROM record_work_items WHERE source_submission_id='81000000-0000-4000-8000-000000000007' AND work_type='FOLLOW_UP' AND visit_key='second-household-visit' AND state='READY'")"
           links="$(query "SELECT count(*) FROM record_links")"
           submissions="$(query "SELECT count(*) FROM submissions WHERE id IN ('81000000-0000-4000-8000-000000000007','81000000-0000-4000-8000-000000000008')")"
+          # The interrupted-ingress profile must retain the mixed work as READY.
+          # Keep the previous completed-visit and all other regression assertions.
+          case "$U06_ACK_PROFILE" in
+            acknowledged|lost-response)
+              expected_links=2
+              expected_submissions=4
+              expected_mixed_state=COMPLETED
+              expected_mixed_children=1
+              ;;
+            interrupted-upload)
+              expected_links=1
+              expected_submissions=3
+              expected_mixed_state=READY
+              expected_mixed_children=0
+              ;;
+            *)
+              echo "::error::Unknown qualification profile"
+              exit 1
+              ;;
+          esac
           test "$stale" = 0
           test "$current" = 1
           test "$followups" = 1
-          test "$links" = 2
+          test "$links" = "$expected_links"
           completed="$(query "SELECT count(*) FROM record_work_items WHERE work_type='FOLLOW_UP' AND state='COMPLETED' AND source_submission_id='81000000-0000-4000-8000-000000000007' AND visit_key LIKE 'completed-visit-%'")"
           child="$(query "SELECT count(*) FROM record_links r JOIN record_work_items w ON w.id=r.work_item_id JOIN submissions s ON s.id=r.child_submission_id WHERE r.source_submission_id='81000000-0000-4000-8000-000000000007' AND r.link_type='FOLLOW_UP' AND s.form_version_id='81000000-0000-4000-8000-000000000004' AND s.xml_content LIKE '%Synthetic independent later visit%' AND w.state='COMPLETED'")"
           original_xml="$(query "SELECT count(*) FROM submissions WHERE id='81000000-0000-4000-8000-000000000007' AND xml_content LIKE '%Synthetic V1%'")"
@@ -197,7 +217,7 @@ jobs:
           test "$child" = 1
           test "$original_xml" = 1
           test "$untouched_archive" = 1
-          test "$all_submissions" = 4
+          test "$all_submissions" = "$expected_submissions"
           pending_ui="$(query "SELECT count(*) FROM record_work_items WHERE work_type='FOLLOW_UP' AND state='READY' AND source_submission_id='81000000-0000-4000-8000-000000000007' AND client_request_id LIKE 'u06-ui-pending-request-%' AND visit_key LIKE 'u06-ui-pending-%'")"
           pending_ui_links="$(query "SELECT count(*) FROM record_links l JOIN record_work_items w ON w.id=l.work_item_id WHERE w.client_request_id LIKE 'u06-ui-pending-request-%'")"
           test "$pending_ui" = 1
@@ -223,11 +243,15 @@ jobs:
           test "$repeat_image_work" = 1
           test "$repeat_image_links" = 0
           echo "U06-T04E-03C5C: repeat image work remains READY; no child links or submissions"
-          mixed_work="$(query "SELECT count(*) FROM record_work_items WHERE work_type='FOLLOW_UP' AND state='COMPLETED' AND source_submission_id='81000000-0000-4000-8000-000000000007' AND target_form_version_id='81000000-0000-4000-8000-000000000021' AND client_request_id LIKE 'u06-mixed-request-%' AND visit_key LIKE 'u06-mixed-%'")"
+          mixed_work="$(query "SELECT count(*) FROM record_work_items WHERE work_type='FOLLOW_UP' AND state='$expected_mixed_state' AND source_submission_id='81000000-0000-4000-8000-000000000007' AND target_form_version_id='81000000-0000-4000-8000-000000000021' AND client_request_id LIKE 'u06-mixed-request-%' AND visit_key LIKE 'u06-mixed-%'")"
           mixed_links="$(query "SELECT count(*) FROM record_links l JOIN record_work_items w ON w.id=l.work_item_id WHERE w.visit_key LIKE 'u06-mixed-%'")"
+          mixed_total="$(query "SELECT count(*) FROM record_work_items WHERE source_submission_id='81000000-0000-4000-8000-000000000007' AND visit_key LIKE 'u06-mixed-%'")"
+          mixed_submissions="$(query "SELECT count(*) FROM submissions WHERE form_version_id='81000000-0000-4000-8000-000000000021'")"
+          test "$mixed_total" = 1
           test "$mixed_work" = 1
-          test "$mixed_links" = 1
-          echo "U06-T04E-05C: mixed target completed; exactly one native child link"
+          test "$mixed_links" = "$expected_mixed_children"
+          test "$mixed_submissions" = "$expected_mixed_children"
+          echo "Mixed target postflight PASS: state=$expected_mixed_state child links=$expected_mixed_children submissions=$expected_mixed_children"
 
 
           duplicate_instance="$(query "SELECT count(*) FROM submissions s JOIN record_links l ON l.child_submission_id=s.id WHERE l.link_type='FOLLOW_UP' AND s.instance_id LIKE 'uuid:%' AND s.xml_content LIKE '%Synthetic independent later visit%'")"
@@ -252,7 +276,7 @@ jobs:
           stored_hash="$(query "SELECT sa.content_hash FROM submission_attachments sa JOIN record_links l ON l.child_submission_id=sa.submission_id WHERE l.link_type='FOLLOW_UP' AND sa.file_name='u06-followup-photo.jpg'")"
           test "$(sha256sum "$stored_path" | cut -d' ' -f1)" = "$stored_hash"
           echo "PostgreSQL repeat/media assertions PASS: two indexed child repeats, linked photo, byte-verified media and unchanged original"
-          echo "PostgreSQL admission + follow-up submission assertions PASS: V1 amendment=0 V2 amendment=1 V1 planned visit=1 linked completed visit=1 links=2 total submissions=4 and source/archive preserved"
+          echo "PostgreSQL admission + follow-up submission assertions PASS: V1 amendment=0 V2 amendment=1 V1 planned visit=1 linked completed visit=1 links=$expected_links total submissions=$expected_submissions and source/archive preserved"
       - name: Cleanup disposable CA, server and temporary store
         if: always()
         run: |
@@ -261,7 +285,7 @@ jobs:
             kill "$(cat /tmp/u06-t04a-backend.pid)" >/dev/null 2>&1 || true
           fi
           rm -rf /tmp/u06-t04a-tls /tmp/u06-t04a-data
-          rm -f /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
+          rm -f /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json /tmp/u06-interrupted-baseline.json
           rm -f collect_app/src/androidTest/assets/u06_t04a_ca.pem
       - name: Upload emulator test report only
         if: always()

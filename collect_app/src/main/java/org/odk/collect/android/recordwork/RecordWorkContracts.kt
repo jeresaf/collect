@@ -19,6 +19,8 @@ class RecordWorkApiPaths private constructor(private val projectBase: String) {
     fun workItems(): String = "$projectBase/record-work-items"
     fun prepare(workItemId: String): String =
         "$projectBase/record-work-items/${checkedId(workItemId)}/prepare"
+    fun completionEvidence(workItemId: String): String =
+        "$projectBase/record-work-items/${checkedId(workItemId)}/completion-evidence"
     fun submission(): String = "$projectBase/submission"
 
     companion object {

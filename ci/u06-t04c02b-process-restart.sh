@@ -29,7 +29,7 @@ run_one() {
     # Emit only the fixed-format recovery diagnostic, not raw output.
     grep -Eo 'U06_RESTART_FAILURE phase=(CHECKPOINT|PERSISTED_PROJECT|PROJECT_RESTORE|ACTOR_SCOPE|BINDING|CIPHERTEXT|LIVE_READY|EDITOR_REOPEN|POSTCONDITIONS) kind=(AssertionError|PreparationException|ReadOnlyRecordException|IllegalStateException|IllegalArgumentException|IOException|SecurityException|OtherException)' <<<"$output" | sort -u || true
     grep -Eo 'U06_MULTIPART_FAILURE phase=(SETUP|DECRYPTED_FRAME|CAPTURE_SETUP|WRONG_DIGEST|SEND|RECEIPT|HEADERS|MULTIPART|REPLAY|REDIRECT|WRONG_RECEIPT|POSTCONDITIONS) kind=(AssertionError|IllegalArgumentException|IllegalStateException|IOException|OtherException) line=-?[0-9]+ origin=(ProtectedMultipartSubmission|ProtectedCommittedDraftStore|ProtectedFinalizedPackageFile|ProtectedSubmissionAdmission|ProtectedNativePackageBuilder|RecordWorkPreparationClient|RecordWorkReadOnlyClient|AndroidKeyStorePrivateDraftCipher|Unknown):-?[0-9]+' <<<"$output" | sort -u || true
-    grep -Eo 'U06_NATIVE_POST_FAILURE phase=(SETUP|UNCONFIRMED_UI|CONFIRM_UI|POST|ACK|RECONCILE|RECONCILIATION_INSPECTION|REPLAY|ORACLE) line=-?[0-9]+' <<<"$output" | sort -u || true
+    grep -Eo 'U06_NATIVE_POST_FAILURE phase=(SETUP|UNCONFIRMED_UI|CONFIRM_UI|POST|ACK|RECONCILE|RECONCILIATION_INSPECTION|COMPLETION_EVIDENCE|REPLAY|ORACLE) line=-?[0-9]+' <<<"$output" | sort -u || true
     exit 1
   fi
   echo "Android instrumentation phase ${method}: PASS"
@@ -247,3 +247,5 @@ echo "U06-T04E-05E: explicit graphical submission, unsaved/cancel/partial-attemp
 echo "U06-T04E-06A: protected stale-session text/media/repeat/checkpoint editing denial, partial/receipt/symlink marker preservation and real graphical submission PASS."
 
 echo "U06-T04E-06B: authenticated READY/linked-record inspection without receipt publication or retransmission, integrity and conflict denial PASS."
+
+echo "U06-T04E-06C2: authenticated completed-work evidence GET, exact identity and bounded digest inventory, malformed/redirect/READY denial PASS."

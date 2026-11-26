@@ -1163,7 +1163,8 @@ class ConnectedProtectedEditorRestartTest {
     }
 
     private class CapturedHttps(url: java.net.URL, private val code: Int,
-                                private val receipt: ByteArray) : javax.net.ssl.HttpsURLConnection(url) {
+                                private val receipt: ByteArray,
+                                private val mime: String = "text/xml; charset=UTF-8") : javax.net.ssl.HttpsURLConnection(url) {
         val body = java.io.ByteArrayOutputStream()
         val headers = linkedMapOf<String, String>()
         var length = -1L
@@ -1180,7 +1181,7 @@ class ConnectedProtectedEditorRestartTest {
             return receipt.inputStream()
         }
         override fun getResponseCode() = code
-        override fun getContentType() = "text/xml; charset=UTF-8"
+        override fun getContentType() = mime
         override fun setRequestProperty(key: String, value: String) { headers[key] = value }
         override fun setFixedLengthStreamingMode(contentLength: Long) { length = contentLength }
     }
@@ -1405,6 +1406,14 @@ class ConnectedProtectedEditorRestartTest {
         val before = remote.load(b.projectId)
         ProtectedSubmissionAdmission.verifySnapshot(b, before)
         val original = before.records.single { it.submissionId == b.sourceSubmissionId }
+        phase("COMPLETION_EVIDENCE")
+        val hypotheticalChild = original.copy(submissionId = java.util.UUID.randomUUID().toString(),
+            instanceId = b.reservedInstanceId, formVersionId = b.targetFormVersionId)
+        val readyFailure = runCatching { remote.completionEvidence(b.projectId, b, hypotheticalChild) }.exceptionOrNull()
+        assertTrue(readyFailure is ReadOnlyRecordException &&
+            readyFailure.reason == ReadOnlyRequestFailure.SERVER_ERROR)
+        assertFalse(latch.exists())
+        assertEquals(before, remote.load(b.projectId))
         // The default production connection factory uses the app's project
         // credentials and the disposable debug-only CA, not a test POST stub.
         phase("POST")
@@ -1640,6 +1649,95 @@ class ConnectedProtectedEditorRestartTest {
             assertFalse(linked.canEdit || linked.canUpload)
             assertFalse(receiptPath.exists())
             assertArrayEquals(latchBefore, latch.readBytes())
+            assertEquals(after, remote.load(b.projectId))
+            phase("COMPLETION_EVIDENCE")
+            val proof = remote.completionEvidence(b.projectId, b, child)
+            assertEquals(b.workId, proof.workId)
+            assertEquals(b.sourceSubmissionId, proof.sourceSubmissionId)
+            assertEquals(b.sourceInstanceId, proof.sourceInstanceId)
+            assertEquals(b.targetFormVersionId, proof.targetFormVersionId)
+            assertEquals(child.formId, proof.formId)
+            assertEquals(b.visitKey, proof.visitKey)
+            assertEquals(child.submissionId, proof.submissionId)
+            assertEquals(b.reservedInstanceId, proof.instanceId)
+            assertEquals(saved.evidence.packaged.xml.xmlBytes, proof.xmlBytes)
+            assertEquals(saved.evidence.packaged.xml.xmlSha256, proof.xmlSha256)
+            assertEquals(saved.evidence.packaged.attachments.values.sortedBy { it.filename }, proof.attachments)
+            assertFalse(proof.canEdit || proof.canUpload)
+            val json = org.json.JSONObject().put("workId", proof.workId)
+                .put("sourceSubmissionId", proof.sourceSubmissionId).put("sourceInstanceId", proof.sourceInstanceId)
+                .put("targetFormVersionId", proof.targetFormVersionId).put("formId", proof.formId)
+                .put("visitKey", proof.visitKey).put("submissionId", proof.submissionId)
+                .put("instanceId", proof.instanceId).put("xmlBytes", proof.xmlBytes)
+                .put("xmlSha256", proof.xmlSha256).put("attachments", org.json.JSONArray().apply {
+                    proof.attachments.forEach { item -> put(org.json.JSONObject()
+                        .put("filename", item.filename).put("mime", item.mime)
+                        .put("bytes", item.bytes).put("sha256", item.sha256)) }
+                })
+            val values = state.settings.getUnprotectedSettings(b.projectId)
+            val expectedUrl = RecordWorkApiPaths.fromProjectUrl(values.getString(ProjectKeys.KEY_SERVER_URL).orEmpty())
+                .completionEvidence(b.workId)
+            fun captured(code: Int, body: String, mime: String = "application/json"): Pair<RecordWorkReadOnlyClient, CapturedHttps> {
+                val connection = CapturedHttps(java.net.URL(expectedUrl), code, body.toByteArray(Charsets.UTF_8), mime)
+                val client = RecordWorkReadOnlyClient(state.settings) { url ->
+                    assertEquals(expectedUrl, url.toString())
+                    connection
+                }
+                return client to connection
+            }
+            val (fixture, connection) = captured(200, json.toString())
+            assertEquals(proof, fixture.completionEvidence(b.projectId, b, child))
+            assertEquals("GET", connection.requestMethod)
+            assertFalse(connection.instanceFollowRedirects)
+            assertFalse(connection.useCaches)
+            assertEquals("application/json", connection.headers["Accept"])
+            assertEquals("no-store", connection.headers["Cache-Control"])
+            assertTrue(connection.headers["Authorization"]?.startsWith("Basic ") == true)
+            assertEquals(0, connection.body.size())
+            assertEquals(1, connection.inputReads)
+            for (code in listOf(301, 302, 307, 308, 401, 403, 404, 409, 500)) {
+                val (denied, captured) = captured(code, json.toString())
+                assertTrue(runCatching { denied.completionEvidence(b.projectId, b, child) }.isFailure)
+                assertEquals(0, captured.inputReads)
+                assertFalse(captured.instanceFollowRedirects)
+            }
+            val (wrongMime, mimeConnection) = captured(200, json.toString(), "text/html")
+            assertTrue(runCatching { wrongMime.completionEvidence(b.projectId, b, child) }.isFailure)
+            assertEquals(0, mimeConnection.inputReads)
+            assertTrue(runCatching { fixture.completionEvidence(b.projectId,
+                b.copy(actorContextSha256 = "0".repeat(64)), child) }.isFailure)
+            assertEquals(1, connection.inputReads)
+            val invalid = listOf<(org.json.JSONObject) -> Unit>(
+                { it.put("workId", java.util.UUID.randomUUID().toString()) },
+                { it.put("sourceSubmissionId", java.util.UUID.randomUUID().toString()) },
+                { it.put("sourceInstanceId", "wrong") },
+                { it.put("targetFormVersionId", java.util.UUID.randomUUID().toString()) },
+                { it.put("formId", java.util.UUID.randomUUID().toString()) },
+                { it.put("visitKey", "wrong") },
+                { it.put("submissionId", b.sourceSubmissionId) },
+                { it.put("instanceId", b.sourceInstanceId) },
+                { it.put("xmlBytes", "12") },
+                { it.put("xmlBytes", 8 * 1024 * 1024 + 1) },
+                { it.put("xmlSha256", "bad") },
+                { it.put("canUpload", true) },
+                { it.put("attachments", org.json.JSONArray()) },
+                { it.getJSONArray("attachments").put(it.getJSONArray("attachments").getJSONObject(0)) },
+                { it.getJSONArray("attachments").getJSONObject(0).put("filename", "../image.jpg") },
+                { it.getJSONArray("attachments").getJSONObject(0).put("mime", "text/plain") },
+                { it.getJSONArray("attachments").getJSONObject(0).put("bytes", 1_500_001) },
+                { it.getJSONArray("attachments").getJSONObject(0).put("sha256", "bad") }
+            )
+            invalid.forEachIndexed { index, mutate ->
+                val changed = org.json.JSONObject(json.toString()).also(mutate)
+                val (bad, _) = captured(200, changed.toString())
+                assertTrue("Invalid completion evidence $index",
+                    runCatching { bad.completionEvidence(b.projectId, b, child) }.isFailure)
+            }
+            val (trailing, _) = captured(200, json.toString() + "{}")
+            assertTrue(runCatching { trailing.completionEvidence(b.projectId, b, child) }.isFailure)
+            assertFalse(receiptPath.exists())
+            assertArrayEquals(latchBefore, latch.readBytes())
+            assertArrayEquals(envelopeBefore, envelope.readBytes())
             assertEquals(after, remote.load(b.projectId))
         } finally { assertTrue(heldReceipt.renameTo(receiptPath)) }
         assertArrayEquals(receiptBytes, receiptPath.readBytes())

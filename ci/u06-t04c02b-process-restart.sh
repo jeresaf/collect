@@ -75,7 +75,11 @@ cat >collect_app/src/debug/res/xml/network_security_config.xml <<'XML'
 </network-security-config>
 XML
 test ! -e collect_app/src/main/res/raw/u06_ci_ephemeral_ca.pem
-./gradlew :collect_app:installDebug --no-daemon --stacktrace >/tmp/u06-ui-debug-install.log 2>&1 || {
+bound_property=()
+if [[ "${U06_ACK_PROFILE:-acknowledged}" == bound-* ]]; then
+  bound_property=(-PCOLLECT_PROTECTED_BOUND_SUBMISSIONS=true)
+fi
+./gradlew :collect_app:installDebug "${bound_property[@]}" --no-daemon --stacktrace >/tmp/u06-ui-debug-install.log 2>&1 || {
   echo "::error::Ephemeral-CA debug APK rebuild/install failed"
   tail -n 60 /tmp/u06-ui-debug-install.log
   exit 1

@@ -29,4 +29,16 @@
     <string name="private_submission_unconfirmed">Submission status could not be verified. The protected observation is retained. Do not resubmit or edit. Refresh status when connected.</string>
     <string name="private_submission_refresh">Refresh submission status</string>
     <string name="private_submission_check_failed">Submission was not verified. Review the current state and server permission before proceeding.</string>
+    <string name="private_bound_prepare">Prepare protected submission</string>
+    <string name="private_bound_prepare_confirm">Reserve this exact finalized observation on the authorized server? This locks editing but does not send answers or photos.</string>
+    <string name="private_bound_ready">The server has verified this exact protected submission is admissible. Send only after confirming.</string>
+    <string name="private_bound_verified">The server has verified the completed observation. Recover its receipt without sending again.</string>
+    <string name="private_bound_unbound">The protected attempt is reserved but preparation is incomplete. Resume only the same attempt.</string>
+    <string name="private_bound_unavailable">Protected submission status is unavailable. Answers remain encrypted. Editing and ordinary submission are blocked.</string>
+    <string name="private_bound_send">Send or retry exact observation</string>
+    <string name="private_bound_send_confirm">Send the same finalized answers and photographs using the reserved server attempt? The server will check the exact content and prevent duplicate acceptance.</string>
+    <string name="private_bound_recover">Recover verified receipt</string>
+    <string name="private_bound_recover_confirm">Verify the completed observation and save its receipt on this device? No answers or photographs will be sent.</string>
+    <string name="private_bound_resume">Resume protected preparation</string>
+    <string name="private_bound_resume_confirm">Resume preparation using the same encrypted request identity? This does not transmit the observation.</string>
 </resources>

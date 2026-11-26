@@ -32,6 +32,18 @@ internal object ProtectedSubmissionAttemptGuard {
             }
         }
 
+    /** Marker presence (including damaged or partial files) selects only
+     * the bound recovery path. Never fall back to the unbound sender. */
+    fun hasBoundAttempt(root: File, binding: QuarantinedWorkDraft): Boolean =
+        synchronized(ProtectedDraftComponentLock.monitor) {
+            if (!hasAttempt(root, binding)) return@synchronized false
+            val area = ProtectedMultipartSubmission.submissionAttemptArea(root, binding)
+            markers.filter { it.startsWith("protected-") }.any {
+                val file = File(area, it)
+                file.exists() || Files.isSymbolicLink(file.toPath())
+            }
+        }
+
     fun requireEditable(root: File, binding: QuarantinedWorkDraft) {
         require(!hasAttempt(root, binding)) { "Submission attempt requires reconciliation" }
     }

@@ -1871,7 +1871,18 @@ class ConnectedProtectedEditorRestartTest {
         val state = publicationContext()
         val b = state.binding
         val store = ProtectedBoundAttemptStore(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)
-        val attempt = store.prepare(b, state.required("generation"), state.required("packageDigest"))
+        // Use the actual opt-in Activity for cancellation and explicit preparation.
+        ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+            QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+        ).use { editor ->
+            clickButton(editor, R.string.private_bound_prepare)
+            boundDialog(android.R.id.button2)
+            assertFalse(ProtectedSubmissionAttemptGuard.hasAttempt(state.context.noBackupFilesDir, b))
+            clickButton(editor, R.string.private_bound_prepare)
+            boundDialog(android.R.id.button1)
+            awaitBoundReady(editor)
+        }
+        val attempt = store.inspect(b)
         assertEquals(RemoteProtectedAttemptState.BOUND_EXACT_CONTENT_ADMISSIBLE, attempt.state)
         assertEquals(attempt, store.inspect(b))
         assertTrue(ProtectedSubmissionAttemptGuard.hasAttempt(state.context.noBackupFilesDir, b))
@@ -1890,6 +1901,28 @@ class ConnectedProtectedEditorRestartTest {
         }
     }
 
+    private fun boundDialog(id: Int) {
+        androidx.test.espresso.Espresso.onView(
+            androidx.test.espresso.matcher.ViewMatchers.withId(id))
+            .inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog())
+            .perform(androidx.test.espresso.action.ViewActions.click())
+    }
+
+    private fun awaitBoundReady(editor: ActivityScenario<QuarantinedCombinedDraftActivity>) {
+        awaitUi(editor) { activity, views ->
+            val ready = views.filterIsInstance<TextView>().any {
+                it.text.toString() == activity.getString(R.string.private_bound_ready)
+            }
+            if (ready) {
+                assertTrue(views.filterIsInstance<EditText>().isEmpty())
+                assertTrue(views.filterIsInstance<Button>().none {
+                    it.text.toString() == activity.getString(R.string.private_submission_action)
+                })
+            }
+            ready
+        }
+    }
+
     @Test
     fun boundAttemptSendsExactPackageAndRecoversReceipt() {
         val state = publicationContext()
@@ -1904,8 +1937,22 @@ class ConnectedProtectedEditorRestartTest {
         val sender = ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
         assertTrue(runCatching { sender.sendBound(b, before.attemptId, "0".repeat(64)) }.isFailure)
         assertTrue(runCatching { sender.send(b.projectId, b, before.generation, before.packageSha256) }.isFailure)
-        val receipt = sender.sendBoundAndAcknowledge(b, before.attemptId, before.wireSha256)
-        verifyBoundReceiptAndOracle(state, receipt)
+        ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+            QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+        ).use { editor ->
+            awaitBoundReady(editor)
+            clickButton(editor, R.string.private_bound_send)
+            boundDialog(android.R.id.button2)
+            assertEquals(before, store.inspect(b))
+            clickButton(editor, R.string.private_bound_send)
+            boundDialog(android.R.id.button1)
+            awaitUi(editor) { activity, views ->
+                views.filterIsInstance<TextView>().any {
+                    it.text.toString() == activity.getString(R.string.private_submission_complete)
+                }
+            }
+        }
+        verifyBoundReceiptAndOracle(state, store.reopenReceipt(b))
     }
 
     @Test
@@ -1957,8 +2004,21 @@ class ConnectedProtectedEditorRestartTest {
         assertEquals(state.required("boundAttempt"), status.attemptId)
         assertEquals(state.required("boundWire"), status.wireSha256)
         assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
-        val receipt = store.recoverReceipt(b)
-        verifyBoundReceiptAndOracle(state, receipt)
+        ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+            QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+        ).use { editor ->
+            clickButton(editor, R.string.private_bound_recover)
+            boundDialog(android.R.id.button2)
+            assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
+            clickButton(editor, R.string.private_bound_recover)
+            boundDialog(android.R.id.button1)
+            awaitUi(editor) { activity, views ->
+                views.filterIsInstance<TextView>().any {
+                    it.text.toString() == activity.getString(R.string.private_submission_complete)
+                }
+            }
+        }
+        verifyBoundReceiptAndOracle(state, store.reopenReceipt(b))
     }
 
     private fun assertBoundFilesUnchanged(state: PublicationContext) {

@@ -86,6 +86,9 @@ android {
         versionCode project.hasProperty('versionCode') ? project.getProperties()['versionCode'].toInteger() : 5112
         versionName getVersionName()
         buildConfigField('String', 'COLLECT_SERVER_URL', groovy.json.JsonOutput.toJson(collectServerUrl))
+        // Explicit qualification/distribution opt-in. No default activation.
+        buildConfigField('boolean', 'PROTECTED_BOUND_SUBMISSIONS',
+            project.findProperty('COLLECT_PROTECTED_BOUND_SUBMISSIONS')?.toString() == 'true' ? 'true' : 'false')
         buildConfigField('boolean', 'CUSTOM_DISTRIBUTION', isOfficialOdkApplication ? 'false' : 'true')
         testInstrumentationRunner('androidx.test.runner.AndroidJUnitRunner')
         vectorDrawables.useSupportLibrary = true

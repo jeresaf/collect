@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: jeresaf/data-collector
-          ref: 689748ce1ba3058a7d2642f66e0d81858a18332f
+          ref: cbdfdfc07a4017df9fc59db3d3013449c632282d
           path: backend-reference
           persist-credentials: false
       - name: Java 17
@@ -48,13 +48,13 @@ jobs:
       - name: Record source pin and executable jar digest
         run: |
           set -euo pipefail
-          test "$(git -C backend-reference rev-parse HEAD)" = '689748ce1ba3058a7d2642f66e0d81858a18332f'
+          test "$(git -C backend-reference rev-parse HEAD)" = 'cbdfdfc07a4017df9fc59db3d3013449c632282d'
           mapfile -t jars < <(find backend-reference/backend/target -maxdepth 1 -name '*.jar' ! -name '*original*')
           test "${#jars[@]}" = 1
           mkdir -p /tmp/u08-backend
           cp "${jars[0]}" /tmp/u08-backend/backend.jar
           cd /tmp/u08-backend
-          printf '%s\n' '689748ce1ba3058a7d2642f66e0d81858a18332f' > source-commit.txt
+          printf '%s\n' 'cbdfdfc07a4017df9fc59db3d3013449c632282d' > source-commit.txt
           printf '%s\n' "$GITHUB_SHA" > android-commit.txt
           sha256sum backend.jar > SHA256SUMS
       - uses: actions/upload-artifact@v4
@@ -103,7 +103,7 @@ jobs:
         run: |
           set -euo pipefail
           cd /tmp/u08-backend
-          test "$(cat source-commit.txt)" = '689748ce1ba3058a7d2642f66e0d81858a18332f'
+          test "$(cat source-commit.txt)" = 'cbdfdfc07a4017df9fc59db3d3013449c632282d'
           test "$(cat android-commit.txt)" = "$GITHUB_SHA"
           sha256sum -c SHA256SUMS
       - name: Run backend with ephemeral PostgreSQL 15/Flyway

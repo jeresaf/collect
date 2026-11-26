@@ -41,10 +41,17 @@ jobs:
           ./gradlew :collect_app:testDebug --tests 'org.odk.collect.android.recordwork.*' --no-daemon --stacktrace
       - name: Compile debug and instrumentation APKs
         run: ./gradlew :collect_app:assembleDebug :collect_app:assembleDebugAndroidTest --no-daemon --stacktrace
+      - name: Retain default contract results
+        run: cp -a collect_app/build/test-results collect_app/build/u08-default-test-results
+      - name: Opt-in amendment native metadata and wire contract
+        run: |
+          ./gradlew :collect_app:testDebug --tests 'org.odk.collect.android.recordwork.ProtectedAmendmentContractTest' -PCOLLECT_PROTECTED_BOUND_SUBMISSIONS=true -PCOLLECT_PROTECTED_AMENDMENTS=true --no-daemon --stacktrace
       - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: u08-client-contract-evidence
-          path: collect_app/build/test-results
+          path: |
+            collect_app/build/test-results
+            collect_app/build/u08-default-test-results
           if-no-files-found: ignore
           retention-days: 14

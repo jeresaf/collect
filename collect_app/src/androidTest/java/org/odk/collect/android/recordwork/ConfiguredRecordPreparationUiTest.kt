@@ -1353,6 +1353,13 @@ class ConfiguredRecordPreparationUiTest {
                 assertEquals(QuarantinedPrivateImageStore.digest(png), pngReceipt.sha256)
                 assertTrue(pngReceipt.sha256 != secondReceipt.sha256)
                 val pngSnapshot = snapshot()
+                // Preserve #73's inverse MIME mismatch through the canonical
+                // per-operation authenticated intake, not the unguarded probe.
+                assertTrue(runCatching {
+                    media.importSelectedImage(activeProjectId(), binding, photo,
+                        "image/jpeg", png.inputStream())
+                }.isFailure)
+                assertEquals(pngSnapshot, snapshot())
                 assertEquals(pngReceipt, media.inspect(
                     activeProjectId(), binding, photo, requireAsset = true).directImageReceipt)
                 assertEquals(pngSnapshot, snapshot())

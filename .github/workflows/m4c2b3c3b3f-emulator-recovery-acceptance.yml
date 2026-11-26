@@ -1,0 +1,88 @@
+name: M4C2B3C3B3F Android Emulator Recovery Acceptance
+
+on:
+  push:
+    branches:
+      - codex/m4c2b3c3b3f-emulator-recovery-acceptance
+      - codex/u01-consolidation
+      - development
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m4c2b3c3b3f-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-emulator-recovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+      - name: Install compile SDK and build tools
+        run: |
+          sdkmanager --install 'platforms;android-37.0' 'build-tools;36.0.0'
+          if [ -d "$ANDROID_HOME/platforms/android-37.0" ] && [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Use primary Maven Central only in disposable runner
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("build.gradle.kts")
+          original = p.read_text()
+          assert original.count("mavenCentral()") == 2
+          p.write_text(original.replace("mavenCentral()",
+              'maven { url = uri("https://repo.maven.apache.org/maven2/") }'))
+          PY
+      - name: Compile main and instrumentation APKs
+        run: |
+          chmod +x gradlew
+          ./gradlew :collect_app:assembleDebug :collect_app:assembleDebugAndroidTest \
+            -PCOLLECT_SERVER_URL=https://collector.example.org/v1/projects/00000000-0000-0000-0000-000000000000 \
+            --no-daemon --stacktrace
+      - name: Enable KVM for emulator
+        run: |
+          test -e /dev/kvm
+          sudo chmod 666 /dev/kvm
+      - name: Run real Android Keystore recovery assertions on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          disable-animations: true
+          # This action executes the script as /bin/sh -c. Keep it on one
+          # line: line-continuation slashes become literal Gradle task names.
+          script: ./gradlew :collect_app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.odk.collect.android.recordwork.U06OfflineConflictEmulatorIT --no-daemon --stacktrace
+      - name: Recheck branded APK identity
+        if: success()
+        run: |
+          set -euo pipefail
+          apk="$(find collect_app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
+          test -f "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" > /tmp/u06-emulator-apk-identity.txt
+          grep -Fq "package: name='org.jeresaf.datacollector.android'" /tmp/u06-emulator-apk-identity.txt
+          grep -Fq "application-label:'Data Collector'" /tmp/u06-emulator-apk-identity.txt
+      - if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: u06-t03-android-emulator-recovery-evidence
+          path: |
+            collect_app/build/outputs/androidTest-results
+            collect_app/build/reports/androidTests
+            collect_app/build/test-results
+            collect_app/build/reports/tests
+            /tmp/u06-emulator-apk-identity.txt
+          if-no-files-found: ignore
+          retention-days: 14

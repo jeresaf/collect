@@ -1531,6 +1531,7 @@ class ConnectedProtectedEditorRestartTest {
             assertEquals(digest(syntheticAttempt), ready.attemptSha256)
             assertNull(ready.submissionId)
             assertFalse(ready.canEdit || ready.canUpload)
+            assertTrue(runCatching { reconciliation.recoverAcknowledgement(b.projectId, b) }.isFailure)
             assertFalse(receiptPath.exists())
             assertArrayEquals(syntheticAttempt, latch.readBytes())
             assertEquals(before, remote.load(b.projectId))
@@ -1639,6 +1640,7 @@ class ConnectedProtectedEditorRestartTest {
         val receiptBytes = receiptPath.readBytes()
         val heldReceipt = File(state.area, ".ci-held-receipt-for-inspection")
         assertTrue(receiptPath.renameTo(heldReceipt))
+        var recovered = false
         try {
             val linked = reconciliation.inspectAttempt(b.projectId, b)
             assertEquals(ProtectedReconciliationState.LINKED_RECORD_VISIBLE, linked.state)
@@ -1739,8 +1741,63 @@ class ConnectedProtectedEditorRestartTest {
             assertArrayEquals(latchBefore, latch.readBytes())
             assertArrayEquals(envelopeBefore, envelope.readBytes())
             assertEquals(after, remote.load(b.projectId))
-        } finally { assertTrue(heldReceipt.renameTo(receiptPath)) }
-        assertArrayEquals(receiptBytes, receiptPath.readBytes())
+            phase("RECOVERED_RECEIPT")
+            val attempted = receipt.copy(submissionId = "")
+            val local = store.attemptedPackageEvidence(b, attempted)
+            local.requireMatch(proof)
+            val mismatches = listOf(
+                proof.copy(xmlBytes = proof.xmlBytes + 1),
+                proof.copy(xmlSha256 = "0".repeat(64)),
+                proof.copy(attachments = proof.attachments.dropLast(1)),
+                proof.copy(attachments = proof.attachments.mapIndexed { index, item ->
+                    if (index == 0) item.copy(sha256 = "0".repeat(64)) else item }),
+                proof.copy(attachments = proof.attachments.mapIndexed { index, item ->
+                    if (index == 0) item.copy(bytes = item.bytes + 1) else item })
+            )
+            mismatches.forEach { wrong -> assertTrue(runCatching { local.requireMatch(wrong) }.isFailure) }
+            assertTrue(runCatching { store.attemptedPackageEvidence(b,
+                attempted.copy(packageSha256 = "0".repeat(64))) }.isFailure)
+            assertTrue(runCatching { reconciliation.recoverAcknowledgement(b.projectId,
+                b.copy(actorContextSha256 = "0".repeat(64))) }.isFailure)
+            // Real recovery cannot repair or overwrite corrupted local evidence.
+            val committedAnswer = File(File(File(File(state.area, generation),
+                QuarantinedWorkDraftVault.VAULT_DIRECTORY), b.projectId), b.workId)
+                .listFiles()!!.first { it.name == "private-answers.aesgcm" }
+            for (target in listOf(latch, envelope, pointer, committedAnswer)) {
+                val bytes = target.readBytes()
+                val corrupt = bytes.copyOf().apply { this[lastIndex] = (this[lastIndex].toInt() xor 1).toByte() }
+                target.writeBytes(corrupt)
+                try {
+                    assertTrue(runCatching { reconciliation.recoverAcknowledgement(b.projectId, b) }.isFailure)
+                    assertArrayEquals(corrupt, target.readBytes())
+                    assertFalse(receiptPath.exists())
+                } finally { target.writeBytes(bytes) }
+            }
+            val pendingReceipt = File(state.area, ".submitted-receipt-write")
+            assertTrue(pendingReceipt.createNewFile())
+            try {
+                assertTrue(runCatching { reconciliation.recoverAcknowledgement(b.projectId, b) }.isFailure)
+                assertEquals(0L, pendingReceipt.length())
+                assertFalse(receiptPath.exists())
+            } finally { assertTrue(pendingReceipt.delete()) } // CI-only fault cleanup.
+            // Actual server accepted the observation. The prior receipt is
+            // held out of reach; recover directly from local/remote bytes.
+            val recoveredReceipt = reconciliation.recoverAcknowledgement(b.projectId, b)
+            assertEquals(receipt, recoveredReceipt)
+            assertFalse(recoveredReceipt.canEdit || recoveredReceipt.canUpload)
+            val recoveredBytes = receiptPath.readBytes()
+            assertEquals(receipt, reconciliation.recoverAcknowledgement(b.projectId, b))
+            assertArrayEquals(recoveredBytes, receiptPath.readBytes())
+            assertEquals(receipt, reconciliation.reopen(b.projectId, b))
+            assertArrayEquals(latchBefore, latch.readBytes())
+            assertEquals(after, remote.load(b.projectId))
+            assertArrayEquals(receiptBytes, heldReceipt.readBytes())
+            recovered = true
+        } finally {
+            // Retain the newly recovered receipt for the real force-stop gate.
+            if (recovered) assertTrue(heldReceipt.delete())
+            else if (!receiptPath.exists()) assertTrue(heldReceipt.renameTo(receiptPath))
+        }
         phase("REPLAY")
         assertTrue(runCatching { sender.send(b.projectId, b, generation, sha) }.isFailure)
         assertEquals(after.records.toSet(), remote.load(b.projectId).records.toSet())

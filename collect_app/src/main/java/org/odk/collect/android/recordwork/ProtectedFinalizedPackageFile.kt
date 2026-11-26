@@ -85,6 +85,20 @@ internal class ProtectedFinalizedPackageFile(
         } finally { clear.fill(0) }
     }
 
+    /** Authenticate the exact sealed bytes after an attempt; no repair or creation. */
+    internal fun inspectAttempted(attempt: ProtectedSubmittedReceipt): ProtectedAttemptedPackageEvidence {
+        require(attempt.generation == generation)
+        val target = File(area, "finalized-" + generation + ".aesgcm")
+        require(target.isFile && target.canonicalFile == target.absoluteFile &&
+            !Files.isSymbolicLink(target.toPath()) && target.length() in 30..MAX_ENVELOPE.toLong())
+        val envelope = target.readBytes()
+        require(QuarantinedPrivateImageStore.digest(envelope) == attempt.ciphertextSha256)
+        val clear = cipher.open(envelope, aad)
+        try {
+            return ProtectedAttemptedPackageEvidence.parse(clear, binding, attempt)
+        } finally { clear.fill(0) }
+    }
+
     private fun verify(file: File, expected: ByteArray): String {
         require(file.isFile && file.canonicalFile == file.absoluteFile &&
             !Files.isSymbolicLink(file.toPath()) && file.length() in 30..MAX_ENVELOPE.toLong())

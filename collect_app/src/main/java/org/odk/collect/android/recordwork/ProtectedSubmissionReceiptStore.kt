@@ -60,17 +60,50 @@ internal class ProtectedSubmissionReceiptStore(
         val child = reconcile(projectId, binding)
         checkAccount(projectId, binding)
         require(attempt(area, binding) == attempt)
-        val receipt = attempt.copy(submissionId = child.submissionId)
+        publish(area, binding, attempt.copy(submissionId = child.submissionId), allowAbandoned = true)
+    }
+
+    /** Explicit recovery after a missing acknowledgement. All evidence is
+     * fetched here; callers cannot pass a manufactured receipt or server proof.
+     * No production POST, editor admission or marker deletion. */
+    fun recoverAcknowledgement(projectId: String, binding: QuarantinedWorkDraft): ProtectedSubmittedReceipt =
+        synchronized(ProtectedDraftComponentLock.monitor) {
+            checkAccount(projectId, binding)
+            val area = ProtectedMultipartSubmission.submissionAttemptArea(root, binding)
+            val original = attempt(area, binding)
+            // The store's scratch parameter is unused on the attempted read-only path.
+            val store = ProtectedCommittedDraftStore(root, root, settings)
+            val local = store.attemptedPackageEvidence(binding, original)
+            val remote = RecordWorkReadOnlyClient(settings)
+            val child = reconcile(projectId, binding)
+            val proof = remote.completionEvidence(projectId, binding, child)
+            local.requireMatch(proof)
+            require(reconcile(projectId, binding) == child)
+            require(remote.completionEvidence(projectId, binding, child) == proof)
+            checkAccount(projectId, binding)
+            require(attempt(area, binding) == original &&
+                store.attemptedPackageEvidence(binding, original) == local)
+            publish(area, binding, original.copy(submissionId = child.submissionId), allowAbandoned = false)
+        }
+
+    private fun publish(area: File, binding: QuarantinedWorkDraft, receipt: ProtectedSubmittedReceipt,
+                        allowAbandoned: Boolean): ProtectedSubmittedReceipt {
         val target = File(area, "submitted-receipt.aesgcm")
         val pending = File(area, ".submitted-receipt-write")
         require(!Files.isSymbolicLink(target.toPath()) && !Files.isSymbolicLink(pending.toPath()))
         if (target.exists()) {
             require(readReceipt(target, binding) == receipt)
-            return@synchronized receipt
+            return receipt
         }
-        // An incomplete pending receipt never counts as submitted. Only an
-        // explicit acknowledged publication can remove an abandoned temp.
+        // Recovery never deletes an abandoned receipt. A complete, exact
+        // authenticated pending file may be atomically published after proof.
         if (pending.exists()) {
+            if (!allowAbandoned) {
+                require(readReceipt(pending, binding) == receipt)
+                require(!target.exists() && !Files.isSymbolicLink(target.toPath()) && pending.renameTo(target))
+                require(readReceipt(target, binding) == receipt)
+                return receipt
+            }
             checkedBytes(pending, 4096)
             require(pending.delete())
         }
@@ -82,7 +115,7 @@ internal class ProtectedSubmissionReceiptStore(
             require(readReceipt(pending, binding) == receipt)
             require(!target.exists() && !Files.isSymbolicLink(target.toPath()) && pending.renameTo(target))
             require(readReceipt(target, binding) == receipt)
-            receipt
+            return receipt
         } finally { clear.fill(0) }
     }
 

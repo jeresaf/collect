@@ -19,7 +19,7 @@ internal data class RemoteProtectedAttempt(
         internal fun parse(obj: JSONObject): RemoteProtectedAttempt {
             require(obj.keys().asSequence().toSet() == setOf("workId", "attemptId", "clientRequestId",
                 "projectId", "actorId", "sourceId", "targetVersionId", "formId", "instanceId",
-                "wireSha256", "acceptedSubmissionId"))
+                "wireSha256", "acceptedSubmissionId")) { "U08_ATTEMPT_JSON_SHAPE" }
             fun id(key: String) = ProtectedWireCommitment.uuid(obj.get(key) as String)
             val wire = if (obj.isNull("wireSha256")) null else (obj.get("wireSha256") as String).also {
                 require(it.matches(Regex("[0-9a-f]{64}")))
@@ -46,7 +46,9 @@ internal data class RemoteProtectedAttemptStatus(
 ) {
     companion object {
         internal fun parse(obj: JSONObject): RemoteProtectedAttemptStatus {
-            require(obj.keys().asSequence().toSet() == setOf("state", "attempt", "completion"))
+            require(obj.keys().asSequence().toSet() == setOf("state", "attempt", "completion")) {
+                "U08_STATUS_JSON_SHAPE"
+            }
             val state = RemoteProtectedAttemptState.valueOf(obj.get("state") as String)
             val attempt = RemoteProtectedAttempt.parse(obj.getJSONObject("attempt"))
             val completion = if (obj.isNull("completion")) null else obj.getJSONObject("completion")
@@ -124,9 +126,14 @@ internal class ProtectedAttemptRemoteClient(
                 connection.outputStream.use { it.write(bytes) }
             }
             // No fallback on 404, no redirect, and no response-body exception.
-            require(connection.responseCode == 200) { "Protected attempt request denied" }
-            require(connection.contentType?.substringBefore(';')?.trim().equals("application/json", true))
-            require(connection.getHeaderField("Cache-Control").orEmpty().contains("no-store", true))
+            val responseCode = connection.responseCode
+            require(responseCode == 200) { "U08_HTTP_STATUS $responseCode" }
+            require(connection.contentType?.substringBefore(';')?.trim().equals("application/json", true)) {
+                "U08_RESPONSE_MEDIA_TYPE"
+            }
+            require(connection.getHeaderField("Cache-Control").orEmpty().contains("no-store", true)) {
+                "U08_RESPONSE_CACHE_POLICY"
+            }
             val output = ByteArrayOutputStream()
             connection.inputStream.use { input ->
                 val buffer = ByteArray(8192)

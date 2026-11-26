@@ -31,6 +31,7 @@ run_one() {
     grep -Eo 'U06_MULTIPART_FAILURE phase=(SETUP|DECRYPTED_FRAME|CAPTURE_SETUP|WRONG_DIGEST|SEND|RECEIPT|HEADERS|MULTIPART|REPLAY|REDIRECT|WRONG_RECEIPT|POSTCONDITIONS) kind=(AssertionError|IllegalArgumentException|IllegalStateException|IOException|OtherException) line=-?[0-9]+ origin=(ProtectedMultipartSubmission|ProtectedCommittedDraftStore|ProtectedFinalizedPackageFile|ProtectedSubmissionAdmission|ProtectedNativePackageBuilder|RecordWorkPreparationClient|RecordWorkReadOnlyClient|AndroidKeyStorePrivateDraftCipher|Unknown):-?[0-9]+' <<<"$output" | sort -u || true
     grep -Eo 'U06_NATIVE_POST_FAILURE phase=(SETUP|UNCONFIRMED_UI|CONFIRM_UI|POST|ACK|RECONCILE|RECONCILIATION_INSPECTION|COMPLETION_EVIDENCE|RECOVERED_RECEIPT|REPLAY|ORACLE) line=-?[0-9]+' <<<"$output" | sort -u || true
     grep -Eo 'U06_LOST_ACK_FAILURE phase=(SETUP|POST|REMOTE_COMMIT|ORACLE|UNCONFIRMED_UI|RECOVER|PRESERVE) line=-?[0-9]+' <<<"$output" | sort -u || true
+    grep -Eo 'U08_BOUND_FAILURE kind=(AssertionError|IllegalArgumentException|IllegalStateException|IOException|SecurityException|OtherException) origin=[A-Za-z0-9_$]+:[A-Za-z0-9_$<>]+:-?[0-9]+ signal=(UNCLASSIFIED|U08_HTTP_STATUS [0-9]{3}|U08_RESPONSE_MEDIA_TYPE|U08_RESPONSE_CACHE_POLICY|U08_ATTEMPT_JSON_SHAPE|U08_STATUS_JSON_SHAPE)' <<<"$output" | sort -u || true
     exit 1
   fi
   echo "Android instrumentation phase ${method}: PASS"

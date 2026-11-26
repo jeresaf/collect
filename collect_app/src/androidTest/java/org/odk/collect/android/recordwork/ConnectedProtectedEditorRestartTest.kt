@@ -1842,6 +1842,32 @@ class ConnectedProtectedEditorRestartTest {
 
     @Test
     fun boundAttemptPreparesAndPersistsAcrossForceStop() {
+        try {
+            verifyBoundPreparation()
+        } catch (failure: Throwable) {
+            // Only emit bounded class/method/line metadata; never response data.
+            val frame = failure.stackTrace.firstOrNull {
+                it.className.startsWith("org.odk.collect.android.recordwork.")
+            }
+            val kind = when (failure) {
+                is AssertionError -> "AssertionError"
+                is IllegalArgumentException -> "IllegalArgumentException"
+                is IllegalStateException -> "IllegalStateException"
+                is java.io.IOException -> "IOException"
+                is SecurityException -> "SecurityException"
+                else -> "OtherException"
+            }
+            val fixed = failure.message.orEmpty().takeIf {
+                it.matches(Regex("U08_(?:HTTP_STATUS [0-9]{3}|RESPONSE_MEDIA_TYPE|RESPONSE_CACHE_POLICY|ATTEMPT_JSON_SHAPE|STATUS_JSON_SHAPE)"))
+            } ?: "UNCLASSIFIED"
+            throw AssertionError("U08_BOUND_FAILURE kind=$kind origin=" +
+                (frame?.className?.substringAfterLast('.') ?: "Unknown") + ":" +
+                (frame?.methodName ?: "Unknown") + ":" + (frame?.lineNumber ?: -1) +
+                " signal=$fixed")
+        }
+    }
+
+    private fun verifyBoundPreparation() {
         val state = publicationContext()
         val b = state.binding
         val store = ProtectedBoundAttemptStore(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)

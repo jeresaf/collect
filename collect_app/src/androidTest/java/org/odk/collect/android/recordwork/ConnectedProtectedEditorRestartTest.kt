@@ -1869,7 +1869,7 @@ class ConnectedProtectedEditorRestartTest {
 
     /** Local queue is not an acceptance or send oracle. Reopening the real browser
      * must render the expected scoped row without changing any attempt files. */
-    private fun assertLocalQueue(state: PublicationContext, label: Int) {
+    private fun assertLocalQueue(state: PublicationContext, label: Int, serverLabel: Int? = null) {
         fun snapshot() = state.area.walkTopDown().filter { it.isFile }.associate {
             it.relativeTo(state.area).path to digest(it.readBytes())
         }
@@ -1887,6 +1887,17 @@ class ConnectedProtectedEditorRestartTest {
                     })
                 }
                 matches.size == 1
+            }
+            if (serverLabel != null) {
+                awaitUi(browser) { activity, views ->
+                    val description = activity.getString(R.string.private_queue_check_item, state.binding.workId)
+                    views.filterIsInstance<Button>().singleOrNull {
+                        it.contentDescription?.toString() == description && it.isEnabled
+                    }?.performClick() == true
+                }
+                awaitUi(browser) { activity, views ->
+                    views.filterIsInstance<TextView>().any { it.text.toString() == activity.getString(serverLabel) }
+                }
             }
         }
         assertEquals(before, snapshot())
@@ -1960,7 +1971,7 @@ class ConnectedProtectedEditorRestartTest {
         assertEquals(RemoteProtectedAttemptState.BOUND_EXACT_CONTENT_ADMISSIBLE, before.state)
         assertEquals(state.required("boundAttempt"), before.attemptId)
         assertEquals(state.required("boundWire"), before.wireSha256)
-        assertLocalQueue(state, R.string.private_queue_bound)
+        assertLocalQueue(state, R.string.private_queue_bound, R.string.private_queue_server_admissible)
         val sender = ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
         assertTrue(runCatching { sender.sendBound(b, before.attemptId, "0".repeat(64)) }.isFailure)
         assertTrue(runCatching { sender.send(b.projectId, b, before.generation, before.packageSha256) }.isFailure)
@@ -2017,7 +2028,7 @@ class ConnectedProtectedEditorRestartTest {
         assertNull(status.acceptedSubmissionId)
         assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
         assertTrue(runCatching { store.recoverReceipt(b) }.isFailure)
-        assertLocalQueue(state, R.string.private_queue_bound)
+        assertLocalQueue(state, R.string.private_queue_bound, R.string.private_queue_server_admissible)
         assertBoundFilesUnchanged(state)
     }
 
@@ -2032,7 +2043,7 @@ class ConnectedProtectedEditorRestartTest {
         assertEquals(state.required("boundAttempt"), status.attemptId)
         assertEquals(state.required("boundWire"), status.wireSha256)
         assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
-        assertLocalQueue(state, R.string.private_queue_bound)
+        assertLocalQueue(state, R.string.private_queue_bound, R.string.private_queue_server_completed)
         ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
             QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
         ).use { editor ->
@@ -2101,7 +2112,7 @@ class ConnectedProtectedEditorRestartTest {
         assertEquals(state.required("boundReceiptDigest"),
             digest(File(state.area, "protected-bound-receipt.aesgcm").readBytes()))
         assertEquals(receipt.submissionId, store.inspect(b).acceptedSubmissionId)
-        assertLocalQueue(state, R.string.private_queue_receipt)
+        assertLocalQueue(state, R.string.private_queue_receipt, R.string.private_queue_server_completed)
         assertTrue(runCatching {
             ProtectedMultipartSubmission(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)
                 .sendBound(b, state.required("boundAttempt"), state.required("boundWire"))

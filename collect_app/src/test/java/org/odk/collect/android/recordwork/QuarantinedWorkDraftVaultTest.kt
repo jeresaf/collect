@@ -171,6 +171,42 @@ class QuarantinedWorkDraftVaultTest {
         assertEquals(0L, receipt.length())
     }
 
+    @Test fun queueStatusCheckIsScopedAndMapsOnlyVerifiedEvidence() {
+        val (preview, review) = followUp()
+        QuarantinedWorkDraftVault(temporary.root).stage(project, actor, preview, review)
+        val area = File(temporary.root, "recordwork-committed/$project/$work")
+        assertTrue(area.mkdirs())
+        val marker = File(area, "protected-attempt-request.aesgcm")
+        assertTrue(marker.createNewFile())
+        var calls = 0
+        fun reader(state: RemoteProtectedAttemptState) = ProtectedQueueStatusReader(temporary.root) {
+            calls++
+            ProtectedBoundAttempt(state, work, work, sourceSha, targetFormSha)
+        }
+        assertEquals(ProtectedQueueStatusReader.Status.UNAVAILABLE,
+            reader(RemoteProtectedAttemptState.BOUND_EXACT_CONTENT_ADMISSIBLE).check(project, "b".repeat(64), work))
+        assertEquals(0, calls)
+        assertEquals(ProtectedQueueStatusReader.Status.PREPARATION_INCOMPLETE,
+            reader(RemoteProtectedAttemptState.RESERVED_UNBOUND).check(project, actor, work))
+        assertEquals(ProtectedQueueStatusReader.Status.EXACT_CONTENT_ADMISSIBLE,
+            reader(RemoteProtectedAttemptState.BOUND_EXACT_CONTENT_ADMISSIBLE).check(project, actor, work))
+        assertEquals(ProtectedQueueStatusReader.Status.SERVER_COMPLETED,
+            reader(RemoteProtectedAttemptState.COMPLETED_VERIFIED).check(project, actor, work))
+        val receipt = File(area, "protected-bound-receipt.aesgcm")
+        assertTrue(receipt.createNewFile())
+        assertEquals(ProtectedQueueStatusReader.Status.CONFLICT,
+            reader(RemoteProtectedAttemptState.BOUND_EXACT_CONTENT_ADMISSIBLE).check(project, actor, work))
+        assertEquals(ProtectedQueueStatusReader.Status.ACCESS_UNVERIFIED,
+            ProtectedQueueStatusReader(temporary.root) { throw ProtectedAttemptHttpException(403) }.check(project, actor, work))
+        assertEquals(ProtectedQueueStatusReader.Status.CONFLICT,
+            ProtectedQueueStatusReader(temporary.root) { throw ProtectedAttemptHttpException(409) }.check(project, actor, work))
+        assertEquals(ProtectedQueueStatusReader.Status.UNAVAILABLE,
+            ProtectedQueueStatusReader(temporary.root) { throw java.io.IOException() }.check(project, actor, work))
+        assertEquals(4, calls)
+        assertTrue(marker.exists() && receipt.exists())
+        assertEquals(0L, receipt.length())
+    }
+
     @Test fun submissionQueueDoesNotFollowSymlinkedCommittedDirectory() {
         val (preview, review) = followUp()
         QuarantinedWorkDraftVault(temporary.root).stage(project, actor, preview, review)

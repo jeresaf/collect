@@ -51,4 +51,13 @@
     <string name="private_queue_receipt">Receipt marker found; verify online before confirming</string>
     <string name="private_queue_unavailable">Local queue evidence unavailable; no retry authorized</string>
     <string name="private_queue_row">%1$s\n%2$s</string>
+    <string name="private_queue_check_status">Check server status</string>
+    <string name="private_queue_check_item">Check server status for %1$s</string>
+    <string name="private_queue_checking">Checking exact protected content…</string>
+    <string name="private_queue_server_unbound">Server check: reservation is incomplete. Open the item to resume explicitly.</string>
+    <string name="private_queue_server_admissible">Server check: exact content was admissible. Open the item for a fresh check and confirmation before sending.</string>
+    <string name="private_queue_server_completed">Server check: exact content was accepted. Open the item to verify or recover its receipt. Do not send again.</string>
+    <string name="private_queue_server_denied">Server check: access or attempt could not be verified. No retry authorized.</string>
+    <string name="private_queue_server_conflict">Server check: conflicting submission evidence. No retry authorized.</string>
+    <string name="private_queue_server_unknown">Server status unavailable. Retained local evidence is not permission to send.</string>
 </resources>

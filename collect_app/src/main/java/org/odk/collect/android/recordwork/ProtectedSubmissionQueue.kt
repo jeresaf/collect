@@ -15,7 +15,7 @@ internal class ProtectedSubmissionQueue(private val root: File) {
         BOUND_STATUS_REQUIRED, RECEIPT_RECHECK, UNAVAILABLE
     }
 
-    internal data class Entry(val workId: String, val state: State)
+    internal data class Entry(val workId: String, val state: State, val boundStatusCheck: Boolean = false)
 
     fun list(projectId: String, actorContextSha256: String): List<Entry> =
         synchronized(ProtectedDraftComponentLock.monitor) {
@@ -40,7 +40,11 @@ internal class ProtectedSubmissionQueue(private val root: File) {
                         .getOrNull() ?: continue
                     if (b.workType != RecordWorkType.FOLLOW_UP || b.validationTransfers != 0) continue
                     val state = runCatching { state(base, b) }.getOrElse { State.UNAVAILABLE }
-                    if (state != null) result.add(Entry(b.workId, state))
+                    if (state != null) {
+                        val bound = state in setOf(State.BOUND_STATUS_REQUIRED, State.RECEIPT_RECHECK) &&
+                            runCatching { ProtectedSubmissionAttemptGuard.hasBoundAttempt(base, b) }.getOrDefault(false)
+                        result.add(Entry(b.workId, state, bound))
+                    }
                 }
             }
             result.sortedWith(compareBy<Entry> { it.state.ordinal }.thenBy { it.workId })

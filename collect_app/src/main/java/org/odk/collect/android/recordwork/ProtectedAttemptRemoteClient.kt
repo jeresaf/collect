@@ -65,6 +65,10 @@ internal data class RemoteProtectedAttemptStatus(
     }
 }
 
+/** Fixed status code only; never carry a server body or credential. */
+internal class ProtectedAttemptHttpException(val code: Int) :
+    IllegalArgumentException("U08_HTTP_STATUS $code")
+
 /** Explicit HTTPS reserve, bind and status only. Never sends a submission. */
 internal class ProtectedAttemptRemoteClient(
     private val settings: SettingsProvider,
@@ -127,7 +131,7 @@ internal class ProtectedAttemptRemoteClient(
             }
             // No fallback on 404, no redirect, and no response-body exception.
             val responseCode = connection.responseCode
-            require(responseCode == 200) { "U08_HTTP_STATUS $responseCode" }
+            if (responseCode != 200) throw ProtectedAttemptHttpException(responseCode)
             require(connection.contentType?.substringBefore(';')?.trim().equals("application/json", true)) {
                 "U08_RESPONSE_MEDIA_TYPE"
             }

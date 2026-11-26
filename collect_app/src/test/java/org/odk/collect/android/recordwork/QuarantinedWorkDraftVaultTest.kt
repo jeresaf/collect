@@ -142,6 +142,57 @@ class QuarantinedWorkDraftVaultTest {
         rejects { value.copy(state = "READY") }
     }
 
+    @Test fun submissionQueueIsScopedDurableAndNeverConfirmsMarkers() {
+        val (preview, review) = followUp()
+        QuarantinedWorkDraftVault(temporary.root).stage(project, actor, preview, review)
+        val queue = ProtectedSubmissionQueue(temporary.root)
+        val area = File(temporary.root, "recordwork-committed/$project/$work")
+        assertTrue(queue.list(project, actor).isEmpty())
+        assertFalse(area.exists())
+        assertTrue(area.mkdirs())
+        File(area, "current.aesgcm").writeText("not authenticated")
+        assertEquals(ProtectedSubmissionQueue.State.CHECKPOINT_RECHECK, queue.list(project, actor).single().state)
+        File(area, "finalized-$work.aesgcm").createNewFile()
+        assertEquals(ProtectedSubmissionQueue.State.FINALIZATION_RECHECK, queue.list(project, actor).single().state)
+        val legacy = File(area, "submission-attempt.aesgcm")
+        legacy.createNewFile()
+        assertEquals(ProtectedSubmissionQueue.State.LEGACY_UNCONFIRMED, queue.list(project, actor).single().state)
+        assertTrue(legacy.delete())
+        val bound = File(area, "protected-attempt-request.aesgcm")
+        bound.createNewFile()
+        assertEquals(ProtectedSubmissionQueue.State.BOUND_STATUS_REQUIRED,
+            ProtectedSubmissionQueue(temporary.root).list(project, actor).single().state)
+        val receipt = File(area, "protected-bound-receipt.aesgcm")
+        receipt.createNewFile()
+        assertEquals(ProtectedSubmissionQueue.State.RECEIPT_RECHECK, queue.list(project, actor).single().state)
+        assertTrue(queue.list(project, "b".repeat(64)).isEmpty())
+        assertTrue(queue.list("different-project", actor).isEmpty())
+        assertTrue(bound.exists() && receipt.exists())
+        assertEquals(0L, receipt.length())
+    }
+
+    @Test fun submissionQueueDoesNotFollowSymlinkedCommittedDirectory() {
+        val (preview, review) = followUp()
+        QuarantinedWorkDraftVault(temporary.root).stage(project, actor, preview, review)
+        val outside = temporary.newFolder("outside")
+        java.nio.file.Files.createSymbolicLink(File(temporary.root, "recordwork-committed").toPath(), outside.toPath())
+        val queue = ProtectedSubmissionQueue(temporary.root)
+        assertEquals(ProtectedSubmissionQueue.State.UNAVAILABLE, queue.list(project, actor).single().state)
+        assertTrue(requireNotNull(outside.listFiles()).isEmpty())
+    }
+
+    @Test fun submissionQueueIgnoresCorruptAndUnsupportedBindings() {
+        val (preview, review, transfer) = amendment()
+        QuarantinedWorkDraftVault(temporary.root).stage(project, actor, preview, review, transfer)
+        val area = File(temporary.root, "recordwork-committed/$project/$work")
+        assertTrue(area.mkdirs())
+        File(area, "current.aesgcm").createNewFile()
+        assertTrue(ProtectedSubmissionQueue(temporary.root).list(project, actor).isEmpty())
+        File(temporary.root, "recordwork-drafts/$project/$work/binding.properties")
+            .appendText("\nworkType=FOLLOW_UP\n")
+        assertTrue(ProtectedSubmissionQueue(temporary.root).list(project, actor).isEmpty())
+    }
+
     private fun amendment(): Triple<PreparedRecordPreview, MappingReviewSnapshot,
         ReviewedTransferEvidence> {
         val path = "/data/name"

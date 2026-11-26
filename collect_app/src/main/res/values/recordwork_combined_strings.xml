@@ -41,4 +41,14 @@
     <string name="private_bound_recover_confirm">Verify the completed observation and save its receipt on this device? No answers or photographs will be sent.</string>
     <string name="private_bound_resume">Resume protected preparation</string>
     <string name="private_bound_resume_confirm">Resume preparation using the same encrypted request identity? This does not transmit the observation.</string>
+    <string name="private_queue_title">Protected submission queue on this device</string>
+    <string name="private_queue_warning">Local evidence only, not current server permission or confirmation. Open an item to check its status when connected. Nothing is sent automatically.</string>
+    <string name="private_queue_empty">No eligible local checkpoints or submission markers found.</string>
+    <string name="private_queue_checkpoint">Checkpoint found; verification required</string>
+    <string name="private_queue_finalization">Finalization candidate; verification required</string>
+    <string name="private_queue_legacy">Earlier submission unconfirmed; reconciliation required</string>
+    <string name="private_queue_bound">Protected attempt; refresh server status</string>
+    <string name="private_queue_receipt">Receipt marker found; verify online before confirming</string>
+    <string name="private_queue_unavailable">Local queue evidence unavailable; no retry authorized</string>
+    <string name="private_queue_row">%1$s\n%2$s</string>
 </resources>

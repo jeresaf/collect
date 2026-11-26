@@ -2,6 +2,8 @@ package org.odk.collect.android.recordwork
 
 import android.os.Bundle
 import android.view.View
+import android.view.WindowManager
+import org.odk.collect.android.BuildConfig
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -27,17 +29,21 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
     private lateinit var status: TextView
     private lateinit var records: LinearLayout
     private lateinit var pending: LinearLayout
+    private lateinit var localQueue: LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.record_work_browser)
         title = getString(R.string.remote_records_title)
+        if (BuildConfig.PROTECTED_BOUND_SUBMISSIONS) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
 
         settingsProvider = DaggerUtils.getComponent(this).settingsProvider()
         progress = findViewById(R.id.remote_records_progress)
         status = findViewById(R.id.remote_records_status)
         records = findViewById(R.id.remote_records_list)
         pending = findViewById(R.id.remote_work_list)
+        localQueue = findViewById(R.id.protected_submission_queue)
+        localQueue.visibility = if (BuildConfig.PROTECTED_BOUND_SUBMISSIONS) View.VISIBLE else View.GONE
         findViewById<Button>(R.id.refresh_remote_records).setOnClickListener { refresh() }
         clearResults()
     }
@@ -51,6 +57,7 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
         // A project switch or background transition must not render stale data.
         requestGeneration++
         clearResults()
+        localQueue.removeAllViews()
         progress.visibility = View.GONE
         super.onStop()
     }
@@ -75,6 +82,7 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
         val session = activeSession()
         val generation = ++requestGeneration
         clearResults()
+        localQueue.removeAllViews()
         if (session == null) {
             status.setText(R.string.remote_records_changed_project)
             return
@@ -83,6 +91,22 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
         progress.visibility = View.VISIBLE
         status.setText(R.string.remote_records_loading)
         background.execute {
+            if (BuildConfig.PROTECTED_BOUND_SUBMISSIONS) {
+                val local = runCatching {
+                    require(session.username.isNotBlank())
+                    val scope = QuarantinedWorkDraftVault.sha256(session.projectId + "\n" +
+                        RecordWorkApiPaths.fromProjectUrl(session.serverUrl).records() + "\n" + session.username)
+                    ProtectedSubmissionQueue(noBackupFilesDir).list(session.projectId, scope)
+                }
+                runOnUiThread {
+                    if (generation != requestGeneration || isFinishing || isDestroyed) return@runOnUiThread
+                    if (activeSession() != session) {
+                        localQueue.removeAllViews()
+                        return@runOnUiThread
+                    }
+                    showLocalQueue(session, local)
+                }
+            }
             val result = try {
                 Result.success(RecordWorkReadOnlyClient(settingsProvider).load(session.projectId))
             } catch (error: ReadOnlyRecordException) {
@@ -94,6 +118,7 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
                 if (generation != requestGeneration || isFinishing || isDestroyed) return@runOnUiThread
                 if (activeSession() != session) {
                     clearResults()
+                    localQueue.removeAllViews()
                     status.setText(R.string.remote_records_changed_project)
                     progress.visibility = View.GONE
                     return@runOnUiThread
@@ -153,6 +178,41 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
                 })
             }
         }
+    }
+
+    private fun showLocalQueue(session: Session, result: Result<List<ProtectedSubmissionQueue.Entry>>) {
+        localQueue.removeAllViews()
+        localQueue.addView(text(getString(R.string.private_queue_title)))
+        localQueue.addView(text(getString(R.string.private_queue_warning)))
+        result.fold(onSuccess = { entries ->
+            if (entries.isEmpty()) localQueue.addView(text(getString(R.string.private_queue_empty)))
+            entries.forEach { entry ->
+                val label = when (entry.state) {
+                    ProtectedSubmissionQueue.State.CHECKPOINT_RECHECK -> R.string.private_queue_checkpoint
+                    ProtectedSubmissionQueue.State.FINALIZATION_RECHECK -> R.string.private_queue_finalization
+                    ProtectedSubmissionQueue.State.LEGACY_UNCONFIRMED -> R.string.private_queue_legacy
+                    ProtectedSubmissionQueue.State.BOUND_STATUS_REQUIRED -> R.string.private_queue_bound
+                    ProtectedSubmissionQueue.State.RECEIPT_RECHECK -> R.string.private_queue_receipt
+                    ProtectedSubmissionQueue.State.UNAVAILABLE -> R.string.private_queue_unavailable
+                }
+                localQueue.addView(Button(this).apply {
+                    text = getString(R.string.private_queue_row, entry.workId, getString(label))
+                    isAllCaps = false
+                    isEnabled = entry.state != ProtectedSubmissionQueue.State.UNAVAILABLE
+                    setOnClickListener {
+                        if (activeSession() == session) {
+                            startActivity(QuarantinedCombinedDraftActivity.intentFor(
+                                this@RecordWorkBrowserActivity, session.projectId, entry.workId))
+                        } else {
+                            localQueue.removeAllViews()
+                            refresh()
+                        }
+                    }
+                })
+            }
+        }, onFailure = {
+            localQueue.addView(text(getString(R.string.private_queue_unavailable)))
+        })
     }
 
     private fun text(value: String) = TextView(this).apply {

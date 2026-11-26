@@ -60,4 +60,5 @@
     <string name="private_queue_server_denied">Server check: access or attempt could not be verified. No retry authorized.</string>
     <string name="private_queue_server_conflict">Server check: conflicting submission evidence. No retry authorized.</string>
     <string name="private_queue_server_unknown">Server status unavailable. Retained local evidence is not permission to send.</string>
+    <string name="private_bound_local_receipt_retained">An authenticated receipt is retained on this device, but current server confirmation is unavailable. Editing and retransmission are blocked. Refresh when connected.</string>
 </resources>

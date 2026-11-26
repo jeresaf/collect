@@ -267,7 +267,8 @@ class RecordWorkBrowserActivity : LocalizedActivity() {
                     .check(session.projectId, scope, entry.workId)
             }.getOrDefault(ProtectedQueueStatusReader.Status.UNAVAILABLE)
             runOnUiThread {
-                if (generation != requestGeneration || isFinishing || isDestroyed) return@runOnUiThread
+                if (generation != requestGeneration || isFinishing || isDestroyed ||
+                    label.parent !== localQueue) return@runOnUiThread
                 if (activeSession() != session) {
                     clearLocalQueue()
                     return@runOnUiThread

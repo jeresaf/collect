@@ -1925,6 +1925,8 @@ class ConnectedProtectedEditorRestartTest {
         assertTrue(ProtectedSubmissionAttemptGuard.hasAttempt(state.context.noBackupFilesDir, b))
         assertFalse(File(state.area, "submission-attempt.aesgcm").exists())
         assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
+        assertTrue(runCatching { store.inspectStoredReceipt(b) }.isFailure)
+        assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
         state.evidence.setProperty("boundPid", android.os.Process.myPid().toString())
         for (name in listOf("protected-attempt-request.aesgcm", "protected-attempt-server.aesgcm",
                 "finalized-" + attempt.generation + ".aesgcm", "current.aesgcm")) {
@@ -2109,8 +2111,21 @@ class ConnectedProtectedEditorRestartTest {
         val store = ProtectedBoundAttemptStore(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)
         val receipt = store.reopenReceipt(b)
         assertEquals(state.required("packageDigest"), receipt.packageSha256)
-        assertEquals(state.required("boundReceiptDigest"),
-            digest(File(state.area, "protected-bound-receipt.aesgcm").readBytes()))
+        val file = File(state.area, "protected-bound-receipt.aesgcm")
+        val sealed = file.readBytes()
+        assertEquals(state.required("boundReceiptDigest"), digest(sealed))
+        assertEquals(receipt, store.inspectStoredReceipt(b))
+        assertFalse(receipt.canEdit || receipt.canUpload)
+        val tampered = sealed.copyOf().apply { this[lastIndex] = (this[lastIndex].toInt() xor 1).toByte() }
+        try {
+            file.writeBytes(tampered)
+            assertTrue(runCatching { store.inspectStoredReceipt(b) }.isFailure)
+            assertTrue(file.readBytes().contentEquals(tampered))
+        } finally {
+            file.writeBytes(sealed)
+        }
+        assertEquals(receipt, store.inspectStoredReceipt(b))
+        assertEquals(state.required("boundReceiptDigest"), digest(file.readBytes()))
         assertEquals(receipt.submissionId, store.inspect(b).acceptedSubmissionId)
         assertLocalQueue(state, R.string.private_queue_receipt, R.string.private_queue_server_completed)
         assertTrue(runCatching {

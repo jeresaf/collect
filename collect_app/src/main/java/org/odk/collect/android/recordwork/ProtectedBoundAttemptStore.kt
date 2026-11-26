@@ -127,13 +127,8 @@ internal class ProtectedBoundAttemptStore(
             val s = readServer(b)
             val status = inspect(b)
             require(status.state == RemoteProtectedAttemptState.COMPLETED_VERIFIED)
-            val child = requireNotNull(status.acceptedSubmissionId)
-            val receipt = localReceipt(b, r).copy(
-                attemptSha256 = QuarantinedPrivateImageStore.digest(
-                    (r.id + "\n" + s.attemptId + "\n" + s.wire).toByteArray(Charsets.UTF_8)),
-                submissionId = child)
-            val values = listOf(receipt.generation, receipt.packageSha256, receipt.ciphertextSha256,
-                receipt.attemptSha256, receipt.instanceId, child, receipt.targetFormVersionId)
+            val receipt = receiptFor(b, r, s, requireNotNull(status.acceptedSubmissionId))
+            val values = receiptValues(receipt)
             val target = File(area(b), RECEIPT)
             require(!Files.isSymbolicLink(target.toPath()))
             // A partial receipt is conservatively blocked; never replace it.
@@ -142,11 +137,49 @@ internal class ProtectedBoundAttemptStore(
             receipt
         }
 
+    /**
+     * Authenticate previously published local evidence without a network call.
+     * This is deliberately not a current server confirmation. Never writes,
+     * replaces or creates a receipt; no caller can use it to authorize upload.
+     */
+    fun inspectStoredReceipt(b: QuarantinedWorkDraft): ProtectedSubmittedReceipt =
+        synchronized(ProtectedDraftComponentLock.monitor) {
+            val r = readRequest(b)
+            val s = readServer(b)
+            val values = read(b, RECEIPT)
+            require(values.size == 7)
+            val local = localContent(b, r)
+            require(s.projectId == remote.serverProjectId(b) &&
+                ProtectedWireCommitment.compute(s.projectId, s.actorId, b.workId,
+                    b.sourceSubmissionId, b.targetFormVersionId, s.attemptId,
+                    b.reservedInstanceId, b.workType, local) == s.wire)
+            val receipt = receiptFor(b, r, s, ProtectedWireCommitment.uuid(values[5]))
+            require(receiptValues(receipt) == values && readRequest(b) == r &&
+                readServer(b) == s && read(b, RECEIPT) == values &&
+                localContent(b, r) == local)
+            receipt
+        }
+
+    /** Online reopen is strictly read-only, even if a receipt disappears. */
     fun reopenReceipt(b: QuarantinedWorkDraft): ProtectedSubmittedReceipt =
         synchronized(ProtectedDraftComponentLock.monitor) {
-            require(File(area(b), RECEIPT).isFile)
-            recoverReceipt(b)
+            val receipt = inspectStoredReceipt(b)
+            val status = inspect(b)
+            require(status.state == RemoteProtectedAttemptState.COMPLETED_VERIFIED &&
+                status.acceptedSubmissionId == receipt.submissionId &&
+                inspectStoredReceipt(b) == receipt)
+            receipt
         }
+
+    private fun receiptFor(b: QuarantinedWorkDraft, r: Request, s: Server, child: String) =
+        localReceipt(b, r).copy(
+            attemptSha256 = QuarantinedPrivateImageStore.digest(
+                (r.id + "\n" + s.attemptId + "\n" + s.wire).toByteArray(Charsets.UTF_8)),
+            submissionId = child)
+
+    private fun receiptValues(receipt: ProtectedSubmittedReceipt) =
+        listOf(receipt.generation, receipt.packageSha256, receipt.ciphertextSha256,
+            receipt.attemptSha256, receipt.instanceId, receipt.submissionId, receipt.targetFormVersionId)
 
     private fun noReceipt(b: QuarantinedWorkDraft): Boolean {
         val file = File(area(b), RECEIPT)

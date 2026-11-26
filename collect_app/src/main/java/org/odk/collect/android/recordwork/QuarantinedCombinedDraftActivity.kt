@@ -47,7 +47,8 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
         val receipt: ProtectedSubmittedReceipt? = null,
         val submissionCheckFailed: Boolean = false,
         val boundAttempt: Boolean = false,
-        val boundStatus: ProtectedBoundAttempt? = null
+        val boundStatus: ProtectedBoundAttempt? = null,
+        val localReceiptRetained: Boolean = false
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -96,11 +97,13 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
         if (!ProtectedSubmissionAttemptGuard.hasAttempt(root, b)) return null
         if (ProtectedSubmissionAttemptGuard.hasBoundAttempt(root, b)) {
             val store = boundStore()
-            val receipt = runCatching { store.reopenReceipt(b) }.getOrNull()
-            val current = if (BuildConfig.PROTECTED_BOUND_SUBMISSIONS && receipt == null)
+            val local = runCatching { store.inspectStoredReceipt(b) }.getOrNull()
+            val receipt = if (local != null) runCatching { store.reopenReceipt(b) }.getOrNull() else null
+            val current = if (BuildConfig.PROTECTED_BOUND_SUBMISSIONS && receipt == null && local == null)
                 runCatching { store.inspect(b) }.getOrNull() else null
             return Display(b, emptyMap(), 0, null, null, submissionAttempted = true,
-                receipt = receipt, boundAttempt = true, boundStatus = current)
+                receipt = receipt, boundAttempt = true, boundStatus = current,
+                localReceiptRetained = BuildConfig.PROTECTED_BOUND_SUBMISSIONS && local != null && receipt == null)
         }
         val receipt = runCatching {
             ProtectedSubmissionReceiptStore(root, settings).reopen(project, b)
@@ -187,6 +190,11 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
     private fun render(state: Display) {
         display = state
         if (state.submissionAttempted) {
+            if (state.localReceiptRetained) {
+                status.setText(R.string.private_bound_local_receipt_retained)
+                button(R.string.private_submission_refresh) { perform { load() } }
+                return
+            }
             if (state.boundAttempt && state.receipt == null) {
                 renderBound(state)
                 return

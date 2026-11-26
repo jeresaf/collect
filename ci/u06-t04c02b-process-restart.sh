@@ -249,7 +249,7 @@ acknowledged)
   echo "U06-T04E-06C2: authenticated completed-work evidence GET, exact identity and bounded digest inventory, malformed/redirect/READY denial PASS."
   echo "U06-T04E-06C3: exact authenticated local package and remote evidence comparison, recovered receipt publication, corruption denial and restart PASS."
   ;;
-lost-response)
+lost-response|interrupted-upload)
   # Replace only the disposable TLS front end, not production app/server code.
   # Arm it for the exact synthetic work ID; it refuses all other POSTs.
   work="$(adb exec-out run-as "$APP_ID" cat no_backup/u06-publication-restart.properties | tr -d '\r' | sed -n 's/^work=//p')"
@@ -257,7 +257,7 @@ lost-response)
   event=/tmp/u06-native-lost-ack-event.json
   rm -f "$event" "${event%.json}.tmp"
   docker stop u06-t04a-tls >/dev/null
-  python3 ci/u06-t04e06c4-lost-ack-proxy.py "$work" "$event" >/tmp/u06-native-lost-ack-proxy.log 2>&1 &
+  python3 ci/u06-t04e06c4-lost-ack-proxy.py "$work" "$event" "${U06_ACK_PROFILE}" >/tmp/u06-native-lost-ack-proxy.log 2>&1 &
   proxy_pid=$!
   restore_tls() {
     kill "$proxy_pid" >/dev/null 2>&1 || true
@@ -274,6 +274,25 @@ lost-response)
   done
   curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt \
     --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'
+  if [[ "${U06_ACK_PROFILE}" == interrupted-upload ]]; then
+    python3 ci/u06-t04e06d1-no-commit-oracle.py before /tmp/u06-interrupted-baseline.json
+    run_one actualFinalizedUploadInterruptedBeforeForwarding "$restart_class"
+    python3 ci/u06-t04e06d1-no-commit-oracle.py after /tmp/u06-interrupted-baseline.json
+    adb shell am force-stop "$APP_ID"
+    run_one inspectInterruptedUploadAfterForceStop "$restart_class"
+    adb shell am force-stop "$APP_ID"
+    run_one inspectInterruptedUploadAfterForceStop "$restart_class"
+    python3 ci/u06-t04e06d1-no-commit-oracle.py after /tmp/u06-interrupted-baseline.json
+    python3 - "$event" <<'PY'
+import json, sys
+from pathlib import Path
+assert json.loads(Path(sys.argv[1]).read_text()) == {
+    "posts": 1, "forwarded": 0, "upstream201": 0, "dropped": 1, "partial": 1
+}, "Expected exactly one interrupted ingress POST and no forwarding"
+PY
+    rm -f /tmp/u06-interrupted-baseline.json
+    echo "U06-T04E-06D1: interrupted ingress, unchanged PostgreSQL rows, restart and no retransmission PASS."
+  else
   run_one actualFinalizedPostLosesResponseWithoutPublishingReceipt "$restart_class"
   check_drop() {
     python3 - "$event" <<'PY'
@@ -295,6 +314,7 @@ PY
   check_drop
   python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
   echo "U06-T04E-06C4: real lost HTTP response, distinct-process exact receipt recovery, second restart and one POST only PASS."
+  fi
   restore_tls
   trap - EXIT
   ;;

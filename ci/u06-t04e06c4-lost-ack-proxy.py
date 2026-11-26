@@ -15,10 +15,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 WORK = sys.argv[1]
 EVENT = pathlib.Path(sys.argv[2])
+MODE = sys.argv[3] if len(sys.argv) > 3 else "lost-response"
+assert MODE in {"lost-response", "interrupted-upload"}
 assert re.fullmatch(r"[0-9a-f-]{36}", WORK)
 BASE = "/v1/projects/81000000-0000-4000-8000-000000000001"
 LOCK = threading.Lock()
 counts = {"posts": 0, "forwarded": 0, "upstream201": 0, "dropped": 0}
+if MODE == "interrupted-upload":
+    counts.update(partial=0)
 
 
 def event():
@@ -55,6 +59,22 @@ class Proxy(BaseHTTPRequestHandler):
                 return
             if not 1 <= n <= 13 * 1024 * 1024:
                 self.send_error(400)
+                return
+            if MODE == "interrupted-upload":
+                # Consume a strict nonempty prefix, never forward the body.
+                # This is an ingress interruption, not a server rollback test.
+                if n < 2:
+                    self.send_error(400)
+                    return
+                prefix = self.rfile.read(min(n - 1, 1024))
+                if not 0 < len(prefix) < n:
+                    self.send_error(400)
+                    return
+                counts["partial"] += 1
+                counts["dropped"] += 1
+                event()
+                self.close_connection = True
+                self.connection.shutdown(socket.SHUT_RDWR)
                 return
             body = self.rfile.read(n)
             if len(body) != n:

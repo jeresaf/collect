@@ -2010,6 +2010,138 @@ class ConnectedProtectedEditorRestartTest {
     }
 
     @Test
+    fun actualFinalizedUploadInterruptedBeforeForwarding() {
+        var phase = "SETUP"
+        try {
+            val state = publicationContext()
+            val b = state.binding
+            val root = state.context.noBackupFilesDir
+            val generation = state.required("generation")
+            val sha = state.required("packageDigest")
+            val store = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+            val saved = store.reopenFinalizedPackage(b.projectId, b, generation)
+            assertEquals(sha, saved.evidence.packaged.packageSha256)
+            assertEquals(3, saved.evidence.packaged.attachments.size)
+            assertEquals(2, saved.evidence.packaged.xml.repeatCount)
+            val latch = File(state.area, "submission-attempt.aesgcm")
+            val receiptFile = File(state.area, "submitted-receipt.aesgcm")
+            val pending = File(state.area, ".submitted-receipt-write")
+            val envelope = File(state.area, "finalized-" + generation + ".aesgcm")
+            val pointer = File(state.area, "current.aesgcm")
+            val envelopeBefore = envelope.readBytes()
+            val pointerBefore = pointer.readBytes()
+            assertFalse(latch.exists() || receiptFile.exists() || pending.exists())
+            val remote = RecordWorkReadOnlyClient(state.settings)
+            val before = remote.load(b.projectId)
+            ProtectedSubmissionAdmission.verifySnapshot(b, before)
+            phase = "POST"
+            // Real production TLS transport; CI ingress consumes a strict prefix and closes.
+            val sender = ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
+            val result = sender.send(b.projectId, b, generation, sha)
+            assertFalse(result.acknowledged)
+            assertNull(result.instanceId)
+            assertTrue("No valid HTTP response status should reach Android",
+                result.httpStatus == null || result.httpStatus == -1)
+            assertEquals(sha, result.packageSha256)
+            assertTrue(latch.isFile && latch.length() > 30)
+            assertFalse(receiptFile.exists() || pending.exists())
+            val attemptBytes = latch.readBytes()
+            phase = "REMOTE_COMMIT"
+            assertEquals(before, remote.load(b.projectId))
+            val inspected = ProtectedSubmissionReceiptStore(root, state.settings)
+                .inspectAttempt(b.projectId, b)
+            assertEquals(ProtectedReconciliationState.READY_WITHOUT_VISIBLE_RECORD, inspected.state)
+            assertNull(inspected.submissionId)
+            assertFalse(inspected.canEdit || inspected.canUpload)
+            assertFalse(receiptFile.exists() || pending.exists())
+            assertArrayEquals(envelopeBefore, envelope.readBytes())
+            assertArrayEquals(pointerBefore, pointer.readBytes())
+            assertArrayEquals(attemptBytes, latch.readBytes())
+            state.evidence.setProperty("lostPid", android.os.Process.myPid().toString())
+            state.evidence.setProperty("attemptDigest", digest(attemptBytes))
+            state.evidence.setProperty("finalizedDigest", digest(envelopeBefore))
+            state.evidence.setProperty("pointerDigest", digest(pointerBefore))
+            java.io.FileOutputStream(state.marker).use {
+                state.evidence.store(it, "Synthetic interrupted upload")
+                it.fd.sync()
+            }
+        } catch (failure: Throwable) {
+            val line = failure.stackTrace.firstOrNull {
+                it.className.startsWith(ConnectedProtectedEditorRestartTest::class.java.name)
+            }?.lineNumber ?: -1
+            throw AssertionError("U06_LOST_ACK_FAILURE phase=$phase line=$line")
+        }
+    }
+
+    @Test
+    fun inspectInterruptedUploadAfterForceStop() {
+        var phase = "SETUP"
+        try {
+            val state = publicationContext()
+            val b = state.binding
+            val root = state.context.noBackupFilesDir
+            assertNotEquals(state.required("lostPid"), android.os.Process.myPid().toString())
+            val latch = File(state.area, "submission-attempt.aesgcm")
+            val receiptFile = File(state.area, "submitted-receipt.aesgcm")
+            val pending = File(state.area, ".submitted-receipt-write")
+            val envelope = File(state.area, "finalized-" + state.required("generation") + ".aesgcm")
+            val pointer = File(state.area, "current.aesgcm")
+            val attemptBytes = latch.readBytes()
+            val envelopeBytes = envelope.readBytes()
+            val pointerBytes = pointer.readBytes()
+            assertEquals(state.required("attemptDigest"), digest(attemptBytes))
+            assertEquals(state.required("finalizedDigest"), digest(envelopeBytes))
+            assertEquals(state.required("pointerDigest"), digest(pointerBytes))
+            assertFalse(receiptFile.exists() || pending.exists())
+            val store = ProtectedSubmissionReceiptStore(root, state.settings)
+            assertTrue(runCatching { store.reopen(b.projectId, b) }.isFailure)
+            phase = "UNCONFIRMED_UI"
+            ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+                QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+            ).use { editor ->
+                awaitUi(editor) { activity, views ->
+                    val unconfirmed = views.filterIsInstance<TextView>().any {
+                        it.text.toString() == activity.getString(R.string.private_submission_unconfirmed)
+                    }
+                    if (unconfirmed) {
+                        assertTrue(views.filterIsInstance<EditText>().isEmpty())
+                        assertTrue(views.filterIsInstance<Button>().none {
+                            it.text.toString() == activity.getString(R.string.private_submission_action)
+                        })
+                    }
+                    unconfirmed
+                }
+            }
+            val remote = RecordWorkReadOnlyClient(state.settings)
+            val before = remote.load(b.projectId)
+            phase = "RECOVER"
+            val inspected = store.inspectAttempt(b.projectId, b)
+            assertEquals(ProtectedReconciliationState.READY_WITHOUT_VISIBLE_RECORD, inspected.state)
+            assertEquals(state.required("generation"), inspected.generation)
+            assertEquals(state.required("packageDigest"), inspected.packageSha256)
+            assertEquals(state.required("attemptDigest"), inspected.attemptSha256)
+            assertNull(inspected.submissionId)
+            assertFalse(inspected.canEdit || inspected.canUpload)
+            assertTrue(runCatching { store.recoverAcknowledgement(b.projectId, b) }.isFailure)
+            assertTrue(runCatching {
+                ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
+                    .send(b.projectId, b, inspected.generation, inspected.packageSha256)
+            }.isFailure)
+            phase = "PRESERVE"
+            assertEquals(before, remote.load(b.projectId))
+            assertArrayEquals(attemptBytes, latch.readBytes())
+            assertArrayEquals(envelopeBytes, envelope.readBytes())
+            assertArrayEquals(pointerBytes, pointer.readBytes())
+            assertFalse(receiptFile.exists() || pending.exists())
+        } catch (failure: Throwable) {
+            val line = failure.stackTrace.firstOrNull {
+                it.className.startsWith(ConnectedProtectedEditorRestartTest::class.java.name)
+            }?.lineNumber ?: -1
+            throw AssertionError("U06_LOST_ACK_FAILURE phase=$phase line=$line")
+        }
+    }
+
+    @Test
     fun submittedReceiptRecoversAfterForceStopAndRejectsCorruption() {
         val state = publicationContext()
         val b = state.binding

@@ -19,6 +19,8 @@ EVENT = pathlib.Path(sys.argv[2])
 MODE = sys.argv[3] if len(sys.argv) > 3 else "lost-response"
 assert MODE in {"lost-response", "interrupted-upload", "interrupted-upstream"}
 assert re.fullmatch(r"[0-9a-f-]{36}", WORK)
+ATTEMPT = sys.argv[4] if len(sys.argv) > 4 else None
+assert ATTEMPT is None or re.fullmatch(r"[0-9a-f-]{36}", ATTEMPT)
 BASE = "/v1/projects/81000000-0000-4000-8000-000000000001"
 LOCK = threading.Lock()
 counts = {"posts": 0, "forwarded": 0, "upstream201": 0, "dropped": 0}
@@ -52,6 +54,7 @@ class Proxy(BaseHTTPRequestHandler):
             event()
             if (counts["posts"] != 1 or self.path != BASE + "/submission"
                     or self.headers.get("X-DataCollector-Work-Item-Id") != WORK
+                    or self.headers.get("X-DataCollector-Attempt-Id") != ATTEMPT
                     or self.headers.get("Transfer-Encoding") is not None):
                 self.send_error(409)
                 return

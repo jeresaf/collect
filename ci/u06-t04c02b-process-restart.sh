@@ -99,6 +99,9 @@ do
   ui_output_file="/tmp/u06-ui-${method}.txt"
   adb shell am force-stop "$APP_ID"
   adb shell pm clear "$APP_ID" >/dev/null
+  # Test-only wake/unlock; keep actual first-launch focus and all assertions.
+  adb shell input keyevent KEYCODE_WAKEUP
+  adb shell wm dismiss-keyguard
   # Fresh synthetic diagnostic window; no raw logcat is exported.
   adb logcat -c
   adb shell am instrument -w -e class "${ui_class}#${method}" \
@@ -262,6 +265,75 @@ acknowledged)
   echo "U06-T04E-06B: authenticated READY/linked-record inspection without receipt publication or retransmission, integrity and conflict denial PASS."
   echo "U06-T04E-06C2: authenticated completed-work evidence GET, exact identity and bounded digest inventory, malformed/redirect/READY denial PASS."
   echo "U06-T04E-06C3: exact authenticated local package and remote evidence comparison, recovered receipt publication, corruption denial and restart PASS."
+  ;;
+bound-lost-response|bound-interrupted-upload|bound-interrupted-upstream)
+  # Reserve/bind under normal TLS, then arm the proxy for the exact work AND attempt.
+  run_one boundAttemptPreparesAndPersistsAcrossForceStop "$restart_class"
+  adb shell am force-stop "$APP_ID"
+  work="$(adb exec-out run-as "$APP_ID" cat no_backup/u06-publication-restart.properties | tr -d '\r' | sed -n 's/^work=//p')"
+  attempt="$(adb exec-out run-as "$APP_ID" cat no_backup/u06-publication-restart.properties | tr -d '\r' | sed -n 's/^boundAttempt=//p')"
+  [[ "$work" =~ ^[0-9a-f-]{36}$ && "$attempt" =~ ^[0-9a-f-]{36}$ ]]
+  mode="${U06_ACK_PROFILE#bound-}"
+  event=/tmp/u08-bound-fault-event.json
+  rm -f "$event" "${event%.json}.tmp"
+  docker stop u06-t04a-tls >/dev/null
+  python3 ci/u06-t04e06c4-lost-ack-proxy.py "$work" "$event" "$mode" "$attempt" >/tmp/u08-bound-proxy.log 2>&1 &
+  proxy_pid=$!
+  restore_bound_tls() {
+    kill "$proxy_pid" >/dev/null 2>&1 || true
+    wait "$proxy_pid" 2>/dev/null || true
+    docker start u06-t04a-tls >/dev/null
+  }
+  trap restore_bound_tls EXIT
+  for i in $(seq 1 20); do
+    kill -0 "$proxy_pid"
+    if curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'; then break; fi
+    sleep 1
+  done
+  curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'
+  if [[ "$mode" != lost-response ]]; then
+    python3 ci/u06-t04e06d1-no-commit-oracle.py before /tmp/u08-bound-no-commit.json
+  fi
+  run_one boundAttemptTransmissionInterruptedOrAcknowledgementLost "$restart_class"
+  adb shell am force-stop "$APP_ID"
+  if [[ "$mode" == lost-response ]]; then
+    run_one boundAttemptRecoversLostAcknowledgementWithoutPost "$restart_class"
+    adb shell am force-stop "$APP_ID"
+    run_one boundReceiptReopensAfterForceStop "$restart_class"
+  else
+    python3 ci/u06-t04e06d1-no-commit-oracle.py after /tmp/u08-bound-no-commit.json
+    run_one boundAttemptRemainsAdmissibleAfterInterruptedTransmission "$restart_class"
+    adb shell am force-stop "$APP_ID"
+    run_one boundAttemptRemainsAdmissibleAfterInterruptedTransmission "$restart_class"
+    python3 ci/u06-t04e06d1-no-commit-oracle.py after /tmp/u08-bound-no-commit.json
+  fi
+  python3 - "$event" "$mode" <<'PY'
+import json, sys
+from pathlib import Path
+expected = {"posts": 1, "forwarded": 1, "upstream201": 1, "dropped": 1}
+if sys.argv[2] == "interrupted-upload":
+    expected.update(forwarded=0, upstream201=0, partial=1)
+elif sys.argv[2] == "interrupted-upstream":
+    expected.update(upstream201=0, partial=1, upstream_rejected=1)
+assert json.loads(Path(sys.argv[1]).read_text()) == expected, "Bound fault counters mismatch"
+PY
+  restore_bound_tls
+  trap - EXIT
+  for i in $(seq 1 20); do
+    if curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'; then break; fi
+    sleep 1
+  done
+  curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'
+  if [[ "$mode" != lost-response ]]; then
+    # Only an explicit invocation after status verification may retry.
+    adb shell am force-stop "$APP_ID"
+    run_one boundAttemptSendsExactPackageAndRecoversReceipt "$restart_class"
+    adb shell am force-stop "$APP_ID"
+    run_one boundReceiptReopensAfterForceStop "$restart_class"
+  fi
+  adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
+  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
+  echo "U08 bound fault profile $mode: exact durable submission and verified receipt PASS."
   ;;
 lost-response|interrupted-upload|interrupted-upstream)
   # Replace only the disposable TLS front end, not production app/server code.

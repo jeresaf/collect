@@ -20,6 +20,8 @@ def sha(data):
 def snapshot():
     rows = {t: sha(query(f"SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.id)::text, '[]') FROM {t} t").encode())
             for t in TABLES}
+    rows["protected_submission_attempts"] = sha(query(
+        "SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.work_item_id)::text, '[]') FROM protected_submission_attempts t").encode())
     media = json.loads(query("SELECT COALESCE(json_agg(storage_path ORDER BY id), '[]') FROM submission_attachments"))
     rows["media"] = [[p, sha(pathlib.Path(p).read_bytes()) if pathlib.Path(p).is_file() else None]
                      for p in media if p]

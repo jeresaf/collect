@@ -111,13 +111,14 @@ do
     # connection/credential values; raw output stays local to the runner.
     grep -E '^FAILURES|^INSTRUMENTATION_FAILED|^Tests run:|^Time:|^java[.]lang[.](AssertionError|RuntimeException|IllegalStateException)|^androidx[.]test[.]espresso[.][A-Za-z.]+Exception|^[[:space:]]+at (org[.]odk[.]collect[.]android[.]recordwork[.]|androidx[.]test[.]espresso[.]|androidx[.]test[.]core[.]app[.])' "$ui_output_file" | tail -n 35 || true
     # Capture only allowlisted phase tokens and exception/stack identities.
-    # A screenshot crash can mask the original Espresso failure.
+    # This test class disables only optional failure screenshots; retain
+    # original exception identities and fixed phase tokens, never raw logs.
     adb logcat -d -v brief -s U06_UI_PHASE:I AndroidRuntime:E StrictMode:V TestRunner:I \
       > /tmp/u06-first-launch-logcat.txt 2>&1 || true
     python3 - "$ui_output_file" /tmp/u06-first-launch-logcat.txt <<'PY'
 import re, sys
 from pathlib import Path
-phase = re.compile(r"\b(?:HISTORICAL_(?:TEST_ENTER|PROJECT_CONFIGURED|ACTIVITY_LAUNCHED|INITIAL_ASSERTIONS_PASSED|ACTIVITY_RECREATED|RECREATED_ASSERTIONS_PASSED)|CONFIG_(?:OPEN_MANUAL|INPUT_URL|INPUT_USERNAME|INPUT_PASSWORD|ADD_PROJECT|PROJECT_ADDED))\b")
+phase = re.compile(r"\b(?:HISTORICAL_(?:TEST_ENTER|PROJECT_CONFIGURED|ACTIVITY_LAUNCHED|INITIAL_ASSERTIONS_PASSED|ACTIVITY_RECREATED|RECREATED_ASSERTIONS_PASSED)|CONFIG_(?:OPEN_MANUAL|INPUT_URL|INPUT_USERNAME|INPUT_PASSWORD|ADD_PROJECT|PROJECT_ADDED)|UI_DIAGNOSTICS_INSTALLED|ESPRESSO_ORIGINAL_FAILURE)\b")
 exception = re.compile(r"\b(?:android\.os\.strictmode\.[A-Za-z]+Violation|androidx\.test\.espresso\.[A-Za-z.]+Exception|java\.lang\.(?:AssertionError|RuntimeException|IllegalStateException|IllegalArgumentException|NullPointerException)|org\.junit\.ComparisonFailure)\b")
 stack = re.compile(r"\bat ((?:org\.odk\.collect\.(?:android\.(?:recordwork|support)|testshared)|androidx\.test\.(?:espresso|core\.app)|android\.os\.StrictMode)[\w.$]+)\(([\w.$]+\.kt|[\w.$]+\.java):([0-9]+)\)")
 for file in sys.argv[1:]:

@@ -3,7 +3,9 @@ package org.odk.collect.android.recordwork
 import android.view.View
 import android.content.Intent
 import android.widget.LinearLayout
+import androidx.test.espresso.Espresso
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.base.DefaultFailureHandler
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
@@ -25,6 +27,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
+import org.junit.rules.ExternalResource
 import org.junit.runner.RunWith
 import org.odk.collect.android.R
 import org.odk.collect.android.injection.DaggerUtils
@@ -56,8 +59,32 @@ class ConfiguredRecordPreparationUiTest {
     private val rule = CollectTestRule(false)
     private val dependencies = TestDependencies()
 
+    // Espresso's failure screenshot invokes StrictMode.noteSlowCall on the
+    // main thread and can kill this test process before the real assertion
+    // reaches JUnit. Keep StrictMode and the default exception propagation;
+    // suppress only optional screenshot capture in this synthetic test class.
+    // Install before the first-launch rule, which itself uses Espresso.
+    private val failureDiagnostics = object : ExternalResource() {
+        override fun before() {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val delegate = DefaultFailureHandler(context, false)
+            Espresso.setFailureHandler { error, matcher ->
+                android.util.Log.i("U06_UI_PHASE", "ESPRESSO_ORIGINAL_FAILURE " + error.javaClass.name)
+                delegate.handle(error, matcher)
+            }
+            android.util.Log.i("U06_UI_PHASE", "UI_DIAGNOSTICS_INSTALLED")
+        }
+
+        override fun after() {
+            Espresso.setFailureHandler(DefaultFailureHandler(
+                InstrumentationRegistry.getInstrumentation().targetContext
+            ))
+        }
+    }
+
     @get:Rule
-    val chain: RuleChain = TestRuleChain.chain(dependencies).around(rule)
+    val chain: RuleChain = RuleChain.outerRule(failureDiagnostics)
+        .around(TestRuleChain.chain(dependencies)).around(rule)
 
     private val source = "81000000-0000-4000-8000-000000000007"
     private val corrected = "81000000-0000-4000-8000-000000000008"

@@ -1841,6 +1841,93 @@ class ConnectedProtectedEditorRestartTest {
     }
 
     @Test
+    fun boundAttemptPreparesAndPersistsAcrossForceStop() {
+        val state = publicationContext()
+        val b = state.binding
+        val store = ProtectedBoundAttemptStore(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)
+        val attempt = store.prepare(b, state.required("generation"), state.required("packageDigest"))
+        assertEquals(RemoteProtectedAttemptState.BOUND_EXACT_CONTENT_ADMISSIBLE, attempt.state)
+        assertEquals(attempt, store.inspect(b))
+        assertTrue(ProtectedSubmissionAttemptGuard.hasAttempt(state.context.noBackupFilesDir, b))
+        assertFalse(File(state.area, "submission-attempt.aesgcm").exists())
+        assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
+        state.evidence.setProperty("boundPid", android.os.Process.myPid().toString())
+        for (name in listOf("protected-attempt-request.aesgcm", "protected-attempt-server.aesgcm",
+                "finalized-" + attempt.generation + ".aesgcm", "current.aesgcm")) {
+            state.evidence.setProperty("bound:" + name, digest(File(state.area, name).readBytes()))
+        }
+        state.evidence.setProperty("boundAttempt", attempt.attemptId)
+        state.evidence.setProperty("boundWire", attempt.wireSha256)
+        java.io.FileOutputStream(state.marker).use {
+            state.evidence.store(it, "Synthetic U08 bound attempt")
+            it.fd.sync()
+        }
+    }
+
+    @Test
+    fun boundAttemptSendsExactPackageAndRecoversReceipt() {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        assertNotEquals(state.required("boundPid"), android.os.Process.myPid().toString())
+        val store = ProtectedBoundAttemptStore(state.context.cacheDir, root, state.settings)
+        val before = store.inspect(b)
+        assertEquals(RemoteProtectedAttemptState.BOUND_EXACT_CONTENT_ADMISSIBLE, before.state)
+        assertEquals(state.required("boundAttempt"), before.attemptId)
+        assertEquals(state.required("boundWire"), before.wireSha256)
+        val sender = ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
+        assertTrue(runCatching { sender.sendBound(b, before.attemptId, "0".repeat(64)) }.isFailure)
+        assertTrue(runCatching { sender.send(b.projectId, b, before.generation, before.packageSha256) }.isFailure)
+        val receipt = sender.sendBoundAndAcknowledge(b, before.attemptId, before.wireSha256)
+        val after = store.inspect(b)
+        assertEquals(RemoteProtectedAttemptState.COMPLETED_VERIFIED, after.state)
+        assertEquals(receipt.submissionId, after.acceptedSubmissionId)
+        assertEquals(receipt, store.reopenReceipt(b))
+        assertTrue(runCatching { sender.sendBound(b, before.attemptId, before.wireSha256) }.isFailure)
+        // Oracle is derived from the sealed package, not server response bytes.
+        val local = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+            .attemptedPackageEvidence(b, receipt)
+        val oracle = org.json.JSONObject()
+            .put("work", b.workId).put("source", b.sourceSubmissionId)
+            .put("child", receipt.submissionId).put("reserved", b.reservedInstanceId)
+            .put("target", b.targetFormVersionId).put("visit", b.visitKey)
+            .put("xmlSha256", local.xmlSha256).put("xmlBytes", local.xmlBytes)
+            .put("packageSha256", receipt.packageSha256)
+        val attachments = org.json.JSONArray()
+        local.attachments.forEach {
+            attachments.put(org.json.JSONObject().put("filename", it.filename)
+                .put("mime", it.mime).put("bytes", it.bytes).put("sha256", it.sha256))
+        }
+        oracle.put("attachments", attachments)
+        File(root, "u06-native-submission-oracle.json").writeText(oracle.toString())
+        for (name in listOf("protected-attempt-request.aesgcm", "protected-attempt-server.aesgcm",
+                "finalized-" + before.generation + ".aesgcm", "current.aesgcm")) {
+            assertEquals(state.required("bound:" + name), digest(File(state.area, name).readBytes()))
+        }
+        state.evidence.setProperty("receiptPid", android.os.Process.myPid().toString())
+        state.evidence.setProperty("boundReceiptDigest",
+            digest(File(state.area, "protected-bound-receipt.aesgcm").readBytes()))
+        java.io.FileOutputStream(state.marker).use { state.evidence.store(it, "Synthetic U08 receipt"); it.fd.sync() }
+    }
+
+    @Test
+    fun boundReceiptReopensAfterForceStop() {
+        val state = publicationContext()
+        assertNotEquals(state.required("receiptPid"), android.os.Process.myPid().toString())
+        val b = state.binding
+        val store = ProtectedBoundAttemptStore(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)
+        val receipt = store.reopenReceipt(b)
+        assertEquals(state.required("packageDigest"), receipt.packageSha256)
+        assertEquals(state.required("boundReceiptDigest"),
+            digest(File(state.area, "protected-bound-receipt.aesgcm").readBytes()))
+        assertEquals(receipt.submissionId, store.inspect(b).acceptedSubmissionId)
+        assertTrue(runCatching {
+            ProtectedMultipartSubmission(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)
+                .sendBound(b, state.required("boundAttempt"), state.required("boundWire"))
+        }.isFailure)
+    }
+
+    @Test
     fun actualFinalizedPostLosesResponseWithoutPublishingReceipt() {
         var phase = "SETUP"
         try {

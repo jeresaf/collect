@@ -238,6 +238,17 @@ export PGPASSWORD=synthetic-ci-only
 python3 ci/u06-t04e05c-native-postflight.py before /tmp/u06-native-history.json
 adb shell am force-stop "$APP_ID"
 case "${U06_ACK_PROFILE:-acknowledged}" in
+bound-acknowledged)
+  run_one boundAttemptPreparesAndPersistsAcrossForceStop "$restart_class"
+  adb shell am force-stop "$APP_ID"
+  run_one boundAttemptSendsExactPackageAndRecoversReceipt "$restart_class"
+  adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
+  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
+  adb shell am force-stop "$APP_ID"
+  run_one boundReceiptReopensAfterForceStop "$restart_class"
+  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
+  echo "U08 bound submission, exact persisted bytes, receipt and restart PASS."
+  ;;
 acknowledged)
   run_one actualFinalizedMultipartCreatesIndependentLinkedObservation "$restart_class"
   adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json

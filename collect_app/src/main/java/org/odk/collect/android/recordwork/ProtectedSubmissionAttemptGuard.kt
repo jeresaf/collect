@@ -9,7 +9,8 @@ import java.util.UUID
  */
 internal object ProtectedSubmissionAttemptGuard {
     private val markers = listOf("submission-attempt.aesgcm", "submitted-receipt.aesgcm",
-        ".submitted-receipt-write")
+        ".submitted-receipt-write", "protected-attempt-request.aesgcm",
+        "protected-attempt-server.aesgcm")
 
     fun hasAttempt(root: File, binding: QuarantinedWorkDraft): Boolean =
         synchronized(ProtectedDraftComponentLock.monitor) {

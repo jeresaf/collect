@@ -22,6 +22,13 @@ class RecordWorkApiPaths private constructor(private val projectBase: String) {
     fun completionEvidence(workItemId: String): String =
         "$projectBase/record-work-items/${checkedId(workItemId)}/completion-evidence"
     fun submission(): String = "$projectBase/submission"
+    internal fun serverProjectId(): String = projectBase.substringAfterLast("/")
+    internal fun protectedAttempt(workId: String): String =
+        "$projectBase/record-work-items/${checkedId(workId)}/protected-attempt"
+    internal fun protectedAttempt(workId: String, attemptId: String): String =
+        "${protectedAttempt(workId)}/${checkedId(attemptId)}"
+    internal fun protectedCommitment(workId: String, attemptId: String): String =
+        "${protectedAttempt(workId, attemptId)}/commitment"
 
     companion object {
         fun fromProjectUrl(projectUrl: String): RecordWorkApiPaths {

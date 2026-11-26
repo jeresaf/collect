@@ -4,6 +4,9 @@ import android.view.View
 import android.content.Intent
 import android.widget.LinearLayout
 import androidx.test.espresso.Espresso
+import androidx.test.espresso.IdlingPolicies
+import androidx.test.espresso.IdlingRegistry
+import java.util.concurrent.TimeUnit
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.base.DefaultFailureHandler
 import androidx.test.espresso.action.ViewActions.click
@@ -67,15 +70,28 @@ class ConfiguredRecordPreparationUiTest {
     private val failureDiagnostics = object : ExternalResource() {
         override fun before() {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
+            // CI cold startup after a debug APK reinstall can exceed Espresso's
+            // default idling window. Still require real idle and every assertion.
+            IdlingPolicies.setIdlingResourceTimeout(90, TimeUnit.SECONDS)
+            IdlingPolicies.setMasterPolicyTimeout(120, TimeUnit.SECONDS)
             val delegate = DefaultFailureHandler(context, false)
             Espresso.setFailureHandler { error, matcher ->
                 android.util.Log.i("U06_UI_PHASE", "ESPRESSO_ORIGINAL_FAILURE " + error.javaClass.name)
+                // Do not call isIdleNow from the failure handler (it may itself
+                // notify Espresso). Report only registered type names and count.
+                IdlingRegistry.getInstance().resources.forEach {
+                    android.util.Log.i("U06_UI_PHASE", "REGISTERED_IDLER " + it.javaClass.name)
+                }
+                android.util.Log.i("U06_UI_PHASE", "TRACKED_TASK_COUNT " +
+                    org.odk.collect.android.support.async.AsyncWorkTracker.taskCount)
                 delegate.handle(error, matcher)
             }
             android.util.Log.i("U06_UI_PHASE", "UI_DIAGNOSTICS_INSTALLED")
         }
 
         override fun after() {
+            IdlingPolicies.setIdlingResourceTimeout(26, TimeUnit.SECONDS)
+            IdlingPolicies.setMasterPolicyTimeout(60, TimeUnit.SECONDS)
             Espresso.setFailureHandler(DefaultFailureHandler(
                 InstrumentationRegistry.getInstrumentation().targetContext
             ))

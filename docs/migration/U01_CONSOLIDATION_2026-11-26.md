@@ -8,3 +8,7 @@ Development seed a7740e8f4ead8e2943b0f7a41f7a453e1de0ab36: CI 45771369719 all fo
 - Paired backend pin 81ded784256ac288d13cff36bf3b69ba10f42129 is a consolidation candidate, not yet qualified on this head. Retain all four real HTTPS profiles and run the restored offline recovery qualification separately. No production security, trust, source-transfer or retransmission changes.
 
 No historical PRs closed; final integrated CI, owner review, legacy parity, native reference refresh, physical-device and release gates pending.
+
+## Qualification follow-up
+
+Backend 81ded784256ac288d13cff36bf3b69ba10f42129 passed five workflows (45778633290, 45778627444, 45778627445, 45778627675, 45778627499). Android candidate 9c30ae06e3a4b9a613fbce897e835d75dde85b1e: standalone recovery 45778722186 PASS, connected run 45778722347 three profiles PASS; interrupted-upstream failed before entering the first UI test body, in CollectTestRule.before -> FirstLaunchPage.assertOnPage -> Espresso visibility check (30.697 seconds). Exact underlying exception subtype was not captured by prior allowlist. Scoped test-only 90s resource/120s master timeouts, restore defaults on exit; add sanitized failure class, registered idler types and tracked task count. No assertion removed or ignored; no retry loop, no production policy change. This is a bounded mitigation, not proof of root cause. Rerun all profiles before paired promotion.

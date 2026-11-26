@@ -119,13 +119,15 @@ do
 import re, sys
 from pathlib import Path
 phase = re.compile(r"\b(?:HISTORICAL_(?:TEST_ENTER|PROJECT_CONFIGURED|ACTIVITY_LAUNCHED|INITIAL_ASSERTIONS_PASSED|ACTIVITY_RECREATED|RECREATED_ASSERTIONS_PASSED)|CONFIG_(?:OPEN_MANUAL|INPUT_URL|INPUT_USERNAME|INPUT_PASSWORD|ADD_PROJECT|PROJECT_ADDED)|UI_DIAGNOSTICS_INSTALLED|ESPRESSO_ORIGINAL_FAILURE)\b")
-exception = re.compile(r"\b(?:android\.os\.strictmode\.[A-Za-z]+Violation|androidx\.test\.espresso\.[A-Za-z.]+Exception|java\.lang\.(?:AssertionError|RuntimeException|IllegalStateException|IllegalArgumentException|NullPointerException)|org\.junit\.ComparisonFailure)\b")
+exception = re.compile(r"\b(?:android\.os\.strictmode\.[A-Za-z]+Violation|androidx\.test\.espresso\.[A-Za-z.]+(?:Exception|Error)|java\.lang\.(?:AssertionError|RuntimeException|IllegalStateException|IllegalArgumentException|NullPointerException)|org\.junit\.ComparisonFailure)\b")
+diagnostic = re.compile(r"\b(?:ESPRESSO_ORIGINAL_FAILURE [\w.$]+|REGISTERED_IDLER org\.odk\.collect\.[\w.$]+|TRACKED_TASK_COUNT [0-9]+)\b")
 stack = re.compile(r"\bat ((?:org\.odk\.collect\.(?:android\.(?:recordwork|support)|testshared)|androidx\.test\.(?:espresso|core\.app)|android\.os\.StrictMode)[\w.$]+)\(([\w.$]+\.kt|[\w.$]+\.java):([0-9]+)\)")
 for file in sys.argv[1:]:
     output = []
     for line in Path(file).read_text(errors="replace").splitlines():
         if "U06_UI_PHASE" in line:
             output.extend("U06_UI_PHASE " + x.group(0) for x in phase.finditer(line))
+            output.extend("U06_UI_DIAGNOSTIC " + x.group(0) for x in diagnostic.finditer(line))
         output.extend("U06_UI_EXCEPTION " + x.group(0) for x in exception.finditer(line))
         output.extend("U06_UI_STACK " + ":".join(x.groups()) for x in stack.finditer(line))
     for item in dict.fromkeys(output):

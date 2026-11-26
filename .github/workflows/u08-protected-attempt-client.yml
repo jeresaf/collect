@@ -1,8 +1,9 @@
 name: U08 Protected Attempt Client Contract
 
 on:
-  push:
-    branches: [feature/u08-submission-recovery]
+  pull_request:
+    branches: [development]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -10,10 +11,14 @@ permissions:
 
 jobs:
   android-protected-contract:
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/u08-submission-recovery')
     runs-on: ubuntu-24.04
     timeout-minutes: 70
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

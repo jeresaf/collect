@@ -2206,7 +2206,7 @@ class ConnectedProtectedEditorRestartTest {
         val oracle = org.json.JSONObject()
             .put("work", b.workId).put("source", b.sourceSubmissionId)
             .put("child", receipt.submissionId).put("reserved", b.reservedInstanceId)
-            .put("target", b.targetFormVersionId).put("visit", b.visitKey)
+            .put("target", b.targetFormVersionId).put("visit", b.visitKey ?: org.json.JSONObject.NULL)
             .put("xmlSha256", local.xmlSha256).put("xmlBytes", local.xmlBytes)
             .put("packageSha256", receipt.packageSha256)
         val attachments = org.json.JSONArray()

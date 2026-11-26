@@ -33,10 +33,17 @@ def source_id():
     return result[0]["id"]
 
 def snapshot(source):
-    return {table: sha(query(f"SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.id)::text, '[]') "
+    result = {table: sha(query(f"SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.id)::text, '[]') "
                             f"FROM (SELECT * FROM {table} WHERE {key}='{source}') t").encode())
-            for table, key in [("submissions", "id"), ("submission_answers", "submission_id"),
-                               ("submission_attachments", "submission_id")]}
+              for table, key in [("submissions", "id"), ("submission_answers", "submission_id"),
+                                 ("submission_attachments", "submission_id")]}
+    media = rows(f"SELECT id,storage_path,content_hash,file_size FROM submission_attachments WHERE submission_id='{source}'")
+    result["original_media"] = {}
+    for item in media:
+        data = pathlib.Path(item["storage_path"]).read_bytes()
+        check(len(data) == item["file_size"] and sha(data) == item["content_hash"], "original media integrity")
+        result["original_media"][item["id"]] = sha(data)
+    return result
 
 def main():
     mode, history = sys.argv[1:3]
@@ -51,7 +58,7 @@ def main():
     for key in ("work", "source", "child", "target"):
         check(re.fullmatch(r"[0-9a-f-]{36}", expected[key]) is not None, "identifier")
     check(re.fullmatch(r"uuid:[0-9a-f-]{36}", expected["reserved"]) is not None, "instance")
-    check(expected["source"] == source and expected["target"] == TARGET and expected.get("visit") is None, "binding")
+    check(expected["source"] == source and expected["target"] == TARGET and "visit" in expected and expected["visit"] is None, "binding")
     check(json.loads(history.read_text()) == {"source": source, "snapshot": snapshot(source)}, "source preservation")
     child, work = expected["child"], expected["work"]
     original = rows(f"SELECT instance_id,xml_content,form_version_id,submitted_by_id FROM submissions WHERE id='{source}'")[0]

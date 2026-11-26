@@ -2,14 +2,21 @@ name: U06-T04A Connected Android HTTPS Smoke (experimental)
 
 on:
   push:
-    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission, codex/u06-t04c02-stale-recovery, codex/u06-t04c02b-draft-restart, codex/u06-t04c03a-followup-submission, codex/u06-t04c03b-repeats-media, codex/u06-t04c03c-lost-ack-recovery, codex/u06-t04d01-ui-fail-closed, codex/u06-t04d02-ui-context-invariants, codex/u06-t04d03-record-row-ui, codex/u06-t04d03b-record-intent, codex/u06-t04d03b2a-active-project-preparation-ui, codex/u06-t04d03b2b-live-record-preparation-ui, codex/u06-t04d03c1-pending-work-ui, codex/u06-t04d04a-actual-browser-activity, codex/u06-t04d04b1-target-version-ui, codex/u06-t04d04b2-ui-followup-create, codex/u06-t04e01-unstaged-native-editor-denial, codex/u06-t04e02a-ui-reviewed-staging, codex/u06-t04e02b-authorized-protected-editor, codex/u06-t04e03a-protected-editor-save, codex/u06-t04e03b-editor-process-recovery, codex/u06-t04e03c1-native-controller-boundary, codex/u06-t04e03c2-native-answer-navigation, codex/u06-t04e03c3-native-repeat-editing, codex/u06-t04e03c4-native-conditional-validation, codex/u06-t04e03c5a-native-direct-image, codex/u06-t04e03c5b-native-image-navigation, codex/u06-t04e03c5c-repeat-image-identity, codex/u06-t04e03c6a-combined-repeat-draft, codex/u06-t04e03c6b-combined-draft-restart, codex/u06-t04e03c6c-mixed-native-draft, codex/u06-t04e03c6d1-atomic-draft-generation, codex/u06-t04e03c6d2-interrupted-publication, codex/u06-t04e03c6d3-protected-checkpoint-ui, codex/u06-t04e03c6d3-graphical-recovery, codex/u06-t04e03c6d3-concurrent-publication, codex/u06-t04e04a-finalization-eligibility, codex/u06-t04e04b-native-xml-serialization, codex/u06-t04e04c-attachment-reconciliation, codex/u06-t04e04d-finalized-package-persistence, codex/u06-t04e04e-graphical-finalization, codex/u06-t04e05a-finalized-submission-admission, codex/u06-t04e05b-authenticated-multipart, codex/u06-t04e05c-native-server-acceptance, codex/u06-t04e05d-durable-acknowledgement, codex/u06-t04e05e-graphical-submission, codex/u06-t04e06a-attempt-edit-boundary, codex/u06-t04e06b-authenticated-reconciliation, codex/u06-t04e06c2-completion-evidence-client, codex/u06-t04e06c3-recovered-receipt, codex/u06-t04e06c4-lost-ack-qualification, codex/u06-t04e06d1-interrupted-upload, codex/u06-t04e06d2-interrupted-upstream, codex/u01-consolidation, development, feature/u08-submission-recovery]
+    branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission, codex/u06-t04c02-stale-recovery, codex/u06-t04c02b-draft-restart, codex/u06-t04c03a-followup-submission, codex/u06-t04c03b-repeats-media, codex/u06-t04c03c-lost-ack-recovery, codex/u06-t04d01-ui-fail-closed, codex/u06-t04d02-ui-context-invariants, codex/u06-t04d03-record-row-ui, codex/u06-t04d03b-record-intent, codex/u06-t04d03b2a-active-project-preparation-ui, codex/u06-t04d03b2b-live-record-preparation-ui, codex/u06-t04d03c1-pending-work-ui, codex/u06-t04d04a-actual-browser-activity, codex/u06-t04d04b1-target-version-ui, codex/u06-t04d04b2-ui-followup-create, codex/u06-t04e01-unstaged-native-editor-denial, codex/u06-t04e02a-ui-reviewed-staging, codex/u06-t04e02b-authorized-protected-editor, codex/u06-t04e03a-protected-editor-save, codex/u06-t04e03b-editor-process-recovery, codex/u06-t04e03c1-native-controller-boundary, codex/u06-t04e03c2-native-answer-navigation, codex/u06-t04e03c3-native-repeat-editing, codex/u06-t04e03c4-native-conditional-validation, codex/u06-t04e03c5a-native-direct-image, codex/u06-t04e03c5b-native-image-navigation, codex/u06-t04e03c5c-repeat-image-identity, codex/u06-t04e03c6a-combined-repeat-draft, codex/u06-t04e03c6b-combined-draft-restart, codex/u06-t04e03c6c-mixed-native-draft, codex/u06-t04e03c6d1-atomic-draft-generation, codex/u06-t04e03c6d2-interrupted-publication, codex/u06-t04e03c6d3-protected-checkpoint-ui, codex/u06-t04e03c6d3-graphical-recovery, codex/u06-t04e03c6d3-concurrent-publication, codex/u06-t04e04a-finalization-eligibility, codex/u06-t04e04b-native-xml-serialization, codex/u06-t04e04c-attachment-reconciliation, codex/u06-t04e04d-finalized-package-persistence, codex/u06-t04e04e-graphical-finalization, codex/u06-t04e05a-finalized-submission-admission, codex/u06-t04e05b-authenticated-multipart, codex/u06-t04e05c-native-server-acceptance, codex/u06-t04e05d-durable-acknowledgement, codex/u06-t04e05e-graphical-submission, codex/u06-t04e06a-attempt-edit-boundary, codex/u06-t04e06b-authenticated-reconciliation, codex/u06-t04e06c2-completion-evidence-client, codex/u06-t04e06c3-recovered-receipt, codex/u06-t04e06c4-lost-ack-qualification, codex/u06-t04e06d1-interrupted-upload, codex/u06-t04e06d2-interrupted-upstream, codex/u01-consolidation, development]
+  pull_request:
+    branches: [development]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+env:
+  U08_ANDROID_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   backend-build:
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/u08-submission-recovery')
     name: Build one pinned backend for all emulator profiles
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -55,7 +62,7 @@ jobs:
           cp "${jars[0]}" /tmp/u08-backend/backend.jar
           cd /tmp/u08-backend
           printf '%s\n' 'd774a74247b315bdb8c0eebff8ab560f435fea6b' > source-commit.txt
-          printf '%s\n' "$GITHUB_SHA" > android-commit.txt
+          printf '%s\n' "$U08_ANDROID_SHA" > android-commit.txt
           sha256sum backend.jar > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
@@ -70,7 +77,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ack-profile: [acknowledged, lost-response, interrupted-upload, interrupted-upstream, bound-acknowledged, bound-lost-response, bound-interrupted-upload, bound-interrupted-upstream, bound-amendment]
+        ack-profile: [acknowledged, lost-response, interrupted-upload, interrupted-upstream, bound-acknowledged, bound-lost-response, bound-interrupted-upload, bound-interrupted-upstream, bound-amendment, bound-amendment-lost-response, bound-amendment-interrupted-upload, bound-amendment-interrupted-upstream]
     env:
       U06_ACK_PROFILE: ${{ matrix.ack-profile }}
     runs-on: ubuntu-24.04
@@ -87,8 +94,11 @@ jobs:
           --health-cmd "pg_isready -U odk_user -d odk_platform"
           --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
-      - name: Android source (exact branch commit)
+      - name: Android source (exact candidate commit)
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.U08_ANDROID_SHA }}
+          persist-credentials: false
       - name: Java 17
         uses: actions/setup-java@v4
         with:
@@ -104,13 +114,13 @@ jobs:
           set -euo pipefail
           cd /tmp/u08-backend
           test "$(cat source-commit.txt)" = 'd774a74247b315bdb8c0eebff8ab560f435fea6b'
-          test "$(cat android-commit.txt)" = "$GITHUB_SHA"
+          test "$(cat android-commit.txt)" = "$U08_ANDROID_SHA"
           sha256sum -c SHA256SUMS
       - name: Run backend with ephemeral PostgreSQL 15/Flyway
         env:
           SPRING_PROFILES_ACTIVE: prod
           ODK_PROTECTED_ATTEMPTS_ENABLED: 'true'
-          ODK_PROTECTED_AMENDMENTS_ENABLED: ${{ matrix.ack-profile == 'bound-amendment' && 'true' || 'false' }}
+          ODK_PROTECTED_AMENDMENTS_ENABLED: ${{ startsWith(matrix.ack-profile, 'bound-amendment') && 'true' || 'false' }}
           SPRING_DATASOURCE_URL: jdbc:postgresql://127.0.0.1:5432/odk_platform
           SPRING_DATASOURCE_USERNAME: odk_user
           SPRING_DATASOURCE_PASSWORD: synthetic-ci-only
@@ -248,7 +258,7 @@ jobs:
           # The interrupted-ingress profile must retain the mixed work as READY.
           # Keep the previous completed-visit and all other regression assertions.
           case "$U06_ACK_PROFILE" in
-            bound-amendment)
+            bound-amendment*)
               expected_links=3
               expected_submissions=5
               expected_mixed_state=COMPLETED
@@ -317,7 +327,7 @@ jobs:
           test "$mixed_total" = 1
           test "$mixed_work" = 1
           test "$mixed_links" = "$expected_mixed_children"
-          if [[ "$U06_ACK_PROFILE" == bound-amendment ]]; then
+          if [[ "$U06_ACK_PROFILE" == bound-amendment* ]]; then
             test "$mixed_submissions" = 2
           else
             test "$mixed_submissions" = "$expected_mixed_children"

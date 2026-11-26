@@ -79,7 +79,7 @@ bound_property=()
 if [[ "${U06_ACK_PROFILE:-acknowledged}" == bound-* ]]; then
   bound_property=(-PCOLLECT_PROTECTED_BOUND_SUBMISSIONS=true)
 fi
-if [[ "${U06_ACK_PROFILE:-acknowledged}" == bound-amendment ]]; then
+if [[ "${U06_ACK_PROFILE:-acknowledged}" == bound-amendment* ]]; then
   bound_property+=(-PCOLLECT_PROTECTED_AMENDMENTS=true)
 fi
 ./gradlew :collect_app:installDebug "${bound_property[@]}" --no-daemon --stacktrace >/tmp/u06-ui-debug-install.log 2>&1 || {
@@ -248,66 +248,14 @@ echo "U06-T04E-05B: authenticated finalized multipart bytes, receipt and redirec
 export PGPASSWORD=synthetic-ci-only
 python3 ci/u06-t04e05c-native-postflight.py before /tmp/u06-native-history.json
 adb shell am force-stop "$APP_ID"
-case "${U06_ACK_PROFILE:-acknowledged}" in
-bound-acknowledged|bound-amendment)
-  run_one boundAttemptPreparesAndPersistsAcrossForceStop "$restart_class"
-  adb shell am force-stop "$APP_ID"
-  run_one boundAttemptSendsExactPackageAndRecoversReceipt "$restart_class"
-  adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
-  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
-  adb shell am force-stop "$APP_ID"
-  run_one boundReceiptReopensAfterForceStop "$restart_class"
-  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
-  echo "U08 bound submission, exact persisted bytes, receipt and restart PASS."
-  if [[ "$U06_ACK_PROFILE" == bound-amendment ]]; then
-    python3 ci/u08-amendment-postflight.py before /tmp/u08-amendment-history.json
-    adb shell am force-stop "$APP_ID"
-    run_one stageAndFinalizeProtectedAmendment "$restart_class"
-    adb shell am force-stop "$APP_ID"
-    run_one boundAttemptPreparesAndPersistsAcrossForceStop "$restart_class"
-    adb shell am force-stop "$APP_ID"
-    run_one boundAttemptSendsExactPackageAndRecoversReceipt "$restart_class"
-    adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u08-amendment-oracle.json
-    python3 ci/u08-amendment-postflight.py after /tmp/u08-amendment-history.json /tmp/u08-amendment-oracle.json
-    adb shell am force-stop "$APP_ID"
-    docker stop u06-t04a-tls >/dev/null
-    trap 'docker start u06-t04a-tls >/dev/null' EXIT
-    run_one amendmentReceiptRetainedWhileDisconnected "$restart_class"
-    docker start u06-t04a-tls >/dev/null
-    trap - EXIT
-    for i in $(seq 1 20); do
-      if curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'; then break; fi
-      sleep 1
-    done
-    curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'
-    adb shell am force-stop "$APP_ID"
-    run_one boundReceiptReopensAfterForceStop "$restart_class"
-    python3 ci/u08-amendment-postflight.py after /tmp/u08-amendment-history.json /tmp/u08-amendment-oracle.json
-    echo "U08 connected amendment and offline retained receipt qualification PASS."
-  fi
-  ;;
-acknowledged)
-  run_one actualFinalizedMultipartCreatesIndependentLinkedObservation "$restart_class"
-  adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
-  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
-  adb shell am force-stop "$APP_ID"
-  run_one submittedReceiptRecoversAfterForceStopAndRejectsCorruption "$restart_class"
-  echo "U06-T04E-05C: actual Android HTTPS finalized submission and independent PostgreSQL exact-byte/link verification PASS."
-  echo "U06-T04E-05D: authenticated durable submitted receipt, actual restart, corruption and edit/replay denial PASS."
-  echo "U06-T04E-05E: explicit graphical submission, unsaved/cancel/partial-attempt denial, real acknowledged POST and read-only restarted submitted status PASS."
-  echo "U06-T04E-06A: protected stale-session text/media/repeat/checkpoint editing denial, partial/receipt/symlink marker preservation and real graphical submission PASS."
-  echo "U06-T04E-06B: authenticated READY/linked-record inspection without receipt publication or retransmission, integrity and conflict denial PASS."
-  echo "U06-T04E-06C2: authenticated completed-work evidence GET, exact identity and bounded digest inventory, malformed/redirect/READY denial PASS."
-  echo "U06-T04E-06C3: exact authenticated local package and remote evidence comparison, recovered receipt publication, corruption denial and restart PASS."
-  ;;
-bound-lost-response|bound-interrupted-upload|bound-interrupted-upstream)
+run_bound_fault() {
   # Reserve/bind under normal TLS, then arm the proxy for the exact work AND attempt.
   run_one boundAttemptPreparesAndPersistsAcrossForceStop "$restart_class"
   adb shell am force-stop "$APP_ID"
   work="$(adb exec-out run-as "$APP_ID" cat no_backup/u06-publication-restart.properties | tr -d '\r' | sed -n 's/^work=//p')"
   attempt="$(adb exec-out run-as "$APP_ID" cat no_backup/u06-publication-restart.properties | tr -d '\r' | sed -n 's/^boundAttempt=//p')"
   [[ "$work" =~ ^[0-9a-f-]{36}$ && "$attempt" =~ ^[0-9a-f-]{36}$ ]]
-  mode="${U06_ACK_PROFILE#bound-}"
+  mode="$1"
   event=/tmp/u08-bound-fault-event.json
   rm -f "$event" "${event%.json}.tmp"
   docker stop u06-t04a-tls >/dev/null
@@ -365,6 +313,66 @@ PY
     adb shell am force-stop "$APP_ID"
     run_one boundReceiptReopensAfterForceStop "$restart_class"
   fi
+}
+
+case "${U06_ACK_PROFILE:-acknowledged}" in
+bound-acknowledged|bound-amendment*)
+  run_one boundAttemptPreparesAndPersistsAcrossForceStop "$restart_class"
+  adb shell am force-stop "$APP_ID"
+  run_one boundAttemptSendsExactPackageAndRecoversReceipt "$restart_class"
+  adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
+  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
+  adb shell am force-stop "$APP_ID"
+  run_one boundReceiptReopensAfterForceStop "$restart_class"
+  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
+  echo "U08 bound submission, exact persisted bytes, receipt and restart PASS."
+  if [[ "$U06_ACK_PROFILE" == bound-amendment* ]]; then
+    python3 ci/u08-amendment-postflight.py before /tmp/u08-amendment-history.json
+    adb shell am force-stop "$APP_ID"
+    run_one stageAndFinalizeProtectedAmendment "$restart_class"
+    adb shell am force-stop "$APP_ID"
+    if [[ "$U06_ACK_PROFILE" == bound-amendment ]]; then
+      run_one boundAttemptPreparesAndPersistsAcrossForceStop "$restart_class"
+      adb shell am force-stop "$APP_ID"
+      run_one boundAttemptSendsExactPackageAndRecoversReceipt "$restart_class"
+    else
+      run_bound_fault "${U06_ACK_PROFILE#bound-amendment-}"
+    fi
+    adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u08-amendment-oracle.json
+    python3 ci/u08-amendment-postflight.py after /tmp/u08-amendment-history.json /tmp/u08-amendment-oracle.json
+    adb shell am force-stop "$APP_ID"
+    docker stop u06-t04a-tls >/dev/null
+    trap 'docker start u06-t04a-tls >/dev/null' EXIT
+    run_one amendmentReceiptRetainedWhileDisconnected "$restart_class"
+    docker start u06-t04a-tls >/dev/null
+    trap - EXIT
+    for i in $(seq 1 20); do
+      if curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'; then break; fi
+      sleep 1
+    done
+    curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'
+    adb shell am force-stop "$APP_ID"
+    run_one boundReceiptReopensAfterForceStop "$restart_class"
+    python3 ci/u08-amendment-postflight.py after /tmp/u08-amendment-history.json /tmp/u08-amendment-oracle.json
+    echo "U08 connected amendment and offline retained receipt qualification PASS."
+  fi
+  ;;
+acknowledged)
+  run_one actualFinalizedMultipartCreatesIndependentLinkedObservation "$restart_class"
+  adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
+  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
+  adb shell am force-stop "$APP_ID"
+  run_one submittedReceiptRecoversAfterForceStopAndRejectsCorruption "$restart_class"
+  echo "U06-T04E-05C: actual Android HTTPS finalized submission and independent PostgreSQL exact-byte/link verification PASS."
+  echo "U06-T04E-05D: authenticated durable submitted receipt, actual restart, corruption and edit/replay denial PASS."
+  echo "U06-T04E-05E: explicit graphical submission, unsaved/cancel/partial-attempt denial, real acknowledged POST and read-only restarted submitted status PASS."
+  echo "U06-T04E-06A: protected stale-session text/media/repeat/checkpoint editing denial, partial/receipt/symlink marker preservation and real graphical submission PASS."
+  echo "U06-T04E-06B: authenticated READY/linked-record inspection without receipt publication or retransmission, integrity and conflict denial PASS."
+  echo "U06-T04E-06C2: authenticated completed-work evidence GET, exact identity and bounded digest inventory, malformed/redirect/READY denial PASS."
+  echo "U06-T04E-06C3: exact authenticated local package and remote evidence comparison, recovered receipt publication, corruption denial and restart PASS."
+  ;;
+bound-lost-response|bound-interrupted-upload|bound-interrupted-upstream)
+  run_bound_fault "${U06_ACK_PROFILE#bound-}"
   adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
   python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
   echo "U08 bound fault profile $mode: exact durable submission and verified receipt PASS."

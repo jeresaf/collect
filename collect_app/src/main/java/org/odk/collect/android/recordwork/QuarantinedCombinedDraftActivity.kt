@@ -12,6 +12,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import org.odk.collect.android.R
+import org.odk.collect.android.BuildConfig
 import org.odk.collect.android.injection.DaggerUtils
 import org.odk.collect.settings.SettingsProvider
 import org.odk.collect.settings.keys.ProjectKeys
@@ -44,7 +45,10 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
         val packageSha256: String? = null,
         val submissionAttempted: Boolean = false,
         val receipt: ProtectedSubmittedReceipt? = null,
-        val submissionCheckFailed: Boolean = false
+        val submissionCheckFailed: Boolean = false,
+        val boundAttempt: Boolean = false,
+        val boundStatus: ProtectedBoundAttempt? = null,
+        val localReceiptRetained: Boolean = false
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,15 +95,27 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
     private fun submittedDisplay(b: QuarantinedWorkDraft): Display? {
         val root = noBackupFilesDir.canonicalFile
         if (!ProtectedSubmissionAttemptGuard.hasAttempt(root, b)) return null
+        if (ProtectedSubmissionAttemptGuard.hasBoundAttempt(root, b)) {
+            val store = boundStore()
+            val local = runCatching { store.inspectStoredReceipt(b) }.getOrNull()
+            val receipt = if (local != null) runCatching { store.reopenReceipt(b) }.getOrNull() else null
+            val current = if (BuildConfig.PROTECTED_BOUND_SUBMISSIONS && receipt == null && local == null)
+                runCatching { store.inspect(b) }.getOrNull() else null
+            return Display(b, emptyMap(), 0, null, null, submissionAttempted = true,
+                receipt = receipt, boundAttempt = true, boundStatus = current,
+                localReceiptRetained = BuildConfig.PROTECTED_BOUND_SUBMISSIONS && local != null && receipt == null)
+        }
         val receipt = runCatching {
             ProtectedSubmissionReceiptStore(root, settings).reopen(project, b)
         }.getOrNull()
         return Display(b, emptyMap(), 0, null, null, submissionAttempted = true, receipt = receipt)
     }
 
+    private fun boundStore() = ProtectedBoundAttemptStore(cacheDir, noBackupFilesDir, settings)
+
     private fun load(): Display {
         val b = binding()
-        require(b.workType == RecordWorkType.FOLLOW_UP && b.validationTransfers == 0)
+        require(ProtectedReentryWork.eligible(b))
         submittedDisplay(b)?.let { return it }
         val form = RecordWorkPreparationClient(settings).authorizePrivateTextForm(project, b)
         val cipher = AndroidKeyStorePrivateDraftCipher()
@@ -174,6 +190,15 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
     private fun render(state: Display) {
         display = state
         if (state.submissionAttempted) {
+            if (state.localReceiptRetained) {
+                status.setText(R.string.private_bound_local_receipt_retained)
+                button(R.string.private_submission_refresh) { perform { load() } }
+                return
+            }
+            if (state.boundAttempt && state.receipt == null) {
+                renderBound(state)
+                return
+            }
             val receipt = state.receipt
             if (receipt != null) {
                 status.setText(R.string.private_submission_complete)
@@ -287,18 +312,25 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
         if (state.submissionCheckFailed) {
             content.addView(TextView(this).apply { setText(R.string.private_submission_check_failed) })
         }
-        button(R.string.private_submission_action) {
+        button(if (BuildConfig.PROTECTED_BOUND_SUBMISSIONS) R.string.private_bound_prepare
+            else R.string.private_submission_action) {
             if (!requireSaved(state) || display !== state) return@button
             val generation = state.committed?.generation ?: return@button
             val sha = state.packageSha256 ?: return@button
             AlertDialog.Builder(this)
-                .setTitle(R.string.private_submission_action)
-                .setMessage(R.string.private_submission_confirm)
+                .setTitle(if (BuildConfig.PROTECTED_BOUND_SUBMISSIONS) R.string.private_bound_prepare
+                    else R.string.private_submission_action)
+                .setMessage(if (BuildConfig.PROTECTED_BOUND_SUBMISSIONS) R.string.private_bound_prepare_confirm
+                    else R.string.private_submission_confirm)
                 .setNegativeButton(android.R.string.cancel, null)
                 .setPositiveButton(android.R.string.ok) { _, _ ->
                     if (display === state && requireSaved(state)) {
                         perform(R.string.private_submission_sending) {
                             require(binding() == state.binding)
+                            if (BuildConfig.PROTECTED_BOUND_SUBMISSIONS) {
+                                val prepared = runCatching { boundStore().prepare(state.binding, generation, sha) }
+                                return@perform load().copy(submissionCheckFailed = prepared.isFailure)
+                            }
                             val outcome = runCatching {
                                 ProtectedMultipartSubmission(cacheDir, noBackupFilesDir, settings)
                                     .sendAndAcknowledge(project, state.binding, generation, sha)
@@ -316,6 +348,63 @@ class QuarantinedCombinedDraftActivity : LocalizedActivity() {
         button(R.string.private_combined_reload) {
             if (requireSaved(state)) perform { load() }
         }
+    }
+
+    /** Read-only after reservation; actions require fresh checks inside the
+     * store/sender, not just a previously rendered status. No automatic POST. */
+    private fun renderBound(state: Display) {
+        val current = state.boundStatus
+        status.setText(when (current?.state) {
+            RemoteProtectedAttemptState.BOUND_EXACT_CONTENT_ADMISSIBLE -> R.string.private_bound_ready
+            RemoteProtectedAttemptState.COMPLETED_VERIFIED -> R.string.private_bound_verified
+            RemoteProtectedAttemptState.RESERVED_UNBOUND -> R.string.private_bound_unbound
+            null -> R.string.private_bound_unavailable
+        })
+        button(R.string.private_submission_refresh) { perform { load() } }
+        if (!BuildConfig.PROTECTED_BOUND_SUBMISSIONS) return
+        // A partial receipt may never become retryable, even if status changes.
+        val canAttempt = runCatching {
+            val area = ProtectedMultipartSubmission.submissionAttemptArea(noBackupFilesDir, state.binding)
+            val file = java.io.File(area, "protected-bound-receipt.aesgcm")
+            !file.exists() && !java.nio.file.Files.isSymbolicLink(file.toPath())
+        }.getOrDefault(false)
+        when (current?.state) {
+            RemoteProtectedAttemptState.BOUND_EXACT_CONTENT_ADMISSIBLE -> {
+                if (canAttempt) boundAction(state, R.string.private_bound_send, R.string.private_bound_send_confirm) {
+                    val sender = ProtectedMultipartSubmission(cacheDir, noBackupFilesDir, settings)
+                    sender.sendBoundAndAcknowledge(state.binding, current.attemptId, current.wireSha256)
+                }
+            }
+            RemoteProtectedAttemptState.COMPLETED_VERIFIED ->
+                boundAction(state, R.string.private_bound_recover, R.string.private_bound_recover_confirm) {
+                    boundStore().recoverReceipt(state.binding)
+                }
+            RemoteProtectedAttemptState.RESERVED_UNBOUND, null -> {
+                if (canAttempt) boundAction(state, R.string.private_bound_resume, R.string.private_bound_resume_confirm) {
+                    boundStore().resumePreparation(state.binding)
+                }
+            }
+        }
+    }
+
+    private fun boundAction(state: Display, label: Int, confirmation: Int, action: () -> Any) {
+        button(label) {
+            if (display !== state) return@button
+            AlertDialog.Builder(this)
+                .setTitle(label)
+                .setMessage(confirmation)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    if (display === state) perform(R.string.private_submission_sending) {
+                        require(binding() == state.binding)
+                        val outcome = runCatching(action)
+                        load().copy(submissionCheckFailed = outcome.isFailure)
+                    }
+                }.show()
+        }
+        if (state.submissionCheckFailed) content.addView(TextView(this).apply {
+            setText(R.string.private_submission_check_failed)
+        })
     }
 
     override fun onStop() {

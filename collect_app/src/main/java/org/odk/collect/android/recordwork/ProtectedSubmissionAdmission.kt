@@ -19,7 +19,7 @@ internal data class ProtectedSubmissionAdmissionEvidence(
     val targetFormVersionId: String,
     val targetFormId: String,
     val targetVersion: String,
-    val visitKey: String,
+    val visitKey: String?,
     val reservedInstanceId: String,
     val generation: String,
     val packageSha256: String,
@@ -42,9 +42,7 @@ internal class ProtectedSubmissionAdmission(
         expectedGeneration: String, expectedPackageSha256: String
     ): ProtectedSubmissionAdmissionEvidence {
         require(expectedPackageSha256.matches(Regex("[0-9a-f]{64}")))
-        require(binding.projectId == projectId && binding.workType == RecordWorkType.FOLLOW_UP &&
-            binding.validationTransfers == 0 && !binding.requiresDeprecatedId &&
-            !binding.visitKey.isNullOrBlank() && binding.sourceInstanceId != binding.reservedInstanceId)
+        require(binding.projectId == projectId && ProtectedReentryWork.eligible(binding))
         val endpoint = checkedEndpoint(projectId, binding)
         val store = ProtectedCommittedDraftStore(scratch, root, settings)
         val persisted = store.reopenFinalizedPackage(projectId, binding, expectedGeneration)
@@ -65,7 +63,7 @@ internal class ProtectedSubmissionAdmission(
         return ProtectedSubmissionAdmissionEvidence(projectId, binding.actorContextSha256,
             binding.workId, binding.sourceSubmissionId, binding.sourceInstanceId,
             binding.targetFormVersionId, binding.targetFormId, binding.targetVersion,
-            requireNotNull(binding.visitKey), binding.reservedInstanceId, expectedGeneration,
+            binding.visitKey, binding.reservedInstanceId, expectedGeneration,
             expectedPackageSha256, persisted.ciphertextSha256, endpoint,
             RecordWorkCompletionGate.WORK_ITEM_HEADER, binding.workId)
     }
@@ -88,11 +86,12 @@ internal class ProtectedSubmissionAdmission(
         internal fun verifySnapshot(binding: QuarantinedWorkDraft, snapshot: RemoteRecordSnapshot) {
             val source = snapshot.records.single { it.submissionId == binding.sourceSubmissionId }
             require(source.instanceId == binding.sourceInstanceId &&
-                snapshot.records.none { it.instanceId == binding.reservedInstanceId })
+                snapshot.records.none { it.instanceId == binding.reservedInstanceId } &&
+                (binding.workType != RecordWorkType.AMENDMENT || source.mayOfferAmendment))
             val pending = snapshot.pendingWork.single { it.id == binding.workId }
             require(pending.sourceSubmissionId == binding.sourceSubmissionId &&
                 pending.targetFormVersionId == binding.targetFormVersionId &&
-                pending.type == RecordWorkType.FOLLOW_UP && pending.visitKey == binding.visitKey)
+                pending.type == binding.workType && pending.visitKey == binding.visitKey)
         }
     }
 }

@@ -1,0 +1,62 @@
+name: U08 Protected Attempt Client Contract
+
+on:
+  pull_request:
+    branches: [development]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-protected-contract:
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/u08-submission-recovery')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+      - name: Install SDK
+        run: |
+          sdkmanager --install 'platforms;android-37.0' 'build-tools;36.0.0'
+          if [ -d "$ANDROID_HOME/platforms/android-37.0" ] && [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Use primary Maven Central in disposable runner
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("build.gradle.kts")
+          s = p.read_text()
+          assert s.count("mavenCentral()") == 2
+          p.write_text(s.replace("mavenCentral()", 'maven { url = uri("https://repo.maven.apache.org/maven2/") }'))
+          PY
+      - name: Client contract and existing recovery regressions
+        run: |
+          chmod +x gradlew
+          ./gradlew :collect_app:testDebug --tests 'org.odk.collect.android.recordwork.*' --no-daemon --stacktrace
+      - name: Compile debug and instrumentation APKs
+        run: ./gradlew :collect_app:assembleDebug :collect_app:assembleDebugAndroidTest --no-daemon --stacktrace
+      - name: Retain default contract results
+        run: cp -a collect_app/build/test-results collect_app/build/u08-default-test-results
+      - name: Opt-in amendment native metadata and wire contract
+        run: |
+          ./gradlew :collect_app:testDebug --tests 'org.odk.collect.android.recordwork.ProtectedAmendmentContractTest' -PCOLLECT_PROTECTED_BOUND_SUBMISSIONS=true -PCOLLECT_PROTECTED_AMENDMENTS=true --no-daemon --stacktrace
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: u08-client-contract-evidence
+          path: |
+            collect_app/build/test-results
+            collect_app/build/u08-default-test-results
+          if-no-files-found: ignore
+          retention-days: 14

@@ -15,7 +15,8 @@ internal data class ProtectedAttemptedPackageEvidence(
 
     companion object {
         internal fun parse(canonical: ByteArray, b: QuarantinedWorkDraft,
-                           attempt: ProtectedSubmittedReceipt): ProtectedAttemptedPackageEvidence {
+                           attempt: ProtectedSubmittedReceipt,
+                           consumePart: ((String, String, ByteArray) -> Unit)? = null): ProtectedAttemptedPackageEvidence {
             require(canonical.size in 1..(13 * 1024 * 1024 - 30) &&
                 QuarantinedPrivateImageStore.digest(canonical) == attempt.packageSha256)
             DataInputStream(ByteArrayInputStream(canonical)).use { input ->
@@ -29,7 +30,9 @@ internal data class ProtectedAttemptedPackageEvidence(
                 val xml = ByteArray(n)
                 val xmlSha = try {
                     input.readFully(xml)
-                    QuarantinedPrivateImageStore.digest(xml)
+                    QuarantinedPrivateImageStore.digest(xml).also {
+                        consumePart?.invoke("xml_submission_file", "text/xml", xml)
+                    }
                 } finally { xml.fill(0) }
                 val count = input.readInt()
                 require(count in 1..64)
@@ -51,6 +54,7 @@ internal data class ProtectedAttemptedPackageEvidence(
                         val sha = QuarantinedPrivateImageStore.digest(data)
                         require(QuarantinedPrivateImageStore.sniffMime(data) == mime &&
                             filename == ProtectedNativePackageBuilder.filename(b, key, mime, sha))
+                        consumePart?.invoke(filename, mime, data)
                         ProtectedAttachmentEvidence(filename, mime, length, sha)
                     } finally { data.fill(0) }
                 }

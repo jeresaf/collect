@@ -7,7 +7,7 @@ import java.util.UUID
 /** Digest-only remote evidence. No receipt, write, retry or editor capability. */
 internal data class RemoteCompletionEvidence(
     val workId: String, val sourceSubmissionId: String, val sourceInstanceId: String,
-    val targetFormVersionId: String, val formId: String, val visitKey: String,
+    val targetFormVersionId: String, val formId: String, val visitKey: String?,
     val submissionId: String, val instanceId: String,
     val xmlBytes: Int, val xmlSha256: String, val attachments: List<ProtectedAttachmentEvidence>,
     val canEdit: Boolean = false, val canUpload: Boolean = false
@@ -42,13 +42,12 @@ internal data class RemoteCompletionEvidence(
             val sourceInstance = obj.text("sourceInstanceId")
             val target = uuid(obj.text("targetFormVersionId"))
             val form = uuid(obj.text("formId"))
-            val visit = obj.text("visitKey")
+            val visit = if (obj.isNull("visitKey")) null else obj.text("visitKey")
             val submitted = uuid(obj.text("submissionId"))
             val instance = obj.text("instanceId")
-            require(b.workType == RecordWorkType.FOLLOW_UP && b.validationTransfers == 0 &&
-                !b.requiresDeprecatedId && work == b.workId && source == b.sourceSubmissionId &&
+            require(ProtectedReentryWork.eligible(b) && work == b.workId && source == b.sourceSubmissionId &&
                 sourceInstance == b.sourceInstanceId && target == b.targetFormVersionId &&
-                visit == b.visitKey && visit.isNotBlank() &&
+                visit == b.visitKey &&
                 submitted == child.submissionId && submitted != source &&
                 instance == b.reservedInstanceId && instance != sourceInstance && instance == child.instanceId &&
                 child.formVersionId == target && child.formId == form)

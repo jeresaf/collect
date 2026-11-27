@@ -347,17 +347,15 @@ class JavaRosaPrivateRepeatAnswerSession(
         }
         assertScalars()
         if (requireComplete) {
-            // Exact root/metadata inventory; no hidden business fields or
-            // amendment deprecatedID admitted for an independent visit.
-            require(binding.workType == RecordWorkType.FOLLOW_UP &&
-                !binding.requiresDeprecatedId && binding.reservedInstanceId != binding.sourceInstanceId)
+            // Exact root/metadata inventory; amendments are independently gated.
+            require(ProtectedReentryWork.eligible(binding))
             val rootNode = form.instance.root
             val expectedRootNames = (schema.directTextPaths + schema.directImagePaths)
                 .map { it.substringAfterLast('/') }.toSet() + setOf(name, "meta")
             require((0 until rootNode.numChildren).map { rootNode.getChildAt(it).name }.toSet() ==
                 expectedRootNames)
             val meta = requireNotNull(rootNode.getChild("meta", 0))
-            require(meta.numChildren == 1 && meta.getChildAt(0).name == "instanceID")
+            ProtectedReentryWork.prepareNativeMetadata(binding, meta)
             val instanceRef = TreeReference.rootRef().apply {
                 add(root, 0)
                 add("meta", 0)

@@ -3,18 +3,82 @@ name: U06-T04A Connected Android HTTPS Smoke (experimental)
 on:
   push:
     branches: [codex/u06-t04a-connected-https-emulator, codex/u06-t04b-authenticated-record-wire, codex/u06-t04b02-amendment-admission, codex/u06-t04c01-followup-admission, codex/u06-t04c02-stale-recovery, codex/u06-t04c02b-draft-restart, codex/u06-t04c03a-followup-submission, codex/u06-t04c03b-repeats-media, codex/u06-t04c03c-lost-ack-recovery, codex/u06-t04d01-ui-fail-closed, codex/u06-t04d02-ui-context-invariants, codex/u06-t04d03-record-row-ui, codex/u06-t04d03b-record-intent, codex/u06-t04d03b2a-active-project-preparation-ui, codex/u06-t04d03b2b-live-record-preparation-ui, codex/u06-t04d03c1-pending-work-ui, codex/u06-t04d04a-actual-browser-activity, codex/u06-t04d04b1-target-version-ui, codex/u06-t04d04b2-ui-followup-create, codex/u06-t04e01-unstaged-native-editor-denial, codex/u06-t04e02a-ui-reviewed-staging, codex/u06-t04e02b-authorized-protected-editor, codex/u06-t04e03a-protected-editor-save, codex/u06-t04e03b-editor-process-recovery, codex/u06-t04e03c1-native-controller-boundary, codex/u06-t04e03c2-native-answer-navigation, codex/u06-t04e03c3-native-repeat-editing, codex/u06-t04e03c4-native-conditional-validation, codex/u06-t04e03c5a-native-direct-image, codex/u06-t04e03c5b-native-image-navigation, codex/u06-t04e03c5c-repeat-image-identity, codex/u06-t04e03c6a-combined-repeat-draft, codex/u06-t04e03c6b-combined-draft-restart, codex/u06-t04e03c6c-mixed-native-draft, codex/u06-t04e03c6d1-atomic-draft-generation, codex/u06-t04e03c6d2-interrupted-publication, codex/u06-t04e03c6d3-protected-checkpoint-ui, codex/u06-t04e03c6d3-graphical-recovery, codex/u06-t04e03c6d3-concurrent-publication, codex/u06-t04e04a-finalization-eligibility, codex/u06-t04e04b-native-xml-serialization, codex/u06-t04e04c-attachment-reconciliation, codex/u06-t04e04d-finalized-package-persistence, codex/u06-t04e04e-graphical-finalization, codex/u06-t04e05a-finalized-submission-admission, codex/u06-t04e05b-authenticated-multipart, codex/u06-t04e05c-native-server-acceptance, codex/u06-t04e05d-durable-acknowledgement, codex/u06-t04e05e-graphical-submission, codex/u06-t04e06a-attempt-edit-boundary, codex/u06-t04e06b-authenticated-reconciliation, codex/u06-t04e06c2-completion-evidence-client, codex/u06-t04e06c3-recovered-receipt, codex/u06-t04e06c4-lost-ack-qualification, codex/u06-t04e06d1-interrupted-upload, codex/u06-t04e06d2-interrupted-upstream, codex/u01-consolidation, development]
+  pull_request:
+    branches: [development]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+env:
+  U08_ANDROID_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
+  backend-build:
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/u08-submission-recovery')
+    name: Build one pinned backend for all emulator profiles
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout verified backend base
+        uses: actions/checkout@v4
+        with:
+          repository: jeresaf/data-collector
+          ref: 05c65e1ae5dd7a7657536663a6d898e4e5179119
+          path: backend-reference
+          persist-credentials: false
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: backend-reference/backend/pom.xml
+      - name: Build genuine Spring Boot service
+        working-directory: backend-reference/backend
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if mvn -B -ntp -DskipTests package > /tmp/u08-maven-build.log 2>&1; then
+              echo "Spring Boot build passed"
+              exit 0
+            fi
+            if ! grep -Eq 'HTTP Status: 429|status code 429|429 Too Many Requests' /tmp/u08-maven-build.log; then
+              tail -n 70 /tmp/u08-maven-build.log
+              exit 1
+            fi
+            echo "Maven Central rate limit on acquisition attempt $attempt"
+            if [[ "$attempt" == 3 ]]; then exit 1; fi
+            sleep "$((attempt * 30))"
+          done
+      - name: Record source pin and executable jar digest
+        run: |
+          set -euo pipefail
+          test "$(git -C backend-reference rev-parse HEAD)" = '05c65e1ae5dd7a7657536663a6d898e4e5179119'
+          mapfile -t jars < <(find backend-reference/backend/target -maxdepth 1 -name '*.jar' ! -name '*original*')
+          test "${#jars[@]}" = 1
+          mkdir -p /tmp/u08-backend
+          cp "${jars[0]}" /tmp/u08-backend/backend.jar
+          cd /tmp/u08-backend
+          printf '%s\n' '05c65e1ae5dd7a7657536663a6d898e4e5179119' > source-commit.txt
+          printf '%s\n' "$U08_ANDROID_SHA" > android-commit.txt
+          sha256sum backend.jar > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: u08-backend-${{ github.run_id }}
+          path: /tmp/u08-backend
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
   real-android-postgres-https:
+    needs: backend-build
     name: Android PostgreSQL HTTPS (${{ matrix.ack-profile }})
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix:
-        ack-profile: [acknowledged, lost-response, interrupted-upload, interrupted-upstream]
+        ack-profile: [acknowledged, lost-response, interrupted-upload, interrupted-upstream, bound-acknowledged, bound-lost-response, bound-interrupted-upload, bound-interrupted-upstream, bound-amendment, bound-amendment-lost-response, bound-amendment-interrupted-upload, bound-amendment-interrupted-upstream, bound-server-crash, bound-amendment-server-crash]
     env:
       U06_ACK_PROFILE: ${{ matrix.ack-profile }}
     runs-on: ubuntu-24.04
@@ -31,50 +95,30 @@ jobs:
           --health-cmd "pg_isready -U odk_user -d odk_platform"
           --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
-      - name: Android source (exact branch commit)
-        uses: actions/checkout@v4
-      - name: Checkout verified backend base
+      - name: Android source (exact candidate commit)
         uses: actions/checkout@v4
         with:
-          repository: jeresaf/data-collector
-          ref: 81ded784256ac288d13cff36bf3b69ba10f42129
-          path: backend-reference
+          ref: ${{ env.U08_ANDROID_SHA }}
           persist-credentials: false
       - name: Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - name: Build genuine Spring Boot service
-        working-directory: backend-reference/backend
-        run: mvn -B -ntp -DskipTests package
-      - name: Run backend with ephemeral PostgreSQL 15/Flyway
-        env:
-          SPRING_PROFILES_ACTIVE: prod
-          SPRING_DATASOURCE_URL: jdbc:postgresql://127.0.0.1:5432/odk_platform
-          SPRING_DATASOURCE_USERNAME: odk_user
-          SPRING_DATASOURCE_PASSWORD: synthetic-ci-only
-          STORAGE_LOCAL_PATH: /tmp/u06-t04a-data
-          SPRING_SERVLET_MULTIPART_LOCATION: /tmp/u06-t04a-multipart
+      - name: Download same-run verified backend build
+        uses: actions/download-artifact@v4
+        with:
+          name: u08-backend-${{ github.run_id }}
+          path: /tmp/u08-backend
+      - name: Verify backend provenance and exact jar bytes
         run: |
           set -euo pipefail
-          mkdir -p /tmp/u06-t04a-data /tmp/u06-t04a-multipart
-          export JWT_SECRET="$(openssl rand -hex 48)"
-          jar="$(find backend-reference/backend/target -maxdepth 1 -name '*.jar' ! -name '*original*' | head -n1)"
-          test -n "$jar"
-          nohup java -jar "$jar" >/tmp/u06-t04a-backend.log 2>&1 &
-          echo "$!" >/tmp/u06-t04a-backend.pid
-          ready=0
-          for i in $(seq 1 90); do
-            if curl -fsS http://127.0.0.1:8080/actuator/health |
-                grep -q '"status":"UP"'; then
-              ready=1
-              break
-            fi
-            kill -0 "$(cat /tmp/u06-t04a-backend.pid)" || exit 1
-            sleep 2
-          done
-          test "$ready" = 1
+          cd /tmp/u08-backend
+          test "$(cat source-commit.txt)" = '05c65e1ae5dd7a7657536663a6d898e4e5179119'
+          test "$(cat android-commit.txt)" = "$U08_ANDROID_SHA"
+          sha256sum -c SHA256SUMS
+      - name: Run journal-enabled backend with ephemeral PostgreSQL 15/Flyway
+        run: bash ci/u08-start-journal-backend.sh
       - name: Seed disposable V1/V2 PostgreSQL record fixtures
         env:
           PGPASSWORD: synthetic-ci-only
@@ -188,7 +232,13 @@ jobs:
           # The interrupted-ingress profile must retain the mixed work as READY.
           # Keep the previous completed-visit and all other regression assertions.
           case "$U06_ACK_PROFILE" in
-            acknowledged|lost-response)
+            bound-amendment*)
+              expected_links=3
+              expected_submissions=5
+              expected_mixed_state=COMPLETED
+              expected_mixed_children=1
+              ;;
+            acknowledged|lost-response|bound-*)
               expected_links=2
               expected_submissions=4
               expected_mixed_state=COMPLETED
@@ -251,7 +301,11 @@ jobs:
           test "$mixed_total" = 1
           test "$mixed_work" = 1
           test "$mixed_links" = "$expected_mixed_children"
-          test "$mixed_submissions" = "$expected_mixed_children"
+          if [[ "$U06_ACK_PROFILE" == bound-amendment* ]]; then
+            test "$mixed_submissions" = 2
+          else
+            test "$mixed_submissions" = "$expected_mixed_children"
+          fi
           echo "Mixed target postflight PASS: state=$expected_mixed_state child links=$expected_mixed_children submissions=$expected_mixed_children"
 
 
@@ -286,7 +340,7 @@ jobs:
             kill "$(cat /tmp/u06-t04a-backend.pid)" >/dev/null 2>&1 || true
           fi
           rm -rf /tmp/u06-t04a-tls /tmp/u06-t04a-data /tmp/u06-t04a-multipart
-          rm -f /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json /tmp/u06-interrupted-baseline.json
+          rm -f /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json /tmp/u06-interrupted-baseline.json /tmp/u08-amendment-history.json /tmp/u08-amendment-oracle.json
           rm -f collect_app/src/androidTest/assets/u06_t04a_ca.pem
       - name: Upload emulator test report only
         if: always()

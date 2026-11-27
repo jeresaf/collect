@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 TABLES = ("submissions", "submission_versions", "submission_answers",
-          "submission_attachments", "record_links", "record_work_items")
+          "submission_attachments", "record_links", "record_work_items", "submission_events")
 
 def query(sql):
     return subprocess.check_output(
@@ -20,6 +20,8 @@ def sha(data):
 def snapshot():
     rows = {t: sha(query(f"SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.id)::text, '[]') FROM {t} t").encode())
             for t in TABLES}
+    rows["protected_submission_attempts"] = sha(query(
+        "SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.work_item_id)::text, '[]') FROM protected_submission_attempts t").encode())
     media = json.loads(query("SELECT COALESCE(json_agg(storage_path ORDER BY id), '[]') FROM submission_attachments"))
     rows["media"] = [[p, sha(pathlib.Path(p).read_bytes()) if pathlib.Path(p).is_file() else None]
                      for p in media if p]
@@ -43,7 +45,15 @@ file = pathlib.Path(path)
 if mode == "before":
     file.write_text(json.dumps(snapshot()))
 elif mode == "after":
-    if snapshot() != json.loads(file.read_text()):
+    observed, expected = snapshot(), json.loads(file.read_text())
+    if observed != expected:
+        changed = sorted(k for k in set(observed) | set(expected) if observed.get(k) != expected.get(k))
+        for key in changed:
+            old, new = expected.get(key), observed.get(key)
+            if isinstance(old, list) and isinstance(new, list):
+                print(f"U08 oracle changed category={key} entries_before={len(old)} entries_after={len(new)}")
+            else:
+                print(f"U08 oracle changed category={key}")
         raise SystemExit("Interrupted upload postflight failed: durable rows or storage inventory changed")
     print("Interrupted upload PostgreSQL and storage exact preservation PASS")
 else:

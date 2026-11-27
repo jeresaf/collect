@@ -1841,6 +1841,426 @@ class ConnectedProtectedEditorRestartTest {
     }
 
     @Test
+    fun boundAttemptPreparesAndPersistsAcrossForceStop() {
+        try {
+            verifyBoundPreparation()
+        } catch (failure: Throwable) {
+            // Only emit bounded class/method/line metadata; never response data.
+            val frame = failure.stackTrace.firstOrNull {
+                it.className.startsWith("org.odk.collect.android.recordwork.")
+            }
+            val kind = when (failure) {
+                is AssertionError -> "AssertionError"
+                is IllegalArgumentException -> "IllegalArgumentException"
+                is IllegalStateException -> "IllegalStateException"
+                is java.io.IOException -> "IOException"
+                is SecurityException -> "SecurityException"
+                else -> "OtherException"
+            }
+            val fixed = failure.message.orEmpty().takeIf {
+                it.matches(Regex("U08_(?:HTTP_STATUS [0-9]{3}|RESPONSE_MEDIA_TYPE|RESPONSE_CACHE_POLICY|ATTEMPT_JSON_SHAPE|STATUS_JSON_SHAPE)"))
+            } ?: "UNCLASSIFIED"
+            throw AssertionError("U08_BOUND_FAILURE kind=$kind origin=" +
+                (frame?.className?.substringAfterLast('.') ?: "Unknown") + ":" +
+                (frame?.methodName ?: "Unknown") + ":" + (frame?.lineNumber ?: -1) +
+                " signal=$fixed")
+        }
+    }
+
+    /** Local queue is not an acceptance or send oracle. Reopening the real browser
+     * must render the expected scoped row without changing any attempt files. */
+    private fun assertLocalQueue(state: PublicationContext, label: Int, serverLabel: Int? = null) {
+        fun snapshot() = state.area.walkTopDown().filter { it.isFile }.associate {
+            it.relativeTo(state.area).path to digest(it.readBytes())
+        }
+        val before = snapshot()
+        ActivityScenario.launch(RecordWorkBrowserActivity::class.java).use { browser ->
+            awaitUi(browser) { activity, views ->
+                val expected = activity.getString(R.string.private_queue_row, state.binding.workId,
+                    activity.getString(label))
+                val matches = views.filterIsInstance<Button>().filter { it.text.toString() == expected }
+                if (matches.isNotEmpty()) {
+                    assertEquals(1, matches.size)
+                    assertTrue(matches.single().isEnabled)
+                    assertTrue(views.filterIsInstance<Button>().none {
+                        it.text.toString() == activity.getString(R.string.private_bound_send)
+                    })
+                }
+                matches.size == 1
+            }
+            if (serverLabel != null) {
+                awaitUi(browser) { activity, views ->
+                    val description = activity.getString(R.string.private_queue_check_item, state.binding.workId)
+                    views.filterIsInstance<Button>().singleOrNull {
+                        it.contentDescription?.toString() == description && it.isEnabled
+                    }?.performClick() == true
+                }
+                awaitUi(browser) { activity, views ->
+                    views.filterIsInstance<TextView>().any { it.text.toString() == activity.getString(serverLabel) }
+                }
+            }
+        }
+        assertEquals(before, snapshot())
+    }
+
+    /** Create a real amendment of the independently submitted version-2 visit.
+     * Reuse only project settings; no source answers/media copied into v5. */
+    @Test
+    fun stageAndFinalizeProtectedAmendment() {
+        val prior = publicationContext()
+        val project = prior.binding.projectId
+        val root = prior.context.noBackupFilesDir
+        val source = RecordWorkReadOnlyClient(prior.settings).load(project).records.single {
+            it.formVersionId == "81000000-0000-4000-8000-000000000004" &&
+                it.submissionId != "81000000-0000-4000-8000-000000000008" &&
+                it.mayOfferAmendment
+        }
+        val target = "81000000-0000-4000-8000-000000000021"
+        val client = RecordWorkPreparationClient(prior.settings,
+            nativeProbe = { plan, xml, historical ->
+                JavaRosaStagingProbe(prior.context.cacheDir).inspect(plan, xml, historical)
+            },
+            transferProbe = { plan, review, xml, hash, instance, historical, targetXml ->
+                ReviewedScalarTransferProbe(prior.context.cacheDir).validate(
+                    plan, review, xml, hash, instance, historical, targetXml)
+            })
+        val work = client.create(project, NewRecordWork(source.submissionId, target,
+            RecordWorkType.AMENDMENT, "u08-connected-amendment-" + java.util.UUID.randomUUID()))
+        val prepared = client.prepare(project, work.id, source.submissionId, target,
+            RecordWorkType.AMENDMENT, assessCrossVersion = true)
+        val plan = requireNotNull(prepared.mappingPlan)
+        val review = MappingReviewSnapshot(work.id, plan.sourceXFormSha256, plan.targetXFormSha256,
+            plan.candidates.associate { it.targetPath to MappingDecision.REENTER }, true)
+        val b = client.stageQuarantinedWork(project, prepared, review, QuarantinedWorkDraftVault(root))
+        assertTrue(ProtectedReentryWork.eligible(b))
+        assertEquals(0, b.validationTransfers)
+        assertTrue(b.requiresDeprecatedId)
+        assertEquals(source.instanceId, b.sourceInstanceId)
+        val cipher = AndroidKeyStorePrivateDraftCipher()
+        ProtectedMappingApprovalStore(root, cipher).save(b, plan, review)
+        val authorized = client.authorizePrivateTextForm(project, b)
+        val native = JavaRosaPrivateRepeatAnswerSession(prior.context.cacheDir, b,
+            authorized.plan, authorized.targetXFormXml, true)
+        val group = native.schema.groups.single()
+        val rows = QuarantinedRepeatRowVault(root, cipher)
+        val answers = QuarantinedRepeatAnswerStore(root, cipher, rows)
+        val images = QuarantinedRepeatImageStore(root, cipher, rows)
+        val direct = ProtectedNativeImageIntake(prior.context.cacheDir, root, prior.settings)
+        val directProbe = ProtectedNativeRepeatImageProbe(prior.context.cacheDir, root, prior.settings)
+        fun png(color: Int): ByteArray {
+            val bitmap = android.graphics.Bitmap.createBitmap(16, 16, android.graphics.Bitmap.Config.ARGB_8888)
+            return try {
+                bitmap.eraseColor(color)
+                java.io.ByteArrayOutputStream().use {
+                    assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
+                    it.toByteArray()
+                }
+            } finally { bitmap.recycle() }
+        }
+        directProbe.saveDirectText(project, b,
+            native.schema.directTextPaths.associateWith { "Synthetic reentered amendment" })
+        val media = listOf(png(android.graphics.Color.GREEN), png(android.graphics.Color.RED),
+            png(android.graphics.Color.BLUE))
+        try {
+            direct.importSelectedImage(project, b, native.schema.directImagePaths.single(),
+                "image/png", media[0].inputStream())
+            repeat(2) { i ->
+                val row = rows.addRow(b, native.schema, group.path, java.util.UUID.randomUUID().toString())
+                answers.save(b, native, row.rowId, group.fields.associate { it.path to "Reentered member " + i })
+                images.importSelectedImage(b, native, row.rowId, group.imagePaths.single(),
+                    "image/png", media[i + 1].inputStream())
+            }
+        } finally { media.forEach { it.fill(0) } }
+        val store = ProtectedCommittedDraftStore(prior.context.cacheDir, root, prior.settings)
+        val checkpoint = store.commit(project, b, null)
+        val pack = store.persistFinalizedPackage(project, b, checkpoint.generation)
+        assertEquals(3, pack.evidence.packaged.attachments.size)
+        assertFalse(pack.canUpload)
+        assertTrue(runCatching {
+            ProtectedMultipartSubmission(prior.context.cacheDir, root, prior.settings)
+                .send(project, b, checkpoint.generation, pack.evidence.packaged.packageSha256)
+        }.isFailure)
+        // Existing real graphical reserve/send/receipt tests read this marker
+        // after force-stop; the prior visit has already passed its postflight.
+        val evidence = Properties().apply {
+            setProperty("project", project)
+            setProperty("work", b.workId)
+            setProperty("reserved", b.reservedInstanceId)
+            setProperty("generation", checkpoint.generation)
+            setProperty("packageDigest", pack.evidence.packaged.packageSha256)
+        }
+        java.io.FileOutputStream(prior.marker).use { evidence.store(it, "Synthetic amendment"); it.fd.sync() }
+    }
+
+    @Test
+    fun amendmentReceiptRetainedWhileDisconnected() {
+        val state = publicationContext()
+        val b = state.binding
+        assertEquals(RecordWorkType.AMENDMENT, b.workType)
+        val store = ProtectedBoundAttemptStore(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)
+        assertEquals(state.required("packageDigest"), store.inspectStoredReceipt(b).packageSha256)
+        assertTrue(runCatching { store.reopenReceipt(b) }.isFailure)
+        assertLocalQueue(state, R.string.private_queue_receipt, R.string.private_queue_server_unknown)
+        ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+            QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+        ).use { editor ->
+            awaitUi(editor) { activity, views ->
+                val retained = views.filterIsInstance<TextView>().any {
+                    it.text.toString() == activity.getString(R.string.private_bound_local_receipt_retained)
+                }
+                if (retained) {
+                    assertTrue(views.filterIsInstance<EditText>().isEmpty())
+                    assertTrue(views.filterIsInstance<Button>().none {
+                        it.text.toString() in setOf(activity.getString(R.string.private_bound_send),
+                            activity.getString(R.string.private_bound_prepare),
+                            activity.getString(R.string.private_bound_recover))
+                    })
+                }
+                retained
+            }
+        }
+        assertEquals(state.required("boundReceiptDigest"),
+            digest(File(state.area, "protected-bound-receipt.aesgcm").readBytes()))
+    }
+
+    private fun verifyBoundPreparation() {
+        val state = publicationContext()
+        val b = state.binding
+        val store = ProtectedBoundAttemptStore(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)
+        assertLocalQueue(state, R.string.private_queue_finalization)
+        // Use the actual opt-in Activity for cancellation and explicit preparation.
+        ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+            QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+        ).use { editor ->
+            clickButton(editor, R.string.private_bound_prepare)
+            boundDialog(android.R.id.button2)
+            assertFalse(ProtectedSubmissionAttemptGuard.hasAttempt(state.context.noBackupFilesDir, b))
+            clickButton(editor, R.string.private_bound_prepare)
+            boundDialog(android.R.id.button1)
+            awaitBoundReady(editor)
+        }
+        val attempt = store.inspect(b)
+        assertEquals(RemoteProtectedAttemptState.BOUND_EXACT_CONTENT_ADMISSIBLE, attempt.state)
+        assertEquals(attempt, store.inspect(b))
+        assertTrue(ProtectedSubmissionAttemptGuard.hasAttempt(state.context.noBackupFilesDir, b))
+        assertFalse(File(state.area, "submission-attempt.aesgcm").exists())
+        assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
+        assertTrue(runCatching { store.inspectStoredReceipt(b) }.isFailure)
+        assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
+        state.evidence.setProperty("boundPid", android.os.Process.myPid().toString())
+        for (name in listOf("protected-attempt-request.aesgcm", "protected-attempt-server.aesgcm",
+                "finalized-" + attempt.generation + ".aesgcm", "current.aesgcm")) {
+            state.evidence.setProperty("bound:" + name, digest(File(state.area, name).readBytes()))
+        }
+        state.evidence.setProperty("boundAttempt", attempt.attemptId)
+        state.evidence.setProperty("boundWire", attempt.wireSha256)
+        java.io.FileOutputStream(state.marker).use {
+            state.evidence.store(it, "Synthetic U08 bound attempt")
+            it.fd.sync()
+        }
+    }
+
+    private fun boundDialog(id: Int) {
+        androidx.test.espresso.Espresso.onView(
+            androidx.test.espresso.matcher.ViewMatchers.withId(id))
+            .inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog())
+            .perform(androidx.test.espresso.action.ViewActions.click())
+    }
+
+    private fun awaitBoundReady(editor: ActivityScenario<QuarantinedCombinedDraftActivity>) {
+        awaitUi(editor) { activity, views ->
+            val ready = views.filterIsInstance<TextView>().any {
+                it.text.toString() == activity.getString(R.string.private_bound_ready)
+            }
+            if (ready) {
+                assertTrue(views.filterIsInstance<EditText>().isEmpty())
+                assertTrue(views.filterIsInstance<Button>().none {
+                    it.text.toString() == activity.getString(R.string.private_submission_action)
+                })
+            }
+            ready
+        }
+    }
+
+    @Test
+    fun boundAttemptSendsExactPackageAndRecoversReceipt() {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        assertNotEquals(state.required("boundPid"), android.os.Process.myPid().toString())
+        val store = ProtectedBoundAttemptStore(state.context.cacheDir, root, state.settings)
+        val before = store.inspect(b)
+        assertEquals(RemoteProtectedAttemptState.BOUND_EXACT_CONTENT_ADMISSIBLE, before.state)
+        assertEquals(state.required("boundAttempt"), before.attemptId)
+        assertEquals(state.required("boundWire"), before.wireSha256)
+        assertLocalQueue(state, R.string.private_queue_bound, R.string.private_queue_server_admissible)
+        val sender = ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
+        assertTrue(runCatching { sender.sendBound(b, before.attemptId, "0".repeat(64)) }.isFailure)
+        assertTrue(runCatching { sender.send(b.projectId, b, before.generation, before.packageSha256) }.isFailure)
+        ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+            QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+        ).use { editor ->
+            awaitBoundReady(editor)
+            clickButton(editor, R.string.private_bound_send)
+            boundDialog(android.R.id.button2)
+            assertEquals(before, store.inspect(b))
+            clickButton(editor, R.string.private_bound_send)
+            boundDialog(android.R.id.button1)
+            awaitUi(editor) { activity, views ->
+                views.filterIsInstance<TextView>().any {
+                    it.text.toString() == activity.getString(R.string.private_submission_complete)
+                }
+            }
+        }
+        verifyBoundReceiptAndOracle(state, store.reopenReceipt(b))
+    }
+
+    @Test
+    fun boundAttemptSurvivesServerTermination() = verifyBoundInterruptedSend(true)
+
+    @Test
+    fun boundAttemptTransmissionInterruptedOrAcknowledgementLost() = verifyBoundInterruptedSend(false)
+
+    private fun verifyBoundInterruptedSend(serverTerminated: Boolean) {
+        val state = publicationContext()
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        assertNotEquals(state.required("boundPid"), android.os.Process.myPid().toString())
+        val store = ProtectedBoundAttemptStore(state.context.cacheDir, root, state.settings)
+        val before = store.inspect(b)
+        assertEquals(RemoteProtectedAttemptState.BOUND_EXACT_CONTENT_ADMISSIBLE, before.state)
+        assertEquals(state.required("boundAttempt"), before.attemptId)
+        assertEquals(state.required("boundWire"), before.wireSha256)
+        val result = ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
+            .sendBound(b, before.attemptId, before.wireSha256)
+        assertFalse(result.acknowledged)
+        assertNull(result.instanceId)
+        assertTrue(result.httpStatus == null || result.httpStatus == -1 ||
+            (serverTerminated && result.httpStatus == 502))
+        assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
+        assertBoundFilesUnchanged(state)
+        state.evidence.setProperty("faultPid", android.os.Process.myPid().toString())
+        java.io.FileOutputStream(state.marker).use { state.evidence.store(it, "Synthetic U08 fault"); it.fd.sync() }
+    }
+
+    @Test
+    fun boundAttemptRemainsAdmissibleAfterInterruptedTransmission() {
+        val state = publicationContext()
+        assertNotEquals(state.required("faultPid"), android.os.Process.myPid().toString())
+        val b = state.binding
+        val store = ProtectedBoundAttemptStore(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)
+        val status = store.inspect(b)
+        assertEquals(RemoteProtectedAttemptState.BOUND_EXACT_CONTENT_ADMISSIBLE, status.state)
+        assertEquals(state.required("boundAttempt"), status.attemptId)
+        assertEquals(state.required("boundWire"), status.wireSha256)
+        assertNull(status.acceptedSubmissionId)
+        assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
+        assertTrue(runCatching { store.recoverReceipt(b) }.isFailure)
+        assertLocalQueue(state, R.string.private_queue_bound, R.string.private_queue_server_admissible)
+        assertBoundFilesUnchanged(state)
+    }
+
+    @Test
+    fun boundAttemptRecoversLostAcknowledgementWithoutPost() {
+        val state = publicationContext()
+        assertNotEquals(state.required("faultPid"), android.os.Process.myPid().toString())
+        val b = state.binding
+        val store = ProtectedBoundAttemptStore(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)
+        val status = store.inspect(b)
+        assertEquals(RemoteProtectedAttemptState.COMPLETED_VERIFIED, status.state)
+        assertEquals(state.required("boundAttempt"), status.attemptId)
+        assertEquals(state.required("boundWire"), status.wireSha256)
+        assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
+        assertLocalQueue(state, R.string.private_queue_bound, R.string.private_queue_server_completed)
+        ActivityScenario.launch<QuarantinedCombinedDraftActivity>(
+            QuarantinedCombinedDraftActivity.intentFor(state.context, b.projectId, b.workId)
+        ).use { editor ->
+            clickButton(editor, R.string.private_bound_recover)
+            boundDialog(android.R.id.button2)
+            assertFalse(File(state.area, "protected-bound-receipt.aesgcm").exists())
+            clickButton(editor, R.string.private_bound_recover)
+            boundDialog(android.R.id.button1)
+            awaitUi(editor) { activity, views ->
+                views.filterIsInstance<TextView>().any {
+                    it.text.toString() == activity.getString(R.string.private_submission_complete)
+                }
+            }
+        }
+        verifyBoundReceiptAndOracle(state, store.reopenReceipt(b))
+    }
+
+    private fun assertBoundFilesUnchanged(state: PublicationContext) {
+        for (name in listOf("protected-attempt-request.aesgcm", "protected-attempt-server.aesgcm",
+                "finalized-" + state.required("generation") + ".aesgcm", "current.aesgcm")) {
+            assertEquals(state.required("bound:" + name), digest(File(state.area, name).readBytes()))
+        }
+    }
+
+    private fun verifyBoundReceiptAndOracle(state: PublicationContext, receipt: ProtectedSubmittedReceipt) {
+        val b = state.binding
+        val root = state.context.noBackupFilesDir
+        val store = ProtectedBoundAttemptStore(state.context.cacheDir, root, state.settings)
+        val sender = ProtectedMultipartSubmission(state.context.cacheDir, root, state.settings)
+        val after = store.inspect(b)
+        assertEquals(RemoteProtectedAttemptState.COMPLETED_VERIFIED, after.state)
+        assertEquals(receipt.submissionId, after.acceptedSubmissionId)
+        assertEquals(receipt, store.reopenReceipt(b))
+        assertTrue(runCatching { sender.sendBound(b, after.attemptId, after.wireSha256) }.isFailure)
+        // Oracle is derived from the sealed package, not server response bytes.
+        val local = ProtectedCommittedDraftStore(state.context.cacheDir, root, state.settings)
+            .attemptedPackageEvidence(b, receipt)
+        val oracle = org.json.JSONObject()
+            .put("work", b.workId).put("source", b.sourceSubmissionId)
+            .put("child", receipt.submissionId).put("reserved", b.reservedInstanceId)
+            .put("target", b.targetFormVersionId).put("visit", b.visitKey ?: org.json.JSONObject.NULL)
+            .put("xmlSha256", local.xmlSha256).put("xmlBytes", local.xmlBytes)
+            .put("packageSha256", receipt.packageSha256)
+        val attachments = org.json.JSONArray()
+        local.attachments.forEach {
+            attachments.put(org.json.JSONObject().put("filename", it.filename)
+                .put("mime", it.mime).put("bytes", it.bytes).put("sha256", it.sha256))
+        }
+        oracle.put("attachments", attachments)
+        File(root, "u06-native-submission-oracle.json").writeText(oracle.toString())
+        assertBoundFilesUnchanged(state)
+        state.evidence.setProperty("receiptPid", android.os.Process.myPid().toString())
+        state.evidence.setProperty("boundReceiptDigest",
+            digest(File(state.area, "protected-bound-receipt.aesgcm").readBytes()))
+        java.io.FileOutputStream(state.marker).use { state.evidence.store(it, "Synthetic U08 receipt"); it.fd.sync() }
+    }
+
+    @Test
+    fun boundReceiptReopensAfterForceStop() {
+        val state = publicationContext()
+        assertNotEquals(state.required("receiptPid"), android.os.Process.myPid().toString())
+        val b = state.binding
+        val store = ProtectedBoundAttemptStore(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)
+        val receipt = store.reopenReceipt(b)
+        assertEquals(state.required("packageDigest"), receipt.packageSha256)
+        val file = File(state.area, "protected-bound-receipt.aesgcm")
+        val sealed = file.readBytes()
+        assertEquals(state.required("boundReceiptDigest"), digest(sealed))
+        assertEquals(receipt, store.inspectStoredReceipt(b))
+        assertFalse(receipt.canEdit || receipt.canUpload)
+        val tampered = sealed.copyOf().apply { this[lastIndex] = (this[lastIndex].toInt() xor 1).toByte() }
+        try {
+            file.writeBytes(tampered)
+            assertTrue(runCatching { store.inspectStoredReceipt(b) }.isFailure)
+            assertTrue(file.readBytes().contentEquals(tampered))
+        } finally {
+            file.writeBytes(sealed)
+        }
+        assertEquals(receipt, store.inspectStoredReceipt(b))
+        assertEquals(state.required("boundReceiptDigest"), digest(file.readBytes()))
+        assertEquals(receipt.submissionId, store.inspect(b).acceptedSubmissionId)
+        assertLocalQueue(state, R.string.private_queue_receipt, R.string.private_queue_server_completed)
+        assertTrue(runCatching {
+            ProtectedMultipartSubmission(state.context.cacheDir, state.context.noBackupFilesDir, state.settings)
+                .sendBound(b, state.required("boundAttempt"), state.required("boundWire"))
+        }.isFailure)
+    }
+
+    @Test
     fun actualFinalizedPostLosesResponseWithoutPublishingReceipt() {
         var phase = "SETUP"
         try {

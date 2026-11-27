@@ -86,7 +86,8 @@ internal class ProtectedFinalizedPackageFile(
     }
 
     /** Authenticate the exact sealed bytes after an attempt; no repair or creation. */
-    internal fun inspectAttempted(attempt: ProtectedSubmittedReceipt): ProtectedAttemptedPackageEvidence {
+    internal fun inspectAttempted(attempt: ProtectedSubmittedReceipt,
+                                  consume: ((ByteArray) -> Unit)? = null): ProtectedAttemptedPackageEvidence {
         require(attempt.generation == generation)
         val target = File(area, "finalized-" + generation + ".aesgcm")
         require(target.isFile && target.canonicalFile == target.absoluteFile &&
@@ -95,7 +96,9 @@ internal class ProtectedFinalizedPackageFile(
         require(QuarantinedPrivateImageStore.digest(envelope) == attempt.ciphertextSha256)
         val clear = cipher.open(envelope, aad)
         try {
-            return ProtectedAttemptedPackageEvidence.parse(clear, binding, attempt)
+            val evidence = ProtectedAttemptedPackageEvidence.parse(clear, binding, attempt)
+            consume?.invoke(clear)
+            return evidence
         } finally { clear.fill(0) }
     }
 

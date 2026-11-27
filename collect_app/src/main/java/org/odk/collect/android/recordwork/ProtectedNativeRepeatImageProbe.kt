@@ -32,7 +32,7 @@ internal class ProtectedNativeRepeatImageProbe(
         projectId: String, binding: QuarantinedWorkDraft, values: Map<String, String>,
         expectedValues: Map<String, String>? = null
     ) {
-        require(binding.workType == RecordWorkType.FOLLOW_UP && binding.validationTransfers == 0)
+        require(ProtectedReentryWork.eligible(binding))
         val authorized = RecordWorkPreparationClient(settings)
             .authorizePrivateTextForm(projectId, binding)
         val cipher = AndroidKeyStorePrivateDraftCipher()
@@ -67,8 +67,7 @@ internal class ProtectedNativeRepeatImageProbe(
     ): ProtectedCombinedRepeatEvidence {
         require(!requireComplete || allowMixedDirect)
         require(packageBuilder == null || requireComplete && onSerialized != null)
-        require(binding.workType == RecordWorkType.FOLLOW_UP &&
-            binding.validationTransfers == 0)
+        require(ProtectedReentryWork.eligible(binding))
         val authorized = RecordWorkPreparationClient(settings)
             .authorizePrivateTextForm(projectId, binding)
         val cipher = AndroidKeyStorePrivateDraftCipher()

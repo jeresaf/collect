@@ -396,8 +396,7 @@ class RecordWorkPrepareActivity : LocalizedActivity() {
                                         )
                                     }
                                 })
-                                if (binding.workType == RecordWorkType.FOLLOW_UP &&
-                                    binding.validationTransfers == 0 &&
+                                if (ProtectedReentryWork.eligible(binding) &&
                                     plan.candidates.any { MappingRisk.REPEAT in it.risks } &&
                                     plan.candidates.any { MappingRisk.MEDIA in it.risks &&
                                         MappingRisk.REPEAT !in it.risks } &&

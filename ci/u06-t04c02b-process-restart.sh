@@ -31,6 +31,7 @@ run_one() {
     grep -Eo 'U06_MULTIPART_FAILURE phase=(SETUP|DECRYPTED_FRAME|CAPTURE_SETUP|WRONG_DIGEST|SEND|RECEIPT|HEADERS|MULTIPART|REPLAY|REDIRECT|WRONG_RECEIPT|POSTCONDITIONS) kind=(AssertionError|IllegalArgumentException|IllegalStateException|IOException|OtherException) line=-?[0-9]+ origin=(ProtectedMultipartSubmission|ProtectedCommittedDraftStore|ProtectedFinalizedPackageFile|ProtectedSubmissionAdmission|ProtectedNativePackageBuilder|RecordWorkPreparationClient|RecordWorkReadOnlyClient|AndroidKeyStorePrivateDraftCipher|Unknown):-?[0-9]+' <<<"$output" | sort -u || true
     grep -Eo 'U06_NATIVE_POST_FAILURE phase=(SETUP|UNCONFIRMED_UI|CONFIRM_UI|POST|ACK|RECONCILE|RECONCILIATION_INSPECTION|COMPLETION_EVIDENCE|RECOVERED_RECEIPT|REPLAY|ORACLE) line=-?[0-9]+' <<<"$output" | sort -u || true
     grep -Eo 'U06_LOST_ACK_FAILURE phase=(SETUP|POST|REMOTE_COMMIT|ORACLE|UNCONFIRMED_UI|RECOVER|PRESERVE) line=-?[0-9]+' <<<"$output" | sort -u || true
+    grep -Eo 'U08_BOUND_FAILURE kind=(AssertionError|IllegalArgumentException|IllegalStateException|IOException|SecurityException|OtherException) origin=[A-Za-z0-9_$]+:[A-Za-z0-9_$<>]+:-?[0-9]+ signal=(UNCLASSIFIED|U08_HTTP_STATUS [0-9]{3}|U08_RESPONSE_MEDIA_TYPE|U08_RESPONSE_CACHE_POLICY|U08_ATTEMPT_JSON_SHAPE|U08_STATUS_JSON_SHAPE)' <<<"$output" | sort -u || true
     exit 1
   fi
   echo "Android instrumentation phase ${method}: PASS"
@@ -74,7 +75,14 @@ cat >collect_app/src/debug/res/xml/network_security_config.xml <<'XML'
 </network-security-config>
 XML
 test ! -e collect_app/src/main/res/raw/u06_ci_ephemeral_ca.pem
-./gradlew :collect_app:installDebug --no-daemon --stacktrace >/tmp/u06-ui-debug-install.log 2>&1 || {
+bound_property=()
+if [[ "${U06_ACK_PROFILE:-acknowledged}" == bound-* ]]; then
+  bound_property=(-PCOLLECT_PROTECTED_BOUND_SUBMISSIONS=true)
+fi
+if [[ "${U06_ACK_PROFILE:-acknowledged}" == bound-amendment* ]]; then
+  bound_property+=(-PCOLLECT_PROTECTED_AMENDMENTS=true)
+fi
+./gradlew :collect_app:installDebug "${bound_property[@]}" --no-daemon --stacktrace >/tmp/u06-ui-debug-install.log 2>&1 || {
   echo "::error::Ephemeral-CA debug APK rebuild/install failed"
   tail -n 60 /tmp/u06-ui-debug-install.log
   exit 1
@@ -99,6 +107,9 @@ do
   ui_output_file="/tmp/u06-ui-${method}.txt"
   adb shell am force-stop "$APP_ID"
   adb shell pm clear "$APP_ID" >/dev/null
+  # Test-only wake/unlock; keep actual first-launch focus and all assertions.
+  adb shell input keyevent KEYCODE_WAKEUP
+  adb shell wm dismiss-keyguard
   # Fresh synthetic diagnostic window; no raw logcat is exported.
   adb logcat -c
   adb shell am instrument -w -e class "${ui_class}#${method}" \
@@ -237,7 +248,119 @@ echo "U06-T04E-05B: authenticated finalized multipart bytes, receipt and redirec
 export PGPASSWORD=synthetic-ci-only
 python3 ci/u06-t04e05c-native-postflight.py before /tmp/u06-native-history.json
 adb shell am force-stop "$APP_ID"
+run_bound_fault() {
+  # Reserve/bind under normal TLS, then arm the proxy for the exact work AND attempt.
+  run_one boundAttemptPreparesAndPersistsAcrossForceStop "$restart_class"
+  adb shell am force-stop "$APP_ID"
+  work="$(adb exec-out run-as "$APP_ID" cat no_backup/u06-publication-restart.properties | tr -d '\r' | sed -n 's/^work=//p')"
+  attempt="$(adb exec-out run-as "$APP_ID" cat no_backup/u06-publication-restart.properties | tr -d '\r' | sed -n 's/^boundAttempt=//p')"
+  [[ "$work" =~ ^[0-9a-f-]{36}$ && "$attempt" =~ ^[0-9a-f-]{36}$ ]]
+  mode="$1"
+  event=/tmp/u08-bound-fault-event.json
+  rm -f "$event" "${event%.json}.tmp"
+  docker stop u06-t04a-tls >/dev/null
+  python3 ci/u06-t04e06c4-lost-ack-proxy.py "$work" "$event" "$mode" "$attempt" >/tmp/u08-bound-proxy.log 2>&1 &
+  proxy_pid=$!
+  restore_bound_tls() {
+    kill "$proxy_pid" >/dev/null 2>&1 || true
+    wait "$proxy_pid" 2>/dev/null || true
+    docker start u06-t04a-tls >/dev/null
+  }
+  trap restore_bound_tls EXIT
+  for i in $(seq 1 20); do
+    kill -0 "$proxy_pid"
+    if curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'; then break; fi
+    sleep 1
+  done
+  curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'
+  if [[ "$mode" != lost-response ]]; then
+    python3 ci/u06-t04e06d1-no-commit-oracle.py before /tmp/u08-bound-no-commit.json
+  fi
+  run_one boundAttemptTransmissionInterruptedOrAcknowledgementLost "$restart_class"
+  adb shell am force-stop "$APP_ID"
+  if [[ "$mode" == lost-response ]]; then
+    run_one boundAttemptRecoversLostAcknowledgementWithoutPost "$restart_class"
+    adb shell am force-stop "$APP_ID"
+    run_one boundReceiptReopensAfterForceStop "$restart_class"
+  else
+    python3 ci/u06-t04e06d1-no-commit-oracle.py after /tmp/u08-bound-no-commit.json
+    run_one boundAttemptRemainsAdmissibleAfterInterruptedTransmission "$restart_class"
+    adb shell am force-stop "$APP_ID"
+    run_one boundAttemptRemainsAdmissibleAfterInterruptedTransmission "$restart_class"
+    python3 ci/u06-t04e06d1-no-commit-oracle.py after /tmp/u08-bound-no-commit.json
+  fi
+  python3 - "$event" "$mode" <<'PY'
+import json, sys
+from pathlib import Path
+expected = {"posts": 1, "forwarded": 1, "upstream201": 1, "dropped": 1}
+if sys.argv[2] == "interrupted-upload":
+    expected.update(forwarded=0, upstream201=0, partial=1)
+elif sys.argv[2] == "interrupted-upstream":
+    expected.update(upstream201=0, partial=1, upstream_rejected=1)
+assert json.loads(Path(sys.argv[1]).read_text()) == expected, "Bound fault counters mismatch"
+PY
+  restore_bound_tls
+  trap - EXIT
+  for i in $(seq 1 20); do
+    if curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'; then break; fi
+    sleep 1
+  done
+  curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'
+  if [[ "$mode" != lost-response ]]; then
+    # Only an explicit invocation after status verification may retry.
+    adb shell am force-stop "$APP_ID"
+    run_one boundAttemptSendsExactPackageAndRecoversReceipt "$restart_class"
+    adb shell am force-stop "$APP_ID"
+    run_one boundReceiptReopensAfterForceStop "$restart_class"
+  fi
+}
+
+source ci/u08-bound-server-crash.sh
+
 case "${U06_ACK_PROFILE:-acknowledged}" in
+bound-acknowledged|bound-amendment*)
+  run_one boundAttemptPreparesAndPersistsAcrossForceStop "$restart_class"
+  adb shell am force-stop "$APP_ID"
+  run_one boundAttemptSendsExactPackageAndRecoversReceipt "$restart_class"
+  adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
+  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
+  adb shell am force-stop "$APP_ID"
+  run_one boundReceiptReopensAfterForceStop "$restart_class"
+  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
+  echo "U08 bound submission, exact persisted bytes, receipt and restart PASS."
+  if [[ "$U06_ACK_PROFILE" == bound-amendment* ]]; then
+    python3 ci/u08-amendment-postflight.py before /tmp/u08-amendment-history.json
+    adb shell am force-stop "$APP_ID"
+    run_one stageAndFinalizeProtectedAmendment "$restart_class"
+    adb shell am force-stop "$APP_ID"
+    if [[ "$U06_ACK_PROFILE" == bound-amendment ]]; then
+      run_one boundAttemptPreparesAndPersistsAcrossForceStop "$restart_class"
+      adb shell am force-stop "$APP_ID"
+      run_one boundAttemptSendsExactPackageAndRecoversReceipt "$restart_class"
+    elif [[ "$U06_ACK_PROFILE" == bound-amendment-server-crash ]]; then
+      run_bound_server_crash
+    else
+      run_bound_fault "${U06_ACK_PROFILE#bound-amendment-}"
+    fi
+    adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u08-amendment-oracle.json
+    python3 ci/u08-amendment-postflight.py after /tmp/u08-amendment-history.json /tmp/u08-amendment-oracle.json
+    adb shell am force-stop "$APP_ID"
+    docker stop u06-t04a-tls >/dev/null
+    trap 'docker start u06-t04a-tls >/dev/null' EXIT
+    run_one amendmentReceiptRetainedWhileDisconnected "$restart_class"
+    docker start u06-t04a-tls >/dev/null
+    trap - EXIT
+    for i in $(seq 1 20); do
+      if curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'; then break; fi
+      sleep 1
+    done
+    curl --fail --silent --cacert /tmp/u06-t04a-tls/ca.crt --resolve localhost:8443:127.0.0.1 https://localhost:8443/actuator/health | grep -q '"status":"UP"'
+    adb shell am force-stop "$APP_ID"
+    run_one boundReceiptReopensAfterForceStop "$restart_class"
+    python3 ci/u08-amendment-postflight.py after /tmp/u08-amendment-history.json /tmp/u08-amendment-oracle.json
+    echo "U08 connected amendment and offline retained receipt qualification PASS."
+  fi
+  ;;
 acknowledged)
   run_one actualFinalizedMultipartCreatesIndependentLinkedObservation "$restart_class"
   adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
@@ -251,6 +374,17 @@ acknowledged)
   echo "U06-T04E-06B: authenticated READY/linked-record inspection without receipt publication or retransmission, integrity and conflict denial PASS."
   echo "U06-T04E-06C2: authenticated completed-work evidence GET, exact identity and bounded digest inventory, malformed/redirect/READY denial PASS."
   echo "U06-T04E-06C3: exact authenticated local package and remote evidence comparison, recovered receipt publication, corruption denial and restart PASS."
+  ;;
+bound-server-crash)
+  run_bound_server_crash
+  adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
+  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
+  ;;
+bound-lost-response|bound-interrupted-upload|bound-interrupted-upstream)
+  run_bound_fault "${U06_ACK_PROFILE#bound-}"
+  adb exec-out run-as "$APP_ID" cat no_backup/u06-native-submission-oracle.json > /tmp/u06-native-submission-oracle.json
+  python3 ci/u06-t04e05c-native-postflight.py after /tmp/u06-native-history.json /tmp/u06-native-submission-oracle.json
+  echo "U08 bound fault profile $mode: exact durable submission and verified receipt PASS."
   ;;
 lost-response|interrupted-upload|interrupted-upstream)
   # Replace only the disposable TLS front end, not production app/server code.

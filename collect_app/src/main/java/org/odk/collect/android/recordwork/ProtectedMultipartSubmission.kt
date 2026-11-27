@@ -34,6 +34,8 @@ internal class ProtectedMultipartSubmission(
         projectId: String, binding: QuarantinedWorkDraft, generation: String,
         expectedPackageSha256: String
     ): ProtectedTransportResult {
+        // The legacy sender never acquires protected amendment authority.
+        require(binding.workType == RecordWorkType.FOLLOW_UP)
         val admission = ProtectedSubmissionAdmission(scratch, root, settings)
             .inspect(projectId, binding, generation, expectedPackageSha256)
         var result: ProtectedTransportResult? = null
@@ -72,7 +74,9 @@ internal class ProtectedMultipartSubmission(
                     // Work-level durable conservative latch: even a crash before
                     // sending requires explicit later reconciliation. Never auto-clear.
                     reserveAttempt(binding, admission)
-                    result = transmit(admission, user, password, boundary, headers, parts, suffix, crlf, size)
+                    result = transmit(admission.endpoint, admission.workHeaderValue,
+                        admission.packageSha256, admission.reservedInstanceId, user, password,
+                        boundary, headers, parts, suffix, crlf, size)
                 } finally { parts.forEach { it.bytes.fill(0) } }
             }
         return requireNotNull(result)
@@ -88,6 +92,55 @@ internal class ProtectedMultipartSubmission(
         require(result == ProtectedTransportResult(201, true, binding.reservedInstanceId, expectedPackageSha256))
         return ProtectedSubmissionReceiptStore(root, settings)
             .recordAcknowledged(projectId, binding, generation, result)
+    }
+
+    /** Explicit initial bound send or exact-content retry. The journal and a
+     * fresh authoritative status are mandatory; no READY-only fallback.
+     * A completed attempt must recover a receipt, not send another POST. */
+    fun sendBound(binding: QuarantinedWorkDraft, expectedAttemptId: String,
+                  expectedWireSha256: String): ProtectedTransportResult =
+        ProtectedBoundAttemptStore(scratch, root, settings)
+            .withAdmittedContent(binding, expectedAttemptId, expectedWireSha256) { admitted, local, canonical ->
+                val values = settings.getUnprotectedSettings(binding.projectId)
+                val paths = RecordWorkApiPaths.fromProjectUrl(values.getString(ProjectKeys.KEY_SERVER_URL).orEmpty())
+                val user = values.getString(ProjectKeys.KEY_USERNAME).orEmpty()
+                val password = values.getString(ProjectKeys.KEY_PASSWORD).orEmpty()
+                require(user.isNotBlank() && password.isNotBlank() &&
+                    user.none { it == ':' || it.isISOControl() } && password.none { it.isISOControl() } &&
+                    QuarantinedWorkDraftVault.sha256(binding.projectId + "\n" + paths.records() + "\n" + user) ==
+                        binding.actorContextSha256)
+                val parts = mutableListOf<Part>()
+                try {
+                    // Validate the entire authenticated envelope before sending.
+                    val evidence = ProtectedAttemptedPackageEvidence.parse(canonical, binding, local) { name, mime, bytes ->
+                        require(name == "xml_submission_file" || mime in setOf("image/jpeg", "image/png"))
+                        parts += Part(name, if (name == "xml_submission_file") "submission.xml" else name,
+                            mime, bytes.copyOf())
+                    }
+                    require(parts.size == evidence.attachments.size + 1)
+                    val boundary = "dc" + UUID.randomUUID().toString().replace("-", "")
+                    val headers = parts.map { part ->
+                        ("--$boundary\r\nContent-Disposition: form-data; name=\"" +
+                            part.name + "\"; filename=\"" + part.filename + "\"\r\nContent-Type: " +
+                            part.mime + "\r\n\r\n").toByteArray(Charsets.UTF_8)
+                    }
+                    val suffix = "--$boundary--\r\n".toByteArray(Charsets.UTF_8)
+                    val crlf = "\r\n".toByteArray(Charsets.UTF_8)
+                    val size = headers.sumOf { it.size.toLong() } +
+                        parts.sumOf { it.bytes.size.toLong() + crlf.size } + suffix.size
+                    require(size in 1..(13L * 1024 * 1024) &&
+                        parts.none { contains(it.bytes, boundary.toByteArray(Charsets.UTF_8)) })
+                    transmit(paths.submission(), binding.workId, admitted.packageSha256,
+                        binding.reservedInstanceId, user, password, boundary, headers, parts,
+                        suffix, crlf, size, admitted.attemptId)
+                } finally { parts.forEach { it.bytes.fill(0) } }
+            }
+
+    fun sendBoundAndAcknowledge(binding: QuarantinedWorkDraft, expectedAttemptId: String,
+                                expectedWireSha256: String): ProtectedSubmittedReceipt {
+        val result = sendBound(binding, expectedAttemptId, expectedWireSha256)
+        require(result.acknowledged && result.httpStatus == 201 && result.instanceId == binding.reservedInstanceId)
+        return ProtectedBoundAttemptStore(scratch, root, settings).recoverReceipt(binding)
     }
 
     private data class Part(val name: String, val filename: String, val mime: String, val bytes: ByteArray)
@@ -184,14 +237,14 @@ internal class ProtectedMultipartSubmission(
     }
 
     private fun transmit(
-        admission: ProtectedSubmissionAdmissionEvidence, user: String, password: String,
-        boundary: String, headers: List<ByteArray>, parts: List<Part>, suffix: ByteArray,
-        crlf: ByteArray, size: Long
+        endpoint: String, workId: String, packageSha256: String, instanceId: String,
+        user: String, password: String, boundary: String, headers: List<ByteArray>,
+        parts: List<Part>, suffix: ByteArray, crlf: ByteArray, size: Long, attemptId: String? = null
     ): ProtectedTransportResult {
         var connection: HttpsURLConnection? = null
         var status: Int? = null
         try {
-            val conn = openConnection(URL(admission.endpoint))
+            val conn = openConnection(URL(endpoint))
             connection = conn
             conn.instanceFollowRedirects = false
             conn.useCaches = false
@@ -201,7 +254,9 @@ internal class ProtectedMultipartSubmission(
             conn.doOutput = true
             conn.setRequestProperty("Authorization", "Basic " + Base64.encodeToString(
                 "$user:$password".toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
-            conn.setRequestProperty(admission.workHeaderName, admission.workHeaderValue)
+            conn.setRequestProperty(RecordWorkCompletionGate.WORK_ITEM_HEADER, workId)
+            if (attemptId != null) conn.setRequestProperty("X-DataCollector-Attempt-Id",
+                ProtectedWireCommitment.uuid(attemptId))
             conn.setRequestProperty("X-OpenRosa-Version", "1.0")
             conn.setRequestProperty("Cache-Control", "no-store")
             conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
@@ -213,7 +268,7 @@ internal class ProtectedMultipartSubmission(
                 out.write(suffix)
             }
             status = conn.responseCode
-            if (status != 201) return ProtectedTransportResult(status, false, null, admission.packageSha256)
+            if (status != 201) return ProtectedTransportResult(status, false, null, packageSha256)
             require(conn.contentType?.substringBefore(';')?.trim()?.lowercase() in
                 setOf("text/xml", "application/xml"))
             val receipt = conn.inputStream.use { input ->
@@ -230,13 +285,13 @@ internal class ProtectedMultipartSubmission(
                 } finally { buffer.fill(0) }
             }
             try {
-                requireReceipt(receipt, admission.reservedInstanceId)
+                requireReceipt(receipt, instanceId)
             } finally { receipt.fill(0) }
-            return ProtectedTransportResult(status, true, admission.reservedInstanceId, admission.packageSha256)
+            return ProtectedTransportResult(status, true, instanceId, packageSha256)
         } catch (_: Exception) {
             // A failed acknowledgement is ambiguous. Do not release the latch,
             // retry, send to a redirected URL, or claim that the server failed.
-            return ProtectedTransportResult(status, false, null, admission.packageSha256)
+            return ProtectedTransportResult(status, false, null, packageSha256)
         } finally { connection?.disconnect() }
     }
 

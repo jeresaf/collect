@@ -206,6 +206,43 @@ class HistoricalSchemaMappingTest {
         )) }
     }
 
+    @Test fun explicitRenameIsAdvisoryAndBoundToExactSchemas() {
+        val renamed = newerSchema.replace("<newField/>", "<renamed/>")
+            .replace("/data/newField", "/data/renamed").replace(" calculate=\"5\"", "")
+        val candidate = plan(targetXForm = renamed)
+        val rule = ExplicitFieldRule("/data/former", "/data/renamed", ExplicitScalarType.TEXT)
+        val result = HistoricalSchemaMappingEngine.inspectExplicitRules(candidate, sourceSchema, renamed, listOf(rule))
+        assertEquals(ExplicitRuleVerdict.REQUIRES_NATIVE_AND_SEMANTIC_REVIEW, result.findings.single().verdict)
+        assertFalse(result.canReadHistoricalAnswers)
+        assertFalse(result.canTransfer)
+        assertFalse(result.canFinalize)
+        assertFalse(result.canUpload)
+        reject { HistoricalSchemaMappingEngine.inspectExplicitRules(candidate, sourceSchema, newerSchema, listOf(rule)) }
+        val conflict = ExplicitFieldRule("/data/name", "/data/renamed", ExplicitScalarType.TEXT)
+        assertEquals(ExplicitRuleVerdict.BLOCKED_RENAME_COLLISION,
+            HistoricalSchemaMappingEngine.inspectExplicitRules(candidate, sourceSchema, renamed, listOf(conflict)).findings.single().verdict)
+        reject { HistoricalSchemaMappingEngine.inspectExplicitRules(candidate, sourceSchema, renamed, listOf(rule, conflict)) }
+        reject { HistoricalSchemaMappingEngine.inspectExplicitRules(plan(type = RecordWorkType.FOLLOW_UP),
+            sourceSchema, newerSchema, listOf(rule)) }
+        val changedType = ExplicitFieldRule("/data/age", "/data/age", ExplicitScalarType.INTEGER)
+        assertEquals(ExplicitRuleVerdict.BLOCKED_TYPE_OR_UNSUPPORTED,
+            HistoricalSchemaMappingEngine.inspectExplicitRules(plan(), sourceSchema, newerSchema, listOf(changedType)).findings.single().verdict)
+    }
+
+    @Test fun canonicalExplicitManifestIsOrderIndependentAndIdentityBound() {
+        val one = ExplicitFieldRule("/data/former", "/data/renamed", ExplicitScalarType.TEXT)
+        val two = ExplicitFieldRule("/data/age", "/data/age", ExplicitScalarType.INTEGER)
+        fun manifest(rules: List<ExplicitFieldRule>) = ExplicitMappingManifest(
+            workId, sourceId, targetId, "a".repeat(64), "b".repeat(64), rules)
+        val expected = "DATA_COLLECTOR_EXPLICIT_MAPPING_V1\n$workId\n$sourceId\n$targetId\n" +
+            "a".repeat(64) + "\n" + "b".repeat(64) +
+            "\n2\n/data/age\t/data/age\tINTEGER\n/data/former\t/data/renamed\tTEXT\n"
+        assertEquals(expected, manifest(listOf(one, two)).canonicalBytes().toString(Charsets.US_ASCII))
+        assertEquals(manifest(listOf(one, two)).sha256(), manifest(listOf(two, one)).sha256())
+        reject { manifest(listOf(one, one)) }
+        reject { ExplicitFieldRule("/data/meta/instanceID", "/data/renamed", ExplicitScalarType.TEXT) }
+    }
+
     @Test fun hostileSourceDefinitionIsRejected() {
         reject { plan(originalXForm = "<!DOCTYPE html [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>"
             + sourceSchema) }

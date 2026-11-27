@@ -220,6 +220,64 @@ object HistoricalSchemaMappingEngine {
         )
     }
 
+    /**
+     * Explicit one-to-one mappings, never inferred from labels or order.
+     * Reparse exact schema bytes; no submitted answer values enter this path.
+     * The result is advisory only and intentionally cannot alter the existing
+     * per-field approval, grant, editor or submission state.
+     */
+    fun inspectExplicitRules(
+        plan: HistoricalMappingPlan,
+        sourceXFormXml: String,
+        targetXFormXml: String,
+        rules: List<ExplicitFieldRule>
+    ): ExplicitMappingReview {
+        require(plan.workType == RecordWorkType.AMENDMENT &&
+            plan.sourceFormId == plan.targetFormId &&
+            plan.globalRisks.none { it != MappingRisk.EXPLICIT_REVIEW_REQUIRED }) {
+            "Explicit historical mapping requires matching amendment identity"
+        }
+        require(plan.sourceXFormSha256 == sha256(sourceXFormXml) &&
+            plan.targetXFormSha256 == sha256(targetXFormXml)) { "Schema drift" }
+        val source = parseSchema(sourceXFormXml)
+        val target = parseSchema(targetXFormXml)
+        require(source.formId == plan.sourceFormId && source.version == plan.sourceVersion &&
+            target.formId == plan.targetFormId && target.version == plan.targetVersion &&
+            target.fields.keys == plan.candidates.map { it.targetPath }.toSet()) {
+            "Schema inventory differs from plan"
+        }
+        val manifest = ExplicitMappingManifest(plan.workId, plan.sourceSubmissionId,
+            plan.targetFormVersionId, requireNotNull(plan.sourceXFormSha256),
+            plan.targetXFormSha256, rules)
+        val findings = manifest.rules.map { rule ->
+            val old = source.fields[rule.sourcePath]
+            val next = target.fields[rule.targetPath]
+            val verdict = when {
+                old == null || next == null -> ExplicitRuleVerdict.BLOCKED_UNKNOWN_PATH
+                rule.sourcePath != rule.targetPath &&
+                    (rule.sourcePath in target.fields || rule.targetPath in source.fields) ->
+                    ExplicitRuleVerdict.BLOCKED_RENAME_COLLISION
+                scalarType(old.type) != rule.type || scalarType(next.type) != rule.type ->
+                    ExplicitRuleVerdict.BLOCKED_TYPE_OR_UNSUPPORTED
+                listOf(old, next).any { it.isRepeat || it.media || it.calculated ||
+                    it.relevantOrConstrained || it.required || it.dynamicChoices ||
+                    it.choiceValues != null } ->
+                    ExplicitRuleVerdict.BLOCKED_COMPLEX_RULES
+                else -> ExplicitRuleVerdict.REQUIRES_NATIVE_AND_SEMANTIC_REVIEW
+            }
+            ExplicitRuleFinding(rule, verdict)
+        }
+        return ExplicitMappingReview(manifest, findings)
+    }
+
+    private fun scalarType(type: String): ExplicitScalarType? = when (type) {
+        "string" -> ExplicitScalarType.TEXT
+        "int", "integer" -> ExplicitScalarType.INTEGER
+        "decimal" -> ExplicitScalarType.DECIMAL
+        "date" -> ExplicitScalarType.DATE
+        else -> null
+    }
+
     private data class Schema(
         val formId: String, val version: String,
         val fields: Map<String, SchemaField>

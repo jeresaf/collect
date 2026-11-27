@@ -30,7 +30,8 @@ data class SchemaField(
     val calculated: Boolean,
     val relevantOrConstrained: Boolean,
     val required: Boolean,
-    val bindingSignature: String
+    val bindingSignature: String,
+    val choiceMeaningSignature: String? = null
 )
 
 data class TargetFieldCandidate(
@@ -184,7 +185,8 @@ object HistoricalSchemaMappingEngine {
                 } else {
                     MappingRisk.STATIC_SELECT
                 }
-                if (old?.choiceValues != destination.choiceValues) {
+                if (old?.choiceValues != destination.choiceValues ||
+                    old?.choiceMeaningSignature != destination.choiceMeaningSignature) {
                     risks += MappingRisk.CHOICE_LIST_CHANGED
                 }
             }
@@ -246,20 +248,20 @@ object HistoricalSchemaMappingEngine {
             if (local(element) in setOf("repeat", "bind", "select", "select1", "upload")) {
                 val raw = element.getAttribute("ref")
                     .ifBlank { element.getAttribute("nodeset") }.trim()
-                require(raw.isNotBlank() && raw.startsWith("/")) {
+                require(raw.matches(SIMPLE_ABSOLUTE_PATH)) {
                     "Unsupported relative or missing form path"
                 }
             }
         }
-        val binds = descendants(doc.documentElement).filter { local(it) == "bind" }
-            .mapNotNull { e -> reference(e)?.let { it to e } }.toMap()
-        val repeatPaths = descendants(doc.documentElement)
-            .filter { local(it) == "repeat" }.mapNotNull(::reference).toSet()
-        val choices = descendants(doc.documentElement)
-            .filter { local(it) == "select" || local(it) == "select1" }
-            .mapNotNull { e -> reference(e)?.let { it to e } }.toMap()
-        val uploads = descendants(doc.documentElement)
-            .filter { local(it) == "upload" }.mapNotNull(::reference).toSet()
+        // Reject ambiguity before building maps: toMap() would silently
+        // discard an earlier declaration, including its validation rules.
+        val binds = uniqueReferences(doc.documentElement, setOf("bind"))
+        val repeatPaths = uniqueReferences(doc.documentElement, setOf("repeat")).keys
+        val choices = uniqueReferences(doc.documentElement, setOf("select", "select1"))
+        val uploads = uniqueReferences(doc.documentElement, setOf("upload")).keys
+        require(choices.keys.intersect(uploads).isEmpty()) {
+            "Conflicting choice and media controls"
+        }
 
         val found = linkedMapOf<String, SchemaField>()
         fun collect(node: Element, path: String, depth: Int) {
@@ -270,33 +272,69 @@ object HistoricalSchemaMappingEngine {
                 if (path != "/" + local(root)) {
                     val bind = binds[path]
                     val choice = choices[path]
-                    val hasItems = choice?.let { c ->
-                        descendants(c).filter { local(it) == "value" }.map { it.textContent.orEmpty() }
-                            .filter(String::isNotBlank).toSet()
+                    val staticItems = choice?.let { c ->
+                        elements(c).filter { local(it) == "item" }.map { item ->
+                            val value = elements(item).singleOrNull { local(it) == "value" }
+                                ?: throw IllegalArgumentException("Ambiguous static choice value")
+                            val label = elements(item).singleOrNull { local(it) == "label" }
+                            require(value.textContent.isNotBlank()) { "Empty static choice code" }
+                            // Do not display or persist labels in findings; exact code,
+                            // inline caption and translation-reference changes are risk.
+                            listOf(value.textContent, label?.textContent.orEmpty(),
+                                label?.getAttribute("ref").orEmpty())
+                        }.also { items ->
+                            require(items.map { it[0] }.toSet().size == items.size) {
+                                "Duplicate static choice code"
+                            }
+                        }
+                    }
+                    val hasItems = staticItems?.map { it[0] }?.toSet()
+                    val choiceMeaning = staticItems?.let { items ->
+                        sha256(local(requireNotNull(choice)) + ":" + items.joinToString("") { item ->
+                            item.joinToString("") { value -> "${value.length}:$value" }
+                        })
                     }
                     val dynamic = choice?.let { c ->
                         descendants(c).any { local(it) == "itemset" } || hasItems.isNullOrEmpty()
                     } ?: false
                     val type = if (bind == null) "unbound" else
                         bind.getAttribute("type").lowercase().ifBlank { "string" }
-                    val calculated = bind?.getAttribute("calculate").orEmpty().isNotBlank() ||
-                        bind?.getAttribute("readonly") in setOf("true", "true()")
-                    val relevant = bind?.getAttribute("relevant").orEmpty().isNotBlank() ||
-                        bind?.getAttribute("constraint").orEmpty().isNotBlank()
-                    val signature = listOf(
-                        bind?.getAttribute("relevant").orEmpty(),
-                        bind?.getAttribute("constraint").orEmpty(),
-                        bind?.getAttribute("required").orEmpty(),
-                        bind?.getAttribute("calculate").orEmpty()
-                    ).joinToString("|")
+                    // A group's bind may impose relevance, readonly or
+                    // constraints on otherwise uncomplicated descendants.
+                    val applicable = binds.entries.filter { (boundPath, _) ->
+                        path == boundPath || path.startsWith("$boundPath/")
+                    }.sortedBy { it.key }
+                    val calculated = applicable.any { (_, rule) ->
+                        rule.getAttribute("calculate").isNotBlank() ||
+                            rule.getAttribute("readonly").trim().let {
+                                it.isNotBlank() && it !in setOf("false", "false()")
+                            }
+                    }
+                    val relevant = applicable.any { (_, rule) ->
+                        rule.getAttribute("relevant").isNotBlank() ||
+                            rule.getAttribute("constraint").isNotBlank()
+                    }
+                    // Empty-rule group binds do not change the effective
+                    // signature. All conditional required expressions are risk.
+                    val required = applicable.any { (_, rule) ->
+                        rule.getAttribute("required").trim().let {
+                            it.isNotBlank() && it !in setOf("false", "false()")
+                        }
+                    }
+                    val signature = sha256(applicable.joinToString("") { (boundPath, rule) ->
+                        val values = listOf("relevant", "constraint", "required", "calculate", "readonly")
+                            .map { rule.getAttribute(it) }
+                        if (values.all { it.isBlank() }) "" else
+                            (listOf(boundPath) + values).joinToString("") { "${it.length}:$it" }
+                    })
                     require(path !in found) { "Ambiguous duplicate field path" }
                     found[path] = SchemaField(
                         path, type, repeatPaths.any { path == it || path.startsWith(it + "/") },
                         if (choice != null) hasItems else null,
                         dynamic,
                         path in uploads || type in mediaTypes,
-                        calculated, relevant, bind?.getAttribute("required") in setOf("true", "true()"),
-                        signature
+                        calculated, relevant, required,
+                        signature, choiceMeaning
                     )
                 }
             } else kids.forEach { collect(it, path + "/" + local(it), depth + 1) }
@@ -331,6 +369,21 @@ object HistoricalSchemaMappingEngine {
         yield(e)
         elements(e).forEach { yieldAll(descendants(it)) }
     }
+
+    private fun uniqueReferences(root: Element, kinds: Set<String>): Map<String, Element> {
+        val result = linkedMapOf<String, Element>()
+        descendants(root).filter { local(it) in kinds }.forEach { element ->
+            val path = requireNotNull(reference(element))
+            require(path.matches(SIMPLE_ABSOLUTE_PATH) && path !in result) {
+                "Duplicate or unsupported form reference"
+            }
+            result[path] = element
+        }
+        return result
+    }
+
+    private val SIMPLE_ABSOLUTE_PATH =
+        Regex("/[A-Za-z_][A-Za-z0-9_.-]*(/[A-Za-z_][A-Za-z0-9_.-]*){0,79}")
 
     private fun reference(e: Element): String? =
         e.getAttribute("ref").ifBlank { e.getAttribute("nodeset") }

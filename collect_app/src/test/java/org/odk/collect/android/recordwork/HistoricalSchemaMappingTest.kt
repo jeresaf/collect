@@ -168,6 +168,44 @@ class HistoricalSchemaMappingTest {
         assertTrue(result.candidates.all { it.targetPath.startsWith("/data/") })
     }
 
+    @Test fun duplicateBindCannotHideOriginalConstraint() {
+        val changed = newerSchema.replace(
+            "<bind nodeset=\"/data/name\" type=\"string\"/>",
+            "<bind nodeset=\"/data/name\" type=\"string\" constraint=\"false()\"/>" +
+                "<bind nodeset=\"/data/name\" type=\"string\"/>"
+        )
+        reject { plan(targetXForm = changed) }
+    }
+
+    @Test fun ancestorRulesAndConditionalReadonlyPreventScalarProposal() {
+        val changed = newerSchema.replace(
+            "<bind nodeset=\"/data/name\" type=\"string\"/>",
+            "<bind nodeset=\"/data\" relevant=\"false()\" required=\"/data/age &gt; 0\"/>" +
+                "<bind nodeset=\"/data/name\" type=\"string\" readonly=\"/data/age &gt; 0\"/>"
+        )
+        val candidate = plan(targetXForm = changed).candidates.single { it.targetPath == "/data/name" }
+        assertFalse(candidate.safeScalarProposal)
+        assertTrue(MappingRisk.RELEVANCE_OR_CONSTRAINT in candidate.risks)
+        assertTrue(MappingRisk.REQUIRED in candidate.risks)
+        assertTrue(MappingRisk.CALCULATION in candidate.risks)
+    }
+
+    @Test fun changedChoiceCaptionWithSameCodeRequiresReview() {
+        val changed = newerSchema.replace("<value>b</value>", "<value>a</value>")
+        val candidate = plan(targetXForm = changed).candidates.single { it.targetPath == "/data/choice" }
+        assertTrue(MappingRisk.CHOICE_LIST_CHANGED in candidate.risks)
+        assertFalse(candidate.safeScalarProposal)
+    }
+
+    @Test fun duplicateChoiceCodeAndPredicateReferencesFailClosed() {
+        val duplicate = newerSchema.replace("<value>b</value></item>",
+            "<value>b</value></item><item><label>Different</label><value>b</value></item>")
+        reject { plan(targetXForm = duplicate) }
+        reject { plan(targetXForm = newerSchema.replace(
+            "nodeset=\"/data/name\"", "nodeset=\"/data/name[1]\""
+        )) }
+    }
+
     @Test fun hostileSourceDefinitionIsRejected() {
         reject { plan(originalXForm = "<!DOCTYPE html [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>"
             + sourceSchema) }

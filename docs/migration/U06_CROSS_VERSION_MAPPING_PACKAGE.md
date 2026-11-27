@@ -1,0 +1,5 @@
+# Package 3 — cross-version mapping (U06)
+
+Shared delivery issue: https://github.com/jeresaf/data-collector/issues/38. Baseline: Android ce28336e93cbcad9232dce1d4af4ae37e6f2f989 and backend 74057ee3c6d4ac6bdab68c6456dc3dd834ce29a5.
+
+Initial hardening rejects duplicate bind/repeat/choice/upload references before maps can discard declarations, rejects predicates/noncanonical absolute references, incorporates ancestor bind constraints, relevance, readonly/calculation and conditional required into candidate risk, and detects changed static choice captions/references even with unchanged codes. No historical answers appear in findings. No change to transfer authorization, protected submission or independent follow-up. New tests exercise adversarial schemas; existing recordwork contract suite and APK compilation run for this feature branch. This comparison remains advisory: translation semantics, explicit rename rules, typed values, repeats/media, consent/revocation and server-owned operational grants still need implementation and qualification. No production activation.

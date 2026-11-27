@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   android-protected-contract:
-    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/u08-submission-recovery')
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.head.ref == 'feature/u08-submission-recovery' || github.event.pull_request.head.ref == 'feature/u06-cross-version-mapping'))
     runs-on: ubuntu-24.04
     timeout-minutes: 70
     steps:

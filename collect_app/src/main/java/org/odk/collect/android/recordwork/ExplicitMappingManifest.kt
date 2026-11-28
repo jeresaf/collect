@@ -19,7 +19,7 @@ data class ExplicitFieldRule(val sourcePath: String, val targetPath: String, val
         private fun validPath(path: String): Boolean =
             path.length <= 255 && PATH.matches(path) &&
                 path.split('/').none { it.lowercase(java.util.Locale.ROOT) in
-                    setOf("meta", "instanceid", "deprecatedid") }
+                    setOf("meta", "instanceid", "deprecatedid", "deviceid") }
     }
 }
 
@@ -29,7 +29,9 @@ class ExplicitMappingManifest(
     val sourceXFormSha256: String, val targetXFormSha256: String,
     rules: List<ExplicitFieldRule>
 ) {
-    val rules: List<ExplicitFieldRule> = rules.sortedBy { it.targetPath }.toList()
+    val rules: List<ExplicitFieldRule> = java.util.Collections.unmodifiableList(
+        rules.also { require(it.size in 1..30) }.sortedBy { it.targetPath }
+    )
     init {
         require(listOf(workId, sourceSubmissionId, targetFormVersionId).all {
             UUID.fromString(it).toString() == it && it != "00000000-0000-0000-0000-000000000000"

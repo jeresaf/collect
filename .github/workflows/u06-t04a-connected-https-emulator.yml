@@ -16,7 +16,7 @@ env:
 
 jobs:
   backend-build:
-    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/u08-submission-recovery')
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.head.ref == 'feature/u08-submission-recovery' || github.event.pull_request.head.ref == 'feature/u06-cross-version-mapping'))
     name: Build one pinned backend for all emulator profiles
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: jeresaf/data-collector
-          ref: 05c65e1ae5dd7a7657536663a6d898e4e5179119
+          ref: 6585fae820840a82ea40d060e33c8a394a0ea539
           path: backend-reference
           persist-credentials: false
       - name: Java 17
@@ -55,13 +55,13 @@ jobs:
       - name: Record source pin and executable jar digest
         run: |
           set -euo pipefail
-          test "$(git -C backend-reference rev-parse HEAD)" = '05c65e1ae5dd7a7657536663a6d898e4e5179119'
+          test "$(git -C backend-reference rev-parse HEAD)" = '6585fae820840a82ea40d060e33c8a394a0ea539'
           mapfile -t jars < <(find backend-reference/backend/target -maxdepth 1 -name '*.jar' ! -name '*original*')
           test "${#jars[@]}" = 1
           mkdir -p /tmp/u08-backend
           cp "${jars[0]}" /tmp/u08-backend/backend.jar
           cd /tmp/u08-backend
-          printf '%s\n' '05c65e1ae5dd7a7657536663a6d898e4e5179119' > source-commit.txt
+          printf '%s\n' '6585fae820840a82ea40d060e33c8a394a0ea539' > source-commit.txt
           printf '%s\n' "$U08_ANDROID_SHA" > android-commit.txt
           sha256sum backend.jar > SHA256SUMS
       - uses: actions/upload-artifact@v4
@@ -114,7 +114,7 @@ jobs:
         run: |
           set -euo pipefail
           cd /tmp/u08-backend
-          test "$(cat source-commit.txt)" = '05c65e1ae5dd7a7657536663a6d898e4e5179119'
+          test "$(cat source-commit.txt)" = '6585fae820840a82ea40d060e33c8a394a0ea539'
           test "$(cat android-commit.txt)" = "$U08_ANDROID_SHA"
           sha256sum -c SHA256SUMS
       - name: Run journal-enabled backend with ephemeral PostgreSQL 15/Flyway
